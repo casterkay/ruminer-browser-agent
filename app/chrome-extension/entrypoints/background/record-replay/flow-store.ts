@@ -297,6 +297,27 @@ export function toSlug(name: string): string {
     .slice(0, 64);
 }
 
+/**
+ * Walk the parentVersion chain to return the full version history.
+ * Returns newest (the given flowId) first, oldest last.
+ * Stops if a parent is not found or after 50 links (cycle guard).
+ */
+export async function getVersionChain(flowId: string): Promise<Flow[]> {
+  const chain: Flow[] = [];
+  const visited = new Set<string>();
+  let currentId: string | undefined = flowId;
+
+  while (currentId && !visited.has(currentId) && chain.length < 50) {
+    visited.add(currentId);
+    const flow = await getFlow(currentId);
+    if (!flow) break;
+    chain.push(flow);
+    currentId = flow.meta?.parentVersion?.flowId;
+  }
+
+  return chain;
+}
+
 export async function exportFlow(flowId: string): Promise<string> {
   const flow = await getFlow(flowId);
   if (!flow) throw new Error('flow not found');

@@ -112,6 +112,14 @@ export interface Flow {
     bindings?: Array<{ type: 'domain' | 'path' | 'url'; value: string }>;
     tool?: { category?: string; description?: string };
     exposedOutputs?: Array<{ nodeId: string; as: string }>;
+    /** Version chain link to parent flow (for flow versioning / updates) */
+    parentVersion?: {
+      flowId: string;
+      version: number;
+      createdAt: string;
+    };
+    /** How this flow was created */
+    source?: 'human-recording' | 'ai-synthesis' | 'import';
     /** Recording stop barrier status (used during recording stop) */
     stopBarrier?: {
       ok: boolean;

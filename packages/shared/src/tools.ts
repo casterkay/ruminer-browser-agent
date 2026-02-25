@@ -41,8 +41,11 @@ export const TOOL_NAMES = {
     GIF_RECORDER: 'chrome_gif_recorder',
   },
   RECORD_REPLAY: {
-    FLOW_RUN: 'record_replay_flow_run',
-    LIST_PUBLISHED: 'record_replay_list_published',
+    RECORD_START: 'flow_record_start',
+    RECORD_STOP: 'flow_record_stop',
+    FLOW_SAVE: 'flow_save',
+    FLOW_LIST: 'flow_list',
+    FLOW_RUN: 'flow_run',
   },
 };
 
@@ -56,44 +59,101 @@ export const TOOL_SCHEMAS: Tool[] = [
       required: [],
     },
   },
-  // {
-  //   name: TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
-  //   description:
-  //     'Run a recorded flow by ID with optional variables and run options. Returns a standardized run result.',
-  //   inputSchema: {
-  //     type: 'object',
-  //     properties: {
-  //       flowId: { type: 'string', description: 'ID of the flow to run' },
-  //       args: {
-  //         type: 'object',
-  //         description: 'Variable values for the flow (flat object of key/value)',
-  //       },
-  //       tabTarget: {
-  //         type: 'string',
-  //         description: "Target tab: 'current' or 'new' (default: current)",
-  //         enum: ['current', 'new'],
-  //       },
-  //       refresh: { type: 'boolean', description: 'Refresh before running (default false)' },
-  //       captureNetwork: {
-  //         type: 'boolean',
-  //         description: 'Capture network snippets for debugging (default false)',
-  //       },
-  //       returnLogs: { type: 'boolean', description: 'Return run logs (default false)' },
-  //       timeoutMs: { type: 'number', description: 'Global timeout in ms (optional)' },
-  //       startUrl: { type: 'string', description: 'Optional start URL to open before running' },
-  //     },
-  //     required: ['flowId'],
-  //   },
-  // },
-  // {
-  //   name: TOOL_NAMES.RECORD_REPLAY.LIST_PUBLISHED,
-  //   description: 'List published flows available as dynamic tools (for discovery).',
-  //   inputSchema: {
-  //     type: 'object',
-  //     properties: {},
-  //     required: [],
-  //   },
-  // },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.RECORD_START,
+    description:
+      'Start recording browser actions as a replayable flow. The existing recorder captures DOM events (clicks, fills, keyboard, navigation, tab switches) from AI tool actions automatically. Call this before performing browser actions you want to capture.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the flow (default: auto-generated)' },
+        description: { type: 'string', description: 'Description of what this flow does' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.RECORD_STOP,
+    description:
+      'Stop recording and return the captured flow as JSON (nodes, edges, variables, meta). Review the returned flow to verify completeness before saving.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.FLOW_SAVE,
+    description:
+      'Save a flow to storage. Optionally publish it as a callable MCP tool (flow.<slug>). Supports versioning via parentFlowId for updating flows when target site DOM changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        flow: {
+          type: 'object',
+          description: 'The flow object to save (must have nodes array with at least one node)',
+        },
+        publish: {
+          type: 'boolean',
+          description: 'Publish the flow as a callable tool (default: false)',
+        },
+        slug: {
+          type: 'string',
+          description:
+            'Tool name slug for published flow (e.g., "my-task" becomes flow.my-task). Auto-generated from flow name if omitted.',
+        },
+        parentFlowId: {
+          type: 'string',
+          description:
+            'ID of the parent flow this is a new version of. Sets version = parent.version + 1 and links version chain.',
+        },
+      },
+      required: ['flow'],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.FLOW_LIST,
+    description: 'List saved flows and published flows available as dynamic tools (for discovery).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        publishedOnly: {
+          type: 'boolean',
+          description: 'Only return published flows that are available as tools (default: false)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
+    description:
+      'Run a recorded flow by ID with optional variables and run options. Returns a standardized run result.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        flowId: { type: 'string', description: 'ID of the flow to run' },
+        args: {
+          type: 'object',
+          description: 'Variable values for the flow (flat object of key/value)',
+        },
+        tabTarget: {
+          type: 'string',
+          description: "Target tab: 'current' or 'new' (default: current)",
+          enum: ['current', 'new'],
+        },
+        refresh: { type: 'boolean', description: 'Refresh before running (default false)' },
+        captureNetwork: {
+          type: 'boolean',
+          description: 'Capture network snippets for debugging (default false)',
+        },
+        returnLogs: { type: 'boolean', description: 'Return run logs (default false)' },
+        timeoutMs: { type: 'number', description: 'Global timeout in ms (optional)' },
+        startUrl: { type: 'string', description: 'Optional start URL to open before running' },
+      },
+      required: ['flowId'],
+    },
+  },
   {
     name: TOOL_NAMES.BROWSER.PERFORMANCE_START_TRACE,
     description:

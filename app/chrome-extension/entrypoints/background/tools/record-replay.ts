@@ -1,6 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
-import { listPublished } from '../record-replay/flow-store';
 import { getFlow } from '../record-replay/flow-store';
 import { runFlow } from '../record-replay/flow-runner';
 
@@ -41,21 +40,4 @@ class FlowRunTool {
   }
 }
 
-class ListPublishedTool {
-  name = TOOL_NAMES.RECORD_REPLAY.LIST_PUBLISHED;
-  async execute(): Promise<ToolResult> {
-    const list = await listPublished();
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ success: true, published: list }),
-        },
-      ],
-      isError: false,
-    };
-  }
-}
-
 export const flowRunTool = new FlowRunTool();
-export const listPublishedFlowsTool = new ListPublishedTool();

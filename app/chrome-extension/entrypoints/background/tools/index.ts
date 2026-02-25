@@ -1,9 +1,19 @@
 import { createErrorResponse } from '@/common/tool-handler';
 import { ERROR_MESSAGES } from '@/common/constants';
 import * as browserTools from './browser';
-import { flowRunTool, listPublishedFlowsTool } from './record-replay';
+import { flowRunTool } from './record-replay';
+import { flowRecordStartTool, flowRecordStopTool, flowSaveTool, flowListTool } from './flow-learn';
+import { recordingSession } from '../record-replay/recording/session-manager';
+import { needsSupplementaryStep, maybeBuildSupplementaryStep } from './step-supplement';
 
-const tools = { ...browserTools, flowRunTool, listPublishedFlowsTool } as any;
+const tools = {
+  ...browserTools,
+  flowRunTool,
+  flowListTool,
+  flowRecordStartTool,
+  flowRecordStopTool,
+  flowSaveTool,
+} as any;
 const toolsMap = new Map(Object.values(tools).map((tool: any) => [tool.name, tool]));
 
 /**
@@ -24,7 +34,28 @@ export const handleCallTool = async (param: ToolCallParam) => {
   }
 
   try {
-    return await tool.execute(param.args);
+    const result = await tool.execute(param.args);
+
+    // Phase 2: Supplementary step injection for non-DOM tools.
+    // When a recording session is active and the tool bypasses DOM events,
+    // inject a supplementary step so the captured flow is complete.
+    if (
+      !result.isError &&
+      recordingSession.canAcceptSteps() &&
+      needsSupplementaryStep(param.name)
+    ) {
+      try {
+        const step = maybeBuildSupplementaryStep(param.name, param.args, result);
+        if (step) {
+          recordingSession.appendSteps([step]);
+        }
+      } catch (e) {
+        // Supplementary injection is best-effort — don't fail the tool call
+        console.warn('Supplementary step injection failed:', e);
+      }
+    }
+
+    return result;
   } catch (error) {
     console.error(`Tool execution failed for ${param.name}:`, error);
     return createErrorResponse(
