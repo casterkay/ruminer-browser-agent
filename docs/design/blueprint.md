@@ -143,9 +143,18 @@ All workflows normalize extracted content into a canonical raw item (before hash
 
 Notes on `source_kind`:
 
-- `authored`: user-authored content (messages to AI, social posts/comments, etc.). Primary signal for EMOS memory.
-- `bookmarked`: user-saved items (stars/likes/bookmarks). Secondary signal for EMOS memory.
-- `subscribed`: items from channels/accounts the user follows. Used for high-signal selection only.
+- `authored`: user-authored content. Primary signal for EMOS memory.
+  - Conversations on ChatGPT, Gemini, Claude, DeepSeek
+  - X/Twitter, Reddit, YouTube, Threads, Tiktok/Douyin, RedNote, Bilibili, Zhihu posts/comments
+  - Google Keep Notes, Apple Notes (in browser)
+- `bookmarked`: user-saved content. Secondary signal for EMOS memory.
+  - Browser bookmarks
+  - GitHub stars
+  - X/Twitter, Reddit, YouTube, Threads, Tiktok/Douyin, RedNote, Bilibili, Zhihu bookmarks/collections
+  - Readwise highlights & articles (https://readwise.io/everything)
+- `subscribed`: user-subscribed content stream. Digested into a single high-signal feed.
+  - X/Twitter, Reddit, YouTube, Threads, Tiktok/Douyin, RedNote, Bilibili, Zhihu subscriptions/follows
+  - (later) RSS feeds, newsletters
 
 ### 5.4 Idempotency Keys
 
