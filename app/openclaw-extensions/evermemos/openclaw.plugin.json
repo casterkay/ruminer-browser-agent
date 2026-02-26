@@ -1,0 +1,29 @@
+{
+  "id": "evermemos-sync",
+  "name": "EverMemOS Sync",
+  "version": "0.1.0",
+  "extensions": ["./index.ts"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["evermemosBaseUrl", "apiKey"],
+    "properties": {
+      "evermemosBaseUrl": { "type": "string" },
+      "apiKey": { "type": "string" },
+      "tenantId": { "type": "string" },
+      "spaceId": { "type": "string" },
+      "defaultUserId": { "type": "string" },
+      "groupMapping": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Map channelId/threadId to EverMemOS group_id"
+      },
+      "ingestGroupIdPrefix": { "type": "string", "default": "oc-" },
+      "backlogWarning": { "type": "integer", "default": 100 }
+    }
+  },
+  "uiHints": {
+    "apiKey": { "sensitive": true, "label": "EverMemOS API Key" },
+    "evermemosBaseUrl": { "label": "EverMemOS Base URL", "placeholder": "http://localhost:1995" }
+  }
+}

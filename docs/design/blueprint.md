@@ -2,7 +2,7 @@
 
 ## 1. Document Metadata
 
-- Version: `v0.4`
+- Version: `v0.5`
 - Status: `Draft for implementation`
 - Last updated: `2026-02-25`
 
@@ -45,56 +45,63 @@ Ruminer Browser Agent is a fork of `mcp-chrome` that turns the user’s everyday
 ### 4.1 System Diagram
 
 ```text
-+-------------------------------+          MCP (HTTP/SSE)           +------------------------------+
-| MCP-capable LLM client        | <-------------------------------> | Native Server (Node.js)      |
-| (Claude Code / Codex / etc.)  |                                   | mcp-chrome-bridge (MCP srv)  |
-| - author workflows            |                                   | - tool registry              |
-| - invoke tools                |                                   | - native messaging bridge    |
-| - chat                        |                                   +---------------+--------------+
-+---------------+---------------+                                                   |
-                |                                                                   | Chrome Native Messaging
-                |                                                                   v
-                |                                   +-------------------------------+------------------------------+
-                |                                   | Chrome Extension (Manifest V3)                               |
-                |                                   | - UI: in-page assistant / sidepanel / builder / options      |
-                |                                   | - Background SW: RR-V3 runtime + Ruminer services            |
-                |                                   | - Content scripts: DOM read/act + record/observe             |
-                |                                   | - Offscreen doc (optional): heavy compute / parsing          |
-                |                                   +-------------------------------+------------------------------+
-                |                                                                   |
-                |                                                                   | HTTPS (server-to-server style)
-                |                                                                   v
-                |                                   +-------------------------------+------------------------------+
-                +---------------------------------> | EverMemOS API (EMOS)                                         |
-                                                    | - /api/v1/memories (ingest)                                  |
-                                                    | - /api/v1/memories/search (retrieve)                         |
-                                                    | - /api/v3/agentic/* (optional, higher-level retrieval)       |
-                                                    +--------------------------------------------------------------+
+                                    MCP (Chrome tools)
++-------------------------------+ <======================> +------------------------------+
+|                               |                          | Native Server (Node.js)      |
+|  OpenClaw (LLM Orchestrator)  |                          | mcp-chrome-bridge (MCP srv)  |
+|  - heartbeat / cron scheduler |                          | - tool registry              |
+|  - workflow orchestration     |                          | - native messaging bridge    |
+|  - chat / agent responses     |                          +---------------+--------------+
+|  - digest report generation   |                                          |
+|  - EMOS plugin (built-in)     |                                          | Chrome Native Messaging
+|    - auto-ingest conversations |                                         v
+|    - addMemory / searchMemory |  +-------------------------------+------------------------------+
+|                               |  | Chrome Extension (Manifest V3)                               |
++-------------------------------+  | - UI: in-page assistant / sidepanel / builder / options      |
+                                   | - Background SW: RR-V3 runtime + Ruminer services            |
+                                   | - Content scripts: DOM read/act + record/observe             |
+                                   | - Offscreen doc (optional): heavy compute / parsing          |
+                                   +--------------------------------------------------------------+
 ```
+
+**Key architectural principle**: Chrome MCP is the **only MCP connection**. EverMemOS is integrated into OpenClaw via its **plugin system** (not MCP) — the plugin auto-ingests all OpenClaw conversations into EMOS and exposes `addMemory`/`searchMemory` as gateway methods callable by the agent. The Chrome extension does NOT call EMOS directly. OpenClaw orchestrates the pipeline — using Chrome MCP tools for browser automation and its built-in EMOS plugin for memory operations. This keeps concerns cleanly separated.
 
 ### 4.2 Responsibility Boundaries
 
-1. **Native host (`mcp-chrome-bridge`)**
-   - Presents an MCP server (HTTP/SSE) to external LLM clients, e.g. OpenClaw.
+1. **OpenClaw (LLM orchestrator)**
+   - Primary LLM client with MCP support. Connects to Chrome MCP (browser tools) as its only MCP connection.
+   - **EMOS plugin (built-in)**: auto-ingests all OpenClaw conversations into EMOS; exposes `evermemos.addMemory` and `evermemos.searchMemory` as gateway methods callable by the agent (same as tools). Persistent queue with retry for reliability.
+   - **Heartbeat/cron scheduler**: drives watch workflow runs and digest report generation on a configurable cadence.
+   - Orchestrates the ingestion pipeline: uses Chrome MCP to extract content from platforms, then uses its EMOS plugin (`addMemory`) to store it.
+   - Produces digest reports as an agent task over the joint collection of watched items + EMOS memory context (via `searchMemory`).
+   - Responds to user commands from the FAB and sidepanel.
+
+2. **Native host (`mcp-chrome-bridge`)**
+   - Presents a Chrome MCP server (HTTP/SSE) to OpenClaw.
    - Proxies tool calls to the extension via native messaging.
-   - (Optional) Holds local config and secrets if we choose not to store them in the extension.
+   - Holds local config (connection settings, debug flags).
 
-2. **Extension background service worker**
+3. **Extension background service worker**
    - Owns the **RR‑V3 runtime** (queue, leasing, triggers, crash recovery, event log).
-   - Owns Ruminer domain services:
-     - EverMemOS connector
+   - Owns Ruminer local services:
      - Ingestion normalization + idempotency ledger
-     - Digest generator (high-signal selection)
+     - Local storage of subscribed-source items and digest entries
    - Emits events to UI and to the MCP tool layer for observability.
+   - Does NOT call EMOS directly — EMOS integration is orchestrated by OpenClaw.
 
-3. **Content scripts**
+4. **Content scripts**
    - Perform DOM interaction and extraction.
    - Render in-page assistant UI (FAB + command bar) as a page overlay.
    - Capture recording events (until a V3-native recorder exists).
 
-4. **EverMemOS**
-   - Source-of-truth for long-term memory.
-   - Provides hybrid retrieval and (optionally) agentic retrieval to ground “high-signal” selection.
+5. **EverMemOS (via OpenClaw plugin)**
+   - Source-of-truth for long-term memory — the central memory system for all of a human's conversations with any AI chatbot (OpenClaw, ChatGPT, Gemini, etc.).
+   - Integrated into OpenClaw via the `evermemos-sync` plugin (not MCP). The plugin auto-ingests OpenClaw conversations and exposes `addMemory`/`searchMemory` as gateway methods.
+   - For non-OpenClaw content (ChatGPT, X/Twitter, etc.), OpenClaw calls `addMemory` after Chrome MCP extraction.
+
+6. **Modular degradation**
+   - Without EMOS plugin enabled in OpenClaw: FAB functions as a plain chat interface with OpenClaw (no memory suggestions); ingestion and watch workflows are disabled.
+   - Without OpenClaw: extension UI renders but no AI assistant or workflow orchestration is available.
 
 ### 4.3 Trust Boundaries and Capabilities (Recommended)
 
@@ -114,11 +121,15 @@ Ruminer should treat “who is asking the browser to do things” as a first-cla
 
 ### 5.1 Configuration
 
-EverMemOS requests require an API key:
+EverMemOS is integrated into OpenClaw via the `evermemos-sync` plugin. EMOS connection settings (base URL, API key, tenant/space IDs) are configured in **OpenClaw's plugin configuration** (`openclaw.plugin.json`), not in the Chrome extension or native host.
 
-- `X-API-Key` (or deployment-specific auth header)
+The plugin:
 
-Ruminer stores this in the **native host** (MVP), and never embeds it in workflow definitions.
+- Auto-ingests all OpenClaw conversations into EMOS (via `message_received` hook).
+- Exposes `evermemos.addMemory` and `evermemos.searchMemory` as gateway methods callable by the OpenClaw agent.
+- Includes a persistent queue with retry for reliability when EMOS is temporarily unreachable.
+
+The Chrome extension does not need EMOS credentials or any direct EMOS integration.
 
 ### 5.2 Ruminer Identity Conventions (Single-User Local)
 
@@ -291,14 +302,14 @@ Ruminer’s approach:
 
 ### 6.2 Ruminer Node Strategy
 
-RR‑V3 can execute nodes via a plugin registry (Zod-validated configs). Ruminer adds nodes like:
+RR‑V3 can execute nodes via a plugin registry (Zod-validated configs). Ruminer adds nodes for **browser-side** extraction and local bookkeeping:
 
 - `ruminer.extract_list` (scroll/paginate and return item links + minimal metadata)
 - `ruminer.extract_detail` (open an item and extract canonical raw item)
 - `ruminer.normalize_and_hash` (compute `event_id`, `content_hash`, validate required fields)
-- `ruminer.ledger_upsert` (idempotency ledger)
-- `ruminer.evermemos_ingest` (call EMOS `/api/v1/memories`)
-- `ruminer.digest_build` (select high-signal items and write digest entries)
+- `ruminer.ledger_upsert` (idempotency ledger — local)
+
+EMOS ingestion and search are **not** extension nodes — they are handled by OpenClaw via its built-in EMOS plugin (`evermemos.addMemory`, `evermemos.searchMemory` gateway methods) as part of its orchestration pipeline after Chrome MCP extraction completes.
 
 These nodes allow high reliability without requiring RR‑V3 graph loops.
 
@@ -323,16 +334,19 @@ Because MV3 service workers can restart mid-run, any “scroll/paginate over man
 
 ### 7.1 Ingestion Workflows (User Content)
 
-Goal: reliably ingest a user’s own content into EMOS.
+Goal: reliably ingest a user's own content into EMOS.
 
-Examples:
+**MVP platform packs** (first two):
 
-- ChatGPT: conversation list → conversation thread → messages.
-- Reddit: profile posts/comments.
+- **ChatGPT**: conversation list → conversation thread → messages (authored AI chat history).
+- **X/Twitter**: profile posts and bookmarks (authored + bookmarked social content).
+
+Additional platforms are added iteratively post-MVP.
 
 Characteristics:
 
-- Runs on demand (manual trigger) and optionally scheduled for backfill.
+- OpenClaw orchestrates: uses Chrome MCP to extract, EMOS plugin (`addMemory`) to ingest.
+- Runs on demand (user command via FAB/sidepanel) and optionally on OpenClaw's cron for backfill.
 - Prioritizes correctness, idempotency, and stable IDs.
 
 ### 7.2 Watch Workflows (Followed Sources)
@@ -341,10 +355,10 @@ Goal: periodically check subscribed channels/accounts/feeds, ingest only new ite
 
 Characteristics:
 
-- Scheduled triggers (interval/cron).
+- **Scheduling driven by OpenClaw's heartbeat/cron** — OpenClaw periodically invokes predefined watch workflows via Chrome MCP tools, one workflow per platform, checking each user-followed account for new posts.
 - Strict stop conditions and rate limits.
 - Uses persistent cursor vars to avoid rescanning entire history.
-- Stores subscribed-source items locally (for digesting and history) and uses EMOS only as personalization context (user’s `authored`/`bookmarked` memory), not as a store for subscribed content.
+- Stores subscribed-source items locally (for digesting and history) and uses EMOS only as personalization context (user's `authored`/`bookmarked` memory, queried via OpenClaw's EMOS plugin), not as a store for subscribed content.
 - Subscribed sources are discovered by the workflow itself (e.g., read “Subscriptions/Following” lists in YouTube/X/Reddit/Threads).
 - Watch workflows should run in an **isolated session mode** to reduce cross-site leakage and surprise side effects:
   - **Default (MVP)**: run in a new normal window in the current profile (reuses login), with strong capability gating and clear UI that automation is active.
@@ -353,17 +367,19 @@ Characteristics:
 
 ### 7.3 Digest Workflows (High Signal)
 
-Goal: produce “what matters” cards for the user.
+Goal: produce "what matters" cards for the user.
+
+**Trigger**: At the end of each OpenClaw watch cycle (after all platform watch workflows complete), OpenClaw selects high-signal content from the joint collection and produces a digest report. Users can also request a digest on demand via the FAB or sidepanel.
 
 Inputs:
 
-- Subscribed items since last digest.
-- User memory context from EMOS (primarily `authored`, secondarily `bookmarked`).
+- Subscribed items since last digest (collected by watch workflows, stored locally in extension).
+- User memory context from EMOS (primarily `authored`, secondarily `bookmarked`) — queried by OpenClaw via its EMOS plugin (`searchMemory`).
 
 Outputs:
 
-- `digest_entries[]` stored locally for fast UI rendering.
-- A periodic “digest report” generated by the same AI model the user chats with (after deterministic significance filtering).
+- `digest_entries[]` stored locally in the extension for fast UI rendering.
+- A digest report generated by OpenClaw's agent (after deterministic significance filtering).
 - Optional push notification.
 
 ## 8. High-Signal Digest Design
@@ -422,18 +438,22 @@ This is optional and should be feature-flagged.
 
 ### 8.3b Digest Report Generation (MVP)
 
-After significance filtering (and preference adjustments), Ruminer uses the same AI model the user chats with to:
+After significance filtering (and preference adjustments), **OpenClaw** produces the digest report as an agent task:
 
 1. aggregate key information into a digest report
-2. produce concise “why it matters” text with links to underlying items
+2. produce concise "why it matters" text with links to underlying items
 
-Ruminer should provide structured, citeable inputs to the model:
+The extension provides structured, citeable inputs to OpenClaw via Chrome MCP tools (e.g., `ruminer.digest.get_candidates`):
 
 - list of selected items (title/text snippet, canonical_url, source, timestamp, engagement proxy)
-- top matched EMOS memories for each item (IDs + short excerpts)
 - user prefs signals (mute/more/less like this)
 
-To stay local-first and backend-free, the “report generation” call should be initiated by the MCP-capable LLM client (or whichever model runtime the user is already using).
+OpenClaw enriches these with EMOS context by calling its EMOS plugin (`searchMemory`) to:
+
+- find top matched memories for each item (IDs + short excerpts)
+- ground "why it matters" explanations in the user's own knowledge base
+
+The report is then stored back in the extension via Chrome MCP tools for sidepanel rendering.
 
 ### 8.4 Feedback Loop (Recommended)
 
@@ -446,7 +466,7 @@ These preferences are stored locally and applied deterministically in scoring, s
 
 ## 9. UI/UX (Extension)
 
-Ruminer UI is in-page-first (FAB + command bar) while browsing, with a sidepanel for workflows and knowledge-base management.
+Ruminer UI is in-page-first (FAB + command bar) while browsing, with a sidepanel for workflows and knowledge-base management. The FAB and sidepanel serve as command interfaces to OpenClaw — users type commands or click actions, and OpenClaw orchestrates the response using Chrome MCP tools and its built-in EMOS plugin.
 
 ### 9.1 Surfaces
 
@@ -463,7 +483,8 @@ Ruminer UI is in-page-first (FAB + command bar) while browsing, with a sidepanel
    - RR‑V3 flow editor, trigger editor, variable editor
    - Run timeline (RR‑V3 events)
 4. **Options**
-   - EverMemOS settings (base URL + connection test; secrets live in native host)
+   - OpenClaw connection settings (base URL + connection test)
+   - EMOS plugin status (read-only; EMOS is configured in OpenClaw's plugin settings, not in the extension)
    - Permissions and safety toggles
    - Debug mode / logging level
 
@@ -473,8 +494,8 @@ Ruminer UI is in-page-first (FAB + command bar) while browsing, with a sidepanel
    - FAB expands into a single-line text input bar.
 2. **Text input**
    - Click input bar to focus and type.
-   - While typing, show a floating list of related EMOS memory items (debounced retrieval).
-   - Press Enter to submit the prompt to the assistant (and optionally include selected memories as citations/context).
+   - While typing, show a floating list of related EMOS memory items (debounced retrieval via OpenClaw → EMOS plugin `searchMemory`). If EMOS plugin is not enabled, the FAB functions as a plain chat interface with OpenClaw (no memory suggestions).
+   - Press Enter to submit the prompt to OpenClaw (and optionally include selected memories as citations/context).
 3. **Agent mode (permissioned)**
    - Default: read-only (assistant can extract/observe DOM for grounding).
    - When enabled by the user, the assistant may run arbitrary DOM mutations/actions on the current page.
@@ -502,7 +523,7 @@ Ruminer UI is in-page-first (FAB + command bar) while browsing, with a sidepanel
 
 ## 10. AI-Assisted Workflow Authoring
 
-The MCP-capable LLM client is the authoring assistant. It can:
+OpenClaw is the authoring assistant. It can:
 
 1. Start a recording session (capture actions).
 2. Ask the user to perform required login steps if needed.
@@ -532,7 +553,7 @@ The MCP-capable LLM client is the authoring assistant. It can:
 
 ### 10.2 MCP Tool Surface (Planned)
 
-In addition to existing browser tools, Ruminer should expose RR‑V3 management as MCP tools so an external LLM can author and operate workflows without manual UI steps:
+In addition to existing browser tools, Ruminer should expose RR‑V3 management as MCP tools so OpenClaw can author and operate workflows without manual UI steps:
 
 1. **Flows**
    - `rr_v3.flow.list`, `rr_v3.flow.get`, `rr_v3.flow.save`, `rr_v3.flow.delete`
@@ -542,8 +563,8 @@ In addition to existing browser tools, Ruminer should expose RR‑V3 management 
    - `rr_v3.run.enqueue`, `rr_v3.run.list`, `rr_v3.run.get`, `rr_v3.run.events`, `rr_v3.run.pause/resume/cancel`
 4. **Ruminer**
    - `ruminer.follow.add/remove/list`
-   - `ruminer.digest.list/get/mark_read`
-   - `ruminer.evermemos.test_connection`
+   - `ruminer.digest.list/get/get_candidates/mark_read`
+   - `ruminer.ledger.status/query`
 
 ## 11. Reliability and Drift Handling
 
@@ -575,7 +596,7 @@ When extraction fails repeatedly:
 
 1. capture screenshot + HTML snippet (bounded) + flow contract details (schema version + sentinels)
 2. surface a “needs repair” task in UI with a reproducible “open failing run” action
-3. allow the LLM client to open the failing page and patch the workflow
+3. allow OpenClaw to open the failing page and patch the workflow
 4. (recommended) store a small library of failing HTML snippets for extractor regression tests
 
 ## 12. Security, Privacy, and Permissions
@@ -584,7 +605,7 @@ When extraction fails repeatedly:
 2. **Minimal permissions**: request host permissions per platform pack; avoid `<all_urls>` unless required.
    - MVP exception: if the FAB is injected everywhere, this may require broad host access for content script injection; Ruminer must still keep **capabilities gated** (read-only by default) and make grants revocable per origin.
 3. **Secret handling**:
-   - store EMOS credentials in the native host
+   - EMOS credentials are configured in OpenClaw's plugin settings (not in the extension or native host)
    - do not embed secrets in flows
    - redact tokens/cookies in logs and UI exports
 4. **Safe automation**:
@@ -604,22 +625,22 @@ When extraction fails repeatedly:
 
 ## 13. Implementation Plan (Phased)
 
-### Phase 1 — RR‑V3 Foundation + EverMemOS Connector
+### Phase 1 — Foundation + First Platform Packs
 
 1. Fork `mcp-chrome` and rebrand UI copy/IA for Ruminer.
 2. Configure the extension button to open the Sidepanel (Workflows + Knowledge Base).
-3. Add the in-page assistant overlay (FAB + expandable command bar) with text input + live memory suggestions.
-4. Add Options UI for EverMemOS base URL, agent-mode safety toggles, and debug settings (keep secrets in native host).
-5. Implement Ruminer ingestion ledger + hashing utilities.
-6. Implement `ruminer.evermemos_ingest` and `ruminer.evermemos_search` services.
+3. Add the in-page assistant overlay (FAB + expandable command bar) with text input. Live memory suggestions require EMOS (via OpenClaw); without EMOS, FAB functions as a plain chat interface with OpenClaw.
+4. Add Options UI for OpenClaw connection settings, EMOS connection status (read-only), agent-mode safety toggles, and debug settings.
+5. Implement Ruminer ingestion ledger + hashing utilities (local to extension).
+6. Implement Ruminer MCP tools: `ruminer.ledger.*`, `ruminer.digest.*`, `ruminer.follow.*`.
 7. Implement flow contract artifacts + capability gating for runs (read-only by default).
-8. Build one end-to-end workflow pack (read-only) and run it via RR‑V3 using chunked iteration + checkpoints.
+8. Build two MVP platform packs: **ChatGPT conversations** and **X/Twitter posts + bookmarks**. Run end-to-end via RR‑V3 with OpenClaw orchestrating Chrome MCP (extraction) + EMOS plugin (`addMemory` for ingestion).
 
 ### Phase 2 — Watch + Digest
 
-1. Periodic watch workflows (interval/cron triggers) with cursors, using an explicit isolated session mode (default: new normal window; optional: Incognito; future: Ruminer Profile).
-2. Digest builder + digest inbox UI.
-3. Notifications and “mute” + “more/less like this” controls (stored locally).
+1. Watch workflows driven by OpenClaw's heartbeat/cron: one workflow per platform, checking each user-followed account for new posts. Isolated session mode (default: new normal window; optional: Incognito; future: Ruminer Profile).
+2. Digest pipeline: after all watch workflows complete, OpenClaw selects high-signal content from the joint collection, queries EMOS via its plugin (`searchMemory`) for relevance context, and produces a digest report stored in the extension for sidepanel rendering.
+3. Digest inbox UI + "mute" + "more/less like this" controls (preferences stored locally).
 
 ### Phase 3 — AI Authoring + Repair
 
@@ -630,12 +651,12 @@ When extraction fails repeatedly:
 
 ## 14. MVP Acceptance Criteria
 
-1. User can configure EverMemOS base URL in Options and verify connectivity (native host holds the API key).
-2. In-page assistant (FAB) supports text input, shows related memories while typing, and submits on Enter.
+1. User can configure OpenClaw connection in Options and verify connectivity. EMOS plugin status is shown as read-only (configured in OpenClaw's plugin settings).
+2. In-page assistant (FAB) supports text input and submits to OpenClaw on Enter. With EMOS plugin enabled, shows related memories while typing. Without EMOS plugin, functions as a plain chat interface.
 3. Sidepanel opens on extension button click and supports one-click workflow runs + knowledge base browsing/management.
-4. At least one ingestion workflow runs end-to-end and is idempotent (no duplicates on rerun).
-5. At least one watch workflow runs on a schedule and only ingests new items using a cursor, with a clearly communicated session mode.
-6. Digest inbox shows high-signal items with stable links and reasons grounded in memory search, and supports “mute” controls.
+4. ChatGPT and X/Twitter ingestion workflows run end-to-end via OpenClaw (Chrome MCP extraction + EMOS plugin `addMemory` ingestion) and are idempotent (no duplicates on rerun).
+5. Watch workflows run on OpenClaw's cron schedule per platform and only ingest new items using a cursor, with a clearly communicated session mode.
+6. Digest inbox shows high-signal items with stable links and reasons grounded in EMOS memory search via plugin (produced by OpenClaw), and supports "mute" controls.
 7. RR‑V3 run history and event timeline is visible in the UI for debugging.
 8. Sensitive automation and MCP-exposed actions are gated behind explicit capability grants and are revocable.
 
@@ -681,6 +702,7 @@ Implementation note:
 
 ## 16. Open Questions
 
-1. Digest report generation: what is the minimal “citeable input packet” contract between the extension and the user’s chat model to keep reports grounded and debuggable?
-2. Local retention policy: what are the defaults for subscribed-source item retention (days) and maximum on-disk storage, and how should the user control this?
+1. ~~Digest report generation~~: **Resolved** — OpenClaw produces the digest report. The extension exposes `ruminer.digest.get_candidates` via Chrome MCP; OpenClaw enriches with EMOS plugin (`searchMemory`) and generates the report.
+2. Local retention policy: what are the defaults for subscribed-source item retention (days) and maximum on-disk storage, and how should the user control this? (Assumption: 30 days for subscribed items, digest reports retained indefinitely, configurable in Options.)
 3. MCP authentication: what is the minimal user-friendly handshake that still prevents untrusted local clients from driving the browser?
+4. OpenClaw ↔ Extension communication: how does the FAB/sidepanel send user commands to OpenClaw and receive responses? (Via Chrome MCP message channel, or a separate protocol?)

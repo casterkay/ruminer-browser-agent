@@ -31,9 +31,8 @@ Every module, function, and type MUST be written to a production-grade
 standard from the first commit. "We'll clean it up later" is not
 acceptable.
 
-- All TypeScript code MUST compile with `strict: true` and zero
-  `@ts-ignore` or `any` escape hatches unless explicitly justified
-  in a code comment with a linked issue or technical rationale.
+- All TypeScript code MUST compile with `strict: true` unless explicitly
+  justified in a code comment with a linked issue or technical rationale.
 - Functions MUST have a single, clear responsibility. If a function
   requires more than one sentence to describe what it does, it MUST
   be decomposed.
