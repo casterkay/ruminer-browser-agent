@@ -1,0 +1,31 @@
+# ruminer-browser Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-02-27
+
+## Active Technologies
+- Browser local persistence (`chrome.storage.local`), IndexedDB (RR-V3 stores + ingestion ledger) (001-ruminer-browser-agent)
+
+- TypeScript (monorepo uses TypeScript `^5.8.3`), Node.js (for build tooling) + Vue 3, WXT (MV3 extension framework), TailwindCSS 4, Zod, pnpm workspaces (001-ruminer-browser-agent)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+npm test && npm run lint
+
+## Code Style
+
+TypeScript (monorepo uses TypeScript `^5.8.3`), Node.js (for build tooling): Follow standard conventions
+
+## Recent Changes
+- 001-ruminer-browser-agent: Added TypeScript (monorepo uses TypeScript `^5.8.3`), Node.js (for build tooling) + Vue 3, WXT (MV3 extension framework), TailwindCSS 4, Zod, pnpm workspaces
+
+- 001-ruminer-browser-agent: Added TypeScript (monorepo uses TypeScript `^5.8.3`), Node.js (for build tooling) + Vue 3, WXT (MV3 extension framework), TailwindCSS 4, Zod, pnpm workspaces
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
