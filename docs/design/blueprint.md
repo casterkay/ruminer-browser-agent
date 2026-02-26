@@ -96,7 +96,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 **Key architectural principles**:
 
-1. **One protocol: `browser.proxy`.** The Chrome extension connects to the OpenClaw Gateway via WebSocket as a **node** (role: `"node"`, caps: `["browser"]`). It implements a **superset** of OpenClaw's browser route dispatcher — standard routes (snapshot, act, navigate, tabs) are handled by OpenClaw's built-in `browser` tool; extension-specific routes (bookmarks, history, network, flows, ledger, element selection) are registered by a thin `browser-ext` plugin. All routes use the same `{ method, path, query, body }` protocol. No separate MCP server, Native Messaging, or MCP authentication.
+1. **One protocol: `browser.proxy`.** The Chrome extension connects to the OpenClaw Gateway via WebSocket as a **node** (role: `"node"`, caps: `["browser"]`). It implements a **superset** of OpenClaw's browser route dispatcher — standard routes (snapshot, act, navigate, tabs) are handled by OpenClaw's built-in `browser` tool; extension-specific routes (bookmarks, history, network, flows, ledger, element selection) are registered by a thin `browser-ext` plugin. All routes use the same `{ method, path, query, body }` protocol. No separate MCP server or Native Messaging.
 2. **Dual EMOS integration paths.** OpenClaw's `evermemos` plugin auto-ingests OpenClaw conversations and exposes `addMemory`/`searchMemory` to the agent. The Chrome extension has its own **direct EMOS client** for autonomous ingestion workflows (RR-V3 triggers extraction and writes to EMOS without OpenClaw involvement).
 3. **Extension owns tool group enforcement.** Both prompt-layer restriction (injected when the extension sends `chat.send` to OpenClaw) and runtime-layer rejection (dispatcher rejects disabled routes) live entirely in the extension. The `browser-ext` plugin has no knowledge of tool groups.
 
@@ -117,7 +117,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
    - **EMOS client (direct)**: calls the EverMemOS API directly for autonomous ingestion workflows. EMOS credentials are configured in the extension's Options page.
    - Owns the **RR-V3 runtime** (queue, leasing, triggers, crash recovery, event log).
    - Owns Ruminer local services: ingestion normalization + idempotency ledger.
-   - **Tool group enforcement (both layers)**: (1) prompt layer — when sending chat messages to OpenClaw, the extension prepends instructions listing disabled tools/actions; (2) runtime layer — the route dispatcher rejects `browser.proxy` requests for routes in disabled groups.
+   - **Tool group enforcement (both layers)**: (1) prompt layer — when sending chat messages to OpenClaw, the extension prepends instructions listing disabled tools; (2) runtime layer — the route dispatcher rejects `browser.proxy` requests for routes in disabled groups.
    - Emits events to UI for observability.
 
 3. **Content scripts**
@@ -142,7 +142,7 @@ Ruminer treats "who is asking the browser to do things" as a first-class concept
    - The extension connects to the OpenClaw Gateway via WebSocket (localhost). The Gateway authenticates the connection with a WS auth token. No separate MCP endpoint, no Native Messaging, no additional auth mechanism.
    - Tool calls arrive only via authenticated `node.invoke` from the Gateway.
 2. **Tool groups enforced at two layers — both in the extension**
-   - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools/actions. This tells the LLM not to call them.
+   - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools. This tells the LLM not to call them.
    - **Runtime layer (extension dispatcher)**: the `browser.proxy` route dispatcher rejects requests for routes in disabled groups. This is the hard enforcement — even if the LLM ignores the prompt restriction, the extension refuses.
    - The `browser-ext` plugin has no knowledge of tool groups. All enforcement logic is self-contained in the extension.
 3. **Flows are executable code**
@@ -401,18 +401,18 @@ The main UI of the Ruminer extension is a sidepanel, which serves as the single 
 
 Browser tools are divided into groups by side-effect level. Users can toggle entire groups on/off from the sidepanel chat UI. This replaces the binary "readonly mode vs agent mode" with more granular control.
 
-| Group        | Side Effects                      | Tools                                                                                                                                                                                                                           | Default |
-| ------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **Observe**  | None (read-only)                  | `get_windows_and_tabs`, `chrome_read_page`, `chrome_get_web_content`, `chrome_screenshot`, `chrome_computer` (screenshot/zoom), `chrome_history`, `chrome_bookmark_search`, `chrome_console`, `chrome_get_interactive_elements` | On      |
-| **Navigate** | Changes active page/tab           | `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`                                                                                                                                                                     | On      |
-| **Interact** | DOM manipulation                  | `chrome_click_element`, `chrome_fill_or_select`, `chrome_keyboard`, `chrome_computer` (click/type/drag/scroll), `chrome_handle_dialog`, `chrome_request_element_selection`                                                      | Off     |
-| **Execute**  | Code execution, network, file I/O | `chrome_javascript`, `chrome_network_request`, `chrome_network_capture`, `chrome_upload_file`, `chrome_handle_download`                                                                                                         | Off     |
-| **Workflow** | Record and replay                 | `flow_record_start`, `flow_record_stop`, `flow_save`, `flow_list`, `flow_run`                                                                                                                                                   | On      |
+| Group        | Side Effects                      | Tools                                                                                                                       | Default |
+| ------------ | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **Observe**  | None (read-only)                  | snapshots, screenshots, tab listing, console read, interactive element listing, history read, bookmarks read/search, ledger | On      |
+| **Navigate** | Changes active page/tab           | navigation, open/switch/close tabs                                                                                          | On      |
+| **Interact** | DOM manipulation                  | click/type/scroll, dialogs, element selection                                                                               | Off     |
+| **Execute**  | Code execution, network, file I/O | cookie-enabled network requests, file upload (and other file I/O as needed)                                                 | Off     |
+| **Workflow** | Record and replay                 | RR-V3 flow/trigger/run management, run queue controls                                                                       | On      |
 
 Notes:
 
 - When a tool group is disabled, two enforcement layers activate (both in the extension):
-  1. **Prompt layer**: when the extension sends a chat message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools/actions. The LLM sees these restrictions as part of the conversation context.
+  1. **Prompt layer**: when the extension sends a chat message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools. The LLM sees these restrictions as part of the conversation context.
   2. **Runtime layer**: the extension's `browser.proxy` route dispatcher rejects requests for routes in disabled groups, returning an error to the agent.
 - The `browser-ext` plugin has no knowledge of tool groups. All enforcement is self-contained in the extension — no callback or sync needed.
 - Ingestion workflows may temporarily require **Interact** and **Navigate** groups to function. The workflow runner can request elevation, and the user approves from the sidepanel.
@@ -507,8 +507,16 @@ OpenClaw's built-in `browser` tool covers standard automation (snapshot, act, na
    - `rr_v3.trigger.list`, `rr_v3.trigger.get`, `rr_v3.trigger.create`, `rr_v3.trigger.update`, `rr_v3.trigger.enable/disable`, `rr_v3.trigger.delete`, `rr_v3.trigger.fire`
 3. **Runs**
    - `rr_v3.run.enqueue`, `rr_v3.run.list`, `rr_v3.run.get`, `rr_v3.run.events`, `rr_v3.run.pause/resume/cancel`
-4. **Ruminer**
-   - `ruminer.ledger.status/query`
+4. **Bookmarks**
+   - `bookmarks.list`, `bookmarks.get`, `bookmarks.search`, `bookmarks.create`, `bookmarks.update`, `bookmarks.delete`
+5. **History**
+   - `history.search`
+6. **Network**
+   - `network.request` (supports cookies from the active browser profile when allowed by permissions/tool groups)
+7. **Element selection**
+   - `element_selection.request` (interactive picker), `element_selection.resolve` (return stable selector candidates)
+8. **Ruminer**
+   - `ruminer.ledger.status`, `ruminer.ledger.query`
 
 ## 10. Reliability and Drift Handling
 
@@ -598,9 +606,10 @@ When extraction fails repeatedly:
 3. Sidepanel opens on extension button click with Chat, Memory, and Workflows tabs.
 4. Chat tab supports live EMOS search while typing (in empty state), transitions to chat mode on Enter, and shows inline tool call results. Chat messages are ingested into EMOS via OpenClaw's `evermemos` plugin.
 5. Tool group toggles are accessible in the chat UI. Disabled groups are enforced at both prompt level (extension injects restriction prompt into `chat.send`) and runtime level (extension route dispatcher rejects disabled routes).
-6. ChatGPT ingestion workflow runs end-to-end autonomously (extension extracts via Chrome APIs, writes to EMOS via direct API) and is idempotent (no duplicates on rerun).
-7. RR-V3 run history and event timeline is visible in the Workflows tab for debugging.
-8. Tool groups default to safe settings (Observe + Navigate on, Interact + Execute off). Workflows can request elevation with user approval.
+6. `browser-ext` tool supports extension-specific tools needed for workflows and debugging (at minimum: RR-V3 workflows, bookmarks search, history search, element selection) and they are properly gated by tool groups.
+7. ChatGPT ingestion workflow runs end-to-end autonomously (extension extracts via Chrome APIs, writes to EMOS via direct API) and is idempotent (no duplicates on rerun).
+8. RR-V3 run history and event timeline is visible in the Workflows tab for debugging.
+9. Tool groups default to safe settings (Observe + Navigate on, Interact + Execute off). Workflows can request elevation with user approval.
 
 ## 14. Future Features
 
@@ -613,7 +622,4 @@ When extraction fails repeatedly:
 
 ## 15. Open Questions
 
-1. ~~**MCP authentication**~~: **Resolved.** No MCP server exists. The extension authenticates to the Gateway via WS auth token. No additional auth mechanism needed.
-2. ~~**OpenClaw <-> Extension communication**~~: **Resolved.** The extension connects to the OpenClaw Gateway via WebSocket as a node (`role: "node"`). Tool calls arrive via `node.invoke`; chat flows via `chat.*` methods. No separate protocol needed.
-3. **Tool group granularity**: is the five-group division (Observe/Navigate/Interact/Execute/Workflow) the right granularity, or should some groups be split/merged?
-4. **EMOS credential sync**: should the extension auto-discover EMOS credentials from the OpenClaw Gateway (if the `evermemos` plugin is loaded), or always require separate manual configuration in the extension Options?
+1. **EMOS credential sync**: should the extension auto-discover EMOS credentials from the OpenClaw Gateway (if the `evermemos` plugin is loaded), or always require separate manual configuration in the extension Options?
