@@ -4,11 +4,11 @@
 **Created**: 2026-02-25
 **Updated**: 2026-02-26
 **Status**: Draft
-**Input**: Blueprint v0.6 — Transform Chrome MCP Server into a unified AI
-chat history collector that integrates conversations from ChatGPT,
-Gemini, Claude, and DeepSeek into EverMemOS. Sidepanel-only UI with
-chat, memory browser, and workflow manager. Chrome MCP is the only MCP
-connection; EMOS is integrated into OpenClaw via its plugin system.
+**Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
+that connects to OpenClaw via the local Gateway WebSocket, runs RR-V3
+ingestion workflows, enforces tool groups, and ingests AI chat history
+(ChatGPT, Gemini, Claude, DeepSeek) into EverMemOS via both OpenClaw and
+direct extension integration.
 
 ## Clarifications
 
@@ -21,12 +21,14 @@ connection; EMOS is integrated into OpenClaw via its plugin system.
   chat functions as a plain chat interface with OpenClaw (no memory
   search). Ingestion workflows require EMOS and are disabled without
   it. System is modular — components degrade gracefully.
-- Q: What is the separation of concerns between OpenClaw, Chrome MCP,
-  and EMOS? → A: OpenClaw is the LLM orchestrator connecting to Chrome
-  MCP (browser automation, the only MCP connection) with EMOS
-  integrated as a built-in OpenClaw plugin (not MCP). The EMOS plugin
-  auto-ingests OpenClaw conversations and exposes addMemory/searchMemory
-  as gateway methods. The extension does NOT call EMOS directly.
+- Q: What is the separation of concerns between OpenClaw, the
+  extension, and EMOS? → A: OpenClaw is the LLM orchestrator and tool
+  runtime. The extension connects to the OpenClaw Gateway (localhost
+  WebSocket) as a node and implements browser automation + ingestion
+  workflows. EMOS is integrated in two paths: OpenClaw's `evermemos`
+  plugin (memory search + auto-ingest OpenClaw chats) and the
+  extension's direct EMOS client (autonomous ingestion workflows).
+  There is no separate MCP server or native host component.
 
 ### Session 2026-02-26
 
@@ -39,9 +41,10 @@ connection; EMOS is integrated into OpenClaw via its plugin system.
   from scope. Only AI chat platforms (ChatGPT, Gemini, Claude,
   DeepSeek) for MVP.
 - Q: How does "agent mode" vs "readonly mode" work? → A: Replaced by
-  tool groups. MCP tools are divided into five groups by side-effect
-  level (Observe, Navigate, Interact, Execute, Workflow). Users toggle
-  groups on/off from the sidepanel. No binary mode switch.
+  tool groups. Browser capabilities are divided into five groups by
+  side-effect level (Observe, Navigate, Interact, Execute, Workflow).
+  Users toggle groups on/off from the sidepanel. Disabled groups are
+  enforced by the extension (prompt restriction + runtime rejection).
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -67,7 +70,7 @@ workspace.
 **Independent Test**: Open the sidepanel, type a query, see memory
 search results appear, press Enter, see chat messages with tool call
 results inline. Toggle tool groups and verify the agent's available
-tools change.
+capabilities are restricted immediately.
 
 **Acceptance Scenarios**:
 
@@ -96,8 +99,10 @@ tools change.
 
 6. **Given** tool group toggles are visible in the chat header,
    **When** the user disables a tool group (e.g., Interact), **Then**
-   the corresponding tools are immediately removed from the MCP tool
-   registry and OpenClaw can no longer invoke them.
+   the extension updates its enforcement table immediately, the next
+   message sent to OpenClaw includes the updated restriction prompt,
+   and attempts to use disabled capabilities fail with a clear
+   "disabled by tool group" error.
 
 7. **Given** the user is in chat mode, **When** they click "New chat",
    **Then** the panel returns to empty state / search mode.
@@ -110,31 +115,32 @@ A user wants to collect their AI chat conversations from platforms
 (ChatGPT, Gemini, Claude, DeepSeek) into their personal knowledge base
 (EverMemOS). The user opens the sidepanel Workflows tab and clicks
 "Run" on a pre-built ingestion workflow for their target platform.
-OpenClaw orchestrates the pipeline: using Chrome MCP tools to navigate
-to the platform and extract conversations, then using its EMOS plugin
-(`addMemory`) to ingest normalized messages. The extension handles
-extraction, normalization, hashing, and local ledger bookkeeping.
-OpenClaw handles EMOS ingestion. The user can see progress and stop the
-workflow at any time. Re-running the same workflow is always safe — no
-duplicates are created.
+Ruminer runs the pipeline locally using RR-V3: the extension navigates
+to the platform and extracts conversations, normalizes and hashes
+messages, checks the local ingestion ledger, and ingests items into
+EMOS via its direct EMOS client. OpenClaw is not required for ingestion
+runs, but can be used for agent-driven ingestion and workflow
+authoring/repair. The user can see progress and stop the workflow at
+any time. Re-running the same workflow is always safe — no duplicates
+are created.
 
 **Why this priority**: Ingestion is the foundational data pipeline.
 Without content flowing into EverMemOS, the memory-grounded chat
 (Story 1 search suggestions) has no data to work with. This is the
 core "AI chat history collector" value proposition.
 
-**Independent Test**: Verify OpenClaw + EMOS connectivity in Options,
-run the ChatGPT ingestion workflow from the sidepanel, verify items
-appear in the Memory tab, re-run the workflow, and confirm no
-duplicates are created.
+**Independent Test**: Verify OpenClaw Gateway connectivity (for chat)
+and EMOS connectivity (for ingestion) in Options, run the ChatGPT
+ingestion workflow from the sidepanel, verify items appear in the
+Memory tab, re-run the workflow, and confirm no duplicates are
+created.
 
 **Acceptance Scenarios**:
 
 1. **Given** the user opens the Options page, **When** they verify the
-   OpenClaw connection and check EMOS status (read-only, configured in
-   OpenClaw), **Then** the system reports connectivity status for both
-   services with clear error messages and suggested next steps if
-   either is unreachable.
+   OpenClaw Gateway connection and EMOS connection, **Then** the system
+   reports connectivity status for both services with clear error
+   messages and suggested next steps if either is unreachable.
 
 2. **Given** OpenClaw and EMOS are connected, **When** the user opens
    the sidepanel Workflows tab and clicks "Run" on an ingestion
@@ -244,7 +250,7 @@ and inspect the event timeline for a completed or failed run.
 
 A power user or developer wants to create new workflows for AI
 platforms not yet supported, or customize existing ones. Using OpenClaw
-(or another MCP-capable AI client), they start a recording session
+(or another OpenClaw Gateway client), they start a recording session
 that captures browser actions. OpenClaw then converts the recording
 into a reusable workflow: replacing brittle selectors with stable
 alternatives, parameterizing user handles, adding extraction schemas
@@ -256,16 +262,16 @@ details, allowing OpenClaw to diagnose and patch the workflow.
 **Why this priority**: AI authoring and drift repair are power-user
 features that expand Ruminer's platform coverage over time.
 
-**Independent Test**: Initiate a recording session via MCP tools,
+**Independent Test**: Initiate a recording session via browser tools,
 capture a simple browser action sequence, ask the AI to convert it into
 a flow, run the flow, and verify it executes the recorded actions.
 
 **Acceptance Scenarios**:
 
-1. **Given** an MCP-capable AI client is connected, **When** it calls
-   the flow management MCP tools (list, get, save, delete), **Then**
-   the tools respond with the correct flow data following existing MCP
-   tool patterns.
+1. **Given** OpenClaw (or another Gateway client) is connected,
+   **When** it calls the flow management APIs (list, get, save,
+   delete), **Then** the tools respond with the correct flow data
+   following existing tool patterns.
 
 2. **Given** the user initiates a recording session, **When** they
    perform browser actions (click, type, navigate), **Then** the
@@ -304,11 +310,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   the ingestion ledger + cursor ensure no items are duplicated or
   skipped upon resumption.
 
-- What happens when the EMOS plugin is not enabled in OpenClaw? The
-  sidepanel chat functions as a plain chat interface with OpenClaw —
-  full chat and browser automation capability, but no memory search.
-  Ingestion workflows are disabled and their "Run" buttons show a
-  message directing the user to enable the EMOS plugin.
+- What happens when OpenClaw is connected but the EMOS plugin is not
+  enabled? The sidepanel chat functions as a plain chat interface with
+  OpenClaw — full chat and browser automation capability, but no memory
+  search and no automatic chat ingestion into EMOS. Ingestion workflows
+  remain available as long as EMOS is configured in the extension.
 
 - What happens when the user has EMOS configured but no memories yet?
   The chat input functions normally but shows no memory search results.
@@ -338,17 +344,19 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **Tool Groups**
 
-- **FR-006**: MCP browser tools MUST be divided into groups by
+- **FR-006**: Browser capabilities MUST be divided into groups by
   side-effect level: Observe (read-only), Navigate (page/tab changes),
   Interact (DOM manipulation), Execute (code/network/file I/O),
   Workflow (record/replay).
 - **FR-007**: Users MUST be able to toggle tool groups on/off from the
-  sidepanel chat header. When a group is disabled, its tools MUST NOT
-  be advertised to the MCP client.
+  sidepanel chat header. When a group is disabled, the extension MUST
+  prevent the agent from successfully executing capabilities in that
+  group (prompt restriction + runtime rejection).
 - **FR-008**: Tool group defaults MUST be safe: Observe and Navigate on,
   Interact and Execute off, Workflow on.
-- **FR-009**: Tool group state MUST be persisted locally and synced to
-  the MCP tool registry on change.
+- **FR-009**: Tool group state MUST be persisted locally and applied
+  immediately to both the restriction prompt sent to OpenClaw and the
+  runtime enforcement table.
 
 **Sidepanel Memory & Workflows**
 
@@ -364,12 +372,14 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **EverMemOS Integration**
 
-- **FR-014**: System MUST allow configuring the OpenClaw connection in
-  the Options page with a connection test. EMOS plugin status MUST be
-  displayed as read-only. Both statuses MUST report clear errors with
-  suggested next steps when unreachable.
-- **FR-015**: EMOS credentials are managed by the OpenClaw EMOS plugin.
-  The extension MUST NOT store or transmit EMOS secrets.
+- **FR-014**: System MUST allow configuring the OpenClaw Gateway
+  connection and an EMOS connection in the Options page, with
+  connection tests and clear error messages.
+- **FR-015**: System MUST support two EMOS integration paths:
+  OpenClaw's `evermemos` plugin (memory search + auto-ingest OpenClaw
+  chats) and the extension's direct EMOS client (autonomous ingestion
+  workflows). The extension MUST store its EMOS credentials locally and
+  MUST NOT transmit them to OpenClaw.
 - **FR-016**: System MUST normalize extracted chat messages into the
   canonical raw item schema (source, content_type, account_id,
   conversation_id, role, timestamp, content_text, model_id,
@@ -381,12 +391,13 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-018**: System MUST maintain a local ingestion ledger keyed by
   event_id that tracks ingestion status, content hashes, and timestamps
   to prevent duplicate ingestion.
-- **FR-019**: The extension MUST expose normalized canonical raw items
-  via Chrome MCP tools so that OpenClaw can map them to EverMemOS
-  messages using the identity conventions (sender = "me" for user
-  messages, sender = "{platform}:{model_id}" for AI replies,
-  group_id = "{platform}:{conversation_id}") and ingest via its
-  EMOS plugin (`addMemory`). The extension does NOT call EMOS directly.
+- **FR-019**: The extension MUST be able to ingest canonical items into
+  EMOS directly (autonomous ingestion workflows). For agent-driven
+  ingestion, the extension MUST be able to return canonical raw items
+  to OpenClaw so it can ingest via its EMOS integration using the
+  identity conventions (sender = "me" for user messages, sender =
+  "{platform}:{model_id}" for AI replies, group_id =
+  "{platform}:{conversation_id}").
 
 **Workflow Execution**
 
@@ -405,9 +416,8 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **AI Authoring & Drift Repair**
 
-- **FR-024**: System MUST expose RR-V3 management as MCP tools
-  (flow/trigger/run CRUD) so external AI clients can author and operate
-  workflows programmatically.
+- **FR-024**: System MUST expose RR-V3 management APIs (flow/trigger/run
+  CRUD) so OpenClaw can author and operate workflows programmatically.
 - **FR-025**: When extraction fails repeatedly, system MUST capture a
   bounded screenshot and HTML snippet, surface a "needs repair"
   notification with flow contract details, and provide a reproducible
@@ -415,8 +425,9 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **Security & Privacy**
 
-- **FR-026**: MCP server MUST bind to localhost only. Tool group
-  toggles MUST enforce which tools are available to the MCP client.
+- **FR-026**: OpenClaw Gateway access MUST be localhost-only (no LAN
+  exposure). The extension MUST connect via authenticated WebSocket.
+  Tool group toggles MUST enforce which capabilities can be executed.
 - **FR-027**: Host permissions MUST be limited to AI chat platform
   domains (ChatGPT, Gemini, Claude, DeepSeek). No `<all_urls>` needed.
 - **FR-028**: Flow version/hash MUST be displayed for every run.
@@ -424,13 +435,14 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **Modular Degradation**
 
-- **FR-029**: Without the EMOS plugin enabled in OpenClaw, the
+- **FR-029**: Without OpenClaw's EMOS integration available, the
   sidepanel chat MUST function as a plain chat interface (no memory
-  search). Ingestion workflows MUST be disabled with a clear message
-  directing the user to enable the EMOS plugin.
+  search and no automatic chat ingestion). Without EMOS configured in
+  the extension Options, ingestion workflows MUST be disabled with a
+  clear message directing the user to configure EMOS.
 - **FR-030**: Without OpenClaw connected, the extension UI MUST render
-  but clearly indicate that no AI assistant or workflow orchestration
-  is available.
+  but clearly indicate that chat/agent features are unavailable.
+  Ingestion workflows remain available as long as EMOS is configured.
 
 ### Key Entities
 
@@ -457,9 +469,9 @@ a flow, run the flow, and verify it executes the recorded actions.
   flow ID, flow version hash, status, start time, end time, event log,
   cursor state.
 
-- **Tool Group**: A named set of MCP tools grouped by side-effect
-  level. Attributes: group name, tools list, enabled state, default
-  state.
+- **Tool Group**: A named set of browser capabilities grouped by
+  side-effect level. Attributes: group name, capability list, enabled
+  state, default state.
 
 ## Success Criteria _(mandatory)_
 
@@ -468,15 +480,15 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **SC-001**: Users can type in the sidepanel chat and see related
   memory search results within 500ms of typing on 90% of attempts.
 - **SC-002**: Users can complete first-time setup (verify OpenClaw
-  connection, confirm EMOS status) in under 2 minutes.
+  Gateway connection and EMOS connection) in under 2 minutes.
 - **SC-003**: An ingestion workflow for one platform runs end-to-end
   and delivers all extracted items to EverMemOS with zero duplicates on
   three consecutive re-runs.
 - **SC-004**: Users can stop any running workflow within 2 seconds of
   clicking stop/cancel.
-- **SC-005**: Toggling a tool group immediately updates the MCP tool
-  registry (verified by listing available tools before and after
-  toggle).
+- **SC-005**: Toggling a tool group immediately changes effective
+  permissions (verified by a newly-disallowed action being rejected
+  after a toggle).
 - **SC-006**: A flow authored via AI recording completes 5 consecutive
   successful test runs against the target platform before being marked
   stable.
@@ -486,18 +498,18 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 ### Assumptions
 
-- **OpenClaw** is the primary LLM orchestrator. Chrome MCP is the
-  only MCP connection (browser tools). EMOS is integrated into
-  OpenClaw via its plugin system (`evermemos`), not MCP.
+- **OpenClaw** is the primary LLM orchestrator. The extension connects
+  to the OpenClaw Gateway via localhost WebSocket and exposes browser
+  capabilities to OpenClaw.
 - **EverMemOS** is the central memory system for all of a human's
   conversations with any AI chatbot (OpenClaw, ChatGPT, Gemini, etc.).
-  Configured in OpenClaw's plugin settings. The extension does not
-  manage EMOS credentials or deployment. EMOS plugin is optional —
-  the system degrades gracefully without it (chat works as plain
-  interface; ingestion disabled).
+  Configured in two places: OpenClaw's `evermemos` plugin (memory
+  search + auto-ingest OpenClaw chats) and the extension Options
+  (autonomous ingestion workflows). The system degrades gracefully when
+  one path is unavailable.
 - The user's Chrome browser is running and the extension is installed
   with appropriate host permissions for AI chat platform domains.
-- The Chrome MCP server binds to localhost only; no LAN or remote
-  access is supported for MVP.
-- Four MVP platform packs ship: **ChatGPT**, **Gemini**, **Claude**,
-  and **DeepSeek**. Additional platforms are added iteratively.
+- The OpenClaw Gateway binds to localhost only; no LAN or remote access
+  is supported for MVP.
+- MVP platform packs ship iteratively: **ChatGPT** first, then
+  **Gemini**, **Claude**, and **DeepSeek**.

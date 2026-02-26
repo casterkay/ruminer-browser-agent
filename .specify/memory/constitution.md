@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
 ===================
-Version change: N/A → 1.0.0 (initial ratification)
-Modified principles: N/A (first version)
+Version change: 1.0.0 → 1.0.1 (terminology alignment for v0.8 architecture)
+Modified principles: I, II, III, VI (remove MCP/native host references)
 Added sections:
   - Core Principles (6): Code Quality, Pattern Consistency,
     Best Practices, User Experience, Visual Aesthetics,
@@ -41,9 +41,10 @@ acceptable.
 - Error handling MUST be explicit: never swallow exceptions silently.
   Errors MUST be logged with sufficient context (operation, entity ID,
   relevant state) or propagated to a caller that will handle them.
-- All public API surfaces (exported functions, MCP tools, message
-  handlers) MUST have TypeScript types that fully describe inputs and
-  outputs. Prefer discriminated unions over loose string types.
+- All public API surfaces (exported functions, OpenClaw tools, route
+  handlers, message handlers) MUST have TypeScript types that fully
+  describe inputs and outputs. Prefer discriminated unions over loose
+  string types.
 
 ### II. Pattern Consistency
 
@@ -52,8 +53,8 @@ category of concern. When a pattern exists, new code MUST conform
 to it rather than inventing alternatives.
 
 - Message passing between extension layers (background SW, content
-  scripts, popup/sidepanel, native host) MUST use the project's
-  established message protocol and type-safe message definitions.
+  scripts, popup/sidepanel) MUST use the project's established message
+  protocol and type-safe message definitions.
 - State management within each package MUST follow the same approach
   used by existing modules in that package. Do not mix paradigms
   (e.g., raw `chrome.storage` calls alongside a state abstraction).
@@ -61,12 +62,10 @@ to it rather than inventing alternatives.
   established in the monorepo: kebab-case for files, PascalCase for
   React/UI components, barrel exports where the package already uses
   them.
-- New MCP tools MUST follow the registration, validation, and
-  response patterns of existing tools. Copy the structure of a
-  working tool as a starting point.
-- Shared types and constants MUST live in the `chrome-mcp-shared`
-  package. Duplication of type definitions across packages is
-  prohibited.
+- New tools and routes (OpenClaw plugin tools, Gateway methods, and
+  `browser.proxy` routes) MUST follow the registration, validation, and
+  response patterns of existing implementations. Copy the structure of
+  a working one as a starting point.
 
 ### III. Best Practices
 
@@ -76,10 +75,9 @@ TypeScript, Chrome Extension MV3, and Node.js server development.
 - Dependencies MUST be added intentionally. Every new dependency
   requires a stated reason. Prefer platform APIs and existing
   dependencies over adding new packages for marginal convenience.
-- Security boundaries MUST be respected: content scripts are
-  untrusted contexts; the background service worker and native
-  host are trusted contexts. Data crossing these boundaries MUST
-  be validated and sanitized.
+- Security boundaries MUST be respected: content scripts are untrusted
+  contexts; the background service worker is a trusted context. Data
+  crossing these boundaries MUST be validated and sanitized.
 - Chrome MV3 service worker lifecycle constraints MUST be respected:
   no assumption of persistent background state, proper use of alarms
   and events for long-running operations, correct handling of
@@ -88,7 +86,8 @@ TypeScript, Chrome Extension MV3, and Node.js server development.
   Avoid raw `.then()` chains except where composing parallel
   operations with `Promise.all` / `Promise.allSettled`.
 - Configuration and secrets MUST never be hardcoded. Use environment
-  variables, Chrome storage APIs, or the native host config layer.
+  variables/config files (OpenClaw plugins) and Chrome storage APIs
+  (extension options).
 
 ### IV. User Experience
 
@@ -143,9 +142,9 @@ discipline alone.
   as enforced by the project's commitlint configuration.
 - Each package in the monorepo MUST build independently. Circular
   dependencies between packages are prohibited.
-- Breaking changes to MCP tool interfaces, message protocols, or
-  shared types MUST be documented in the PR description with a
-  migration path.
+- Breaking changes to tool interfaces, route protocols, message
+  protocols, or shared types MUST be documented in the PR description
+  with a migration path.
 - Build artifacts MUST be reproducible: given the same source and
   lockfile, the output MUST be identical. Do not rely on ambient
   system state.

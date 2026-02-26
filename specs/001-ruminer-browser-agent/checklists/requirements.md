@@ -34,11 +34,13 @@ proceeding to planning
 ## Notes
 
 - All items pass. Spec is ready for `/speckit.plan`.
-- Clarification session (2026-02-25) resolved 4 questions:
-  - Digest generation trigger -> OpenClaw heartbeat/cron
-  - MVP platform packs -> ChatGPT + X/Twitter
-  - Behavior without EMOS -> modular degradation (FAB as plain chat)
-  - Separation of concerns -> OpenClaw (Chrome MCP + EMOS plugin) / extension / EMOS
+- Clarification session (2026-02-25) resolved 3 questions:
+  - MVP platform packs -> ChatGPT first, then Gemini/Claude/DeepSeek
+  - Behavior without EMOS -> modular degradation (chat works; memory search
+    and ingestion disabled)
+  - Separation of concerns -> OpenClaw (chat + tool runtime) / extension
+    (browser automation + workflows) / EMOS, with dual EMOS integration
+    (OpenClaw plugin + extension direct)
 - Scope reduction (2026-02-26):
   - Removed FAB (floating action button) -> sidepanel-only UI
   - Removed watch workflows and digest/feed features
@@ -46,4 +48,4 @@ proceeding to planning
   - Removed source_kind distinctions -> all content is AI chat history
   - MVP platforms: ChatGPT, Gemini, Claude, DeepSeek (AI chat only)
   - Replaced binary agent mode with tool group toggles (5 groups by side-effect level)
-- Blueprint updated to v0.6 in sync with spec updates.
+- Blueprint updated to v0.8 in sync with spec updates.
