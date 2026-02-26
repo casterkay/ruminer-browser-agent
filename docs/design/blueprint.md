@@ -134,7 +134,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
    - Without EMOS credentials in the extension: sidepanel chat works (via OpenClaw), but autonomous ingestion workflows cannot write to EMOS.
    - Without both: extension UI renders but clearly indicates no AI assistant or memory system is available.
 
-### 4.3 Trust Boundaries and Capabilities
+### 4.3 Trust Boundaries and Tools
 
 Ruminer treats "who is asking the browser to do things" as a first-class concept:
 
@@ -147,11 +147,11 @@ Ruminer treats "who is asking the browser to do things" as a first-class concept
    - The `browser-ext` plugin has no knowledge of tool groups. All enforcement logic is self-contained in the extension.
 3. **Flows are executable code**
    - A saved flow is an executable artifact; runs must always show the exact flow version/hash that was executed.
-   - Flow permissions/capabilities should be declared and enforced at runtime.
+   - Flow permissions/tools should be declared and enforced at runtime.
 4. **Tool groups as capability boundaries**
    - Tools are divided into groups by side-effect level (see §8.2).
    - Users can enable/disable entire groups from the sidepanel.
-   - Host permissions and runtime capabilities should align (progressive permissions).
+   - Host permissions and runtime tools should align (progressive permissions).
 
 ## 5. EverMemOS Integration Model
 
@@ -411,7 +411,7 @@ Notes:
   1. **Prompt layer**: when the extension sends a chat message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools. The LLM sees these restrictions as part of the conversation context.
   2. **Runtime layer**: the extension's `browser.proxy` route dispatcher rejects requests for routes in disabled groups, returning an error to the agent.
 - The `browser-ext` plugin has no knowledge of tool groups. All enforcement is self-contained in the extension — no callback or sync needed.
-- Ingestion workflows may temporarily require **Interact** and **Navigate** groups to function. The workflow runner can request elevation, and the user approves from the sidepanel.
+- Workflows have a fixed set of tools defined at authoring time. They execute independently of the tool groups currently selected in the chat panel.
 - Tool group state is persisted in `chrome.storage.local`.
 
 ### 8.3 Sidepanel Chat Tab (MVP)
@@ -491,11 +491,11 @@ OpenClaw is the authoring assistant. It can:
    - implement cursor update via persistent vars
 5. **Publish**:
    - mark as "stable"
-   - generate a "flow contract" artifact (capabilities, allowed origins, auth checks, cursor/checkpoint keys, max items per run, extraction schema version, drift sentinels)
+   - generate a "flow contract" artifact (tools, allowed origins, auth checks, cursor/checkpoint keys, max items per run, extraction schema version, drift sentinels)
 
 ### 9.2 Tool Surface
 
-OpenClaw's built-in `browser` tool covers standard automation (snapshot, act, navigate, tabs, screenshot, console, dialog, file upload). The `browser-ext` plugin registers one additional tool (`browser-ext`) for extension-specific capabilities, routed to the extension node as `browser.proxy` requests:
+OpenClaw's built-in `browser` tool covers standard automation (snapshot, act, navigate, tabs, screenshot, console, dialog, file upload). The `browser-ext` plugin registers one additional tool (`browser-ext`) for extension-specific tools, routed to the extension node as `browser.proxy` requests:
 
 1. **Flows**
    - `rr_v3.flow.list`, `rr_v3.flow.get`, `rr_v3.flow.save`, `rr_v3.flow.delete`
@@ -558,14 +558,14 @@ When extraction fails repeatedly:
    - Redact tokens/cookies in logs and UI exports.
 4. **Safe automation**:
    - Default to read-only tool groups (Observe + Navigate on, Interact + Execute off).
-   - Ingestion workflows request tool group elevation when needed; user approves.
+   - Workflows declare their required tools at authoring time and execute independently of chat panel tool group settings.
 5. **Gateway access control**:
    - Gateway binds to localhost only (no LAN exposure).
    - Tool group enforcement at two layers, both in the extension: prompt injection (via `chat.send`) and runtime rejection (route dispatcher). See §4.3. The `browser-ext` plugin has no role in enforcement.
    - WS auth token required for the extension to connect as a node.
 6. **Flow integrity**
    - Display flow version/hash for every run.
-   - Prevent silent mutation: if a flow changes, require re-approval for capabilities that expanded.
+   - Prevent silent mutation: if a flow changes, require re-approval for tools that expanded.
 
 ## 12. Implementation Plan (Phased)
 
@@ -615,7 +615,3 @@ When extraction fails repeatedly:
 4. **Digest/feed reader**: high-signal digest generation from watched content.
 5. **Voice input**: microphone affordance in sidepanel chat.
 6. **In-page FAB**: floating assistant overlay on webpages (reintroduce if needed).
-
-## 15. Open Questions
-
-1. **EMOS credential sync**: should the extension auto-discover EMOS credentials from the OpenClaw Gateway (if the `evermemos` plugin is loaded), or always require separate manual configuration in the extension Options?

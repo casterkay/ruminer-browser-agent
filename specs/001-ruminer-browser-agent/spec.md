@@ -5,10 +5,14 @@
 **Updated**: 2026-02-26
 **Status**: Draft
 **Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
-that connects to OpenClaw via the local Gateway WebSocket, runs RR-V3
-ingestion workflows, enforces tool groups, and ingests AI chat history
-(ChatGPT, Gemini, Claude, DeepSeek) into EverMemOS via both OpenClaw and
-direct extension integration.
+that connects to the OpenClaw Gateway via localhost WebSocket (as a node
+with `caps: ["browser"]`), implements a superset `browser.proxy` dispatcher,
+runs RR-V3 ingestion workflows, enforces tool groups at both prompt and
+runtime layers, and ingests AI chat history (ChatGPT, Gemini, Claude,
+DeepSeek) into EverMemOS via two independent paths: OpenClaw's `evermemos`
+plugin (sidepanel chat) and the extension's direct EMOS client (autonomous
+ingestion workflows). The MCP server and native messaging host from
+`mcp-chrome` are deprecated.
 
 ## Clarifications
 
@@ -24,11 +28,14 @@ direct extension integration.
 - Q: What is the separation of concerns between OpenClaw, the
   extension, and EMOS? → A: OpenClaw is the LLM orchestrator and tool
   runtime. The extension connects to the OpenClaw Gateway (localhost
-  WebSocket) as a node and implements browser automation + ingestion
-  workflows. EMOS is integrated in two paths: OpenClaw's `evermemos`
-  plugin (memory search + auto-ingest OpenClaw chats) and the
-  extension's direct EMOS client (autonomous ingestion workflows).
-  There is no separate MCP server or native host component.
+  WebSocket) as a `node` (role: "node", caps: ["browser"]) and implements
+  a superset `browser.proxy` route dispatcher that handles both standard
+  browser automation routes (snapshot, act, navigate, tabs) and
+  extension-specific routes (bookmarks, history, network, flows, ledger,
+  element selection). EMOS is integrated in two independent paths:
+  (1) OpenClaw's `evermemos` plugin (memory search + auto-ingest OpenClaw
+  chats) and (2) the extension's direct EMOS client (autonomous ingestion
+  workflows). The MCP server and native messaging host are deprecated.
 
 ### Session 2026-02-26
 
@@ -40,8 +47,16 @@ direct extension integration.
 - Q: What about X/Twitter and social media ingestion? → A: Removed
   from scope. Only AI chat platforms (ChatGPT, Gemini, Claude,
   DeepSeek) for MVP.
+- Q: How are ingestion workflows developed and scheduled? → A: Workflows
+  are AI-authored. The user interacts with
+  the agent to develop ingestion workflows for platforms, which are
+  then shipped as built-in workflows. Users can also request the agent
+  to develop additional workflows. In the Workflows tab, users configure
+  cron schedules per workflow (enable/disable, set period) and can
+  manually trigger workflows for immediate execution. Scheduled runs
+  only occur if the user has enabled cron for that workflow.
 - Q: How does "agent mode" vs "readonly mode" work? → A: Replaced by
-  tool groups. Browser capabilities are divided into five groups by
+  tool groups. Browser tools are divided into five groups by
   side-effect level (Observe, Navigate, Interact, Execute, Workflow).
   Users toggle groups on/off from the sidepanel. Disabled groups are
   enforced by the extension (prompt restriction + runtime rejection).
@@ -60,7 +75,7 @@ prompt to OpenClaw, which transitions the panel to chat mode showing
 the conversation thread with inline tool call results. If EMOS is not
 configured, the chat still works as a plain interface with OpenClaw —
 no memory search results. Tool group toggles in the chat header let
-the user control which browser capabilities OpenClaw can use.
+the user control which browser tools OpenClaw can use.
 
 **Why this priority**: The sidepanel chat is the primary daily
 touchpoint and the feature that makes Ruminer more than a browser
@@ -70,7 +85,7 @@ workspace.
 **Independent Test**: Open the sidepanel, type a query, see memory
 search results appear, press Enter, see chat messages with tool call
 results inline. Toggle tool groups and verify the agent's available
-capabilities are restricted immediately.
+tools are restricted immediately.
 
 **Acceptance Scenarios**:
 
@@ -101,7 +116,7 @@ capabilities are restricted immediately.
    **When** the user disables a tool group (e.g., Interact), **Then**
    the extension updates its enforcement table immediately, the next
    message sent to OpenClaw includes the updated restriction prompt,
-   and attempts to use disabled capabilities fail with a clear
+   and attempts to use disabled tools fail with a clear
    "disabled by tool group" error.
 
 7. **Given** the user is in chat mode, **When** they click "New chat",
@@ -146,18 +161,21 @@ created.
    the sidepanel Workflows tab and clicks "Run" on an ingestion
    workflow, **Then** the workflow begins executing with visible
    progress (current step, items processed) and the user can stop at
-   any time.
+   any time. Workflows process bounded batches (20-50 conversations)
+   per run and enqueue continuation runs if more items remain, rather
+   than looping for minutes within a single service worker activation.
 
 3. **Given** an ingestion workflow is running, **When** it extracts
    messages from the target platform, **Then** each message is
-   normalized into the canonical raw item schema (source, content_type,
-   account_id, conversation_id, role, timestamp, content_text, etc.)
-   and a stable idempotency key is computed from the source item ID.
+   normalized into the canonical raw item schema (platform, content_type,
+   conversation_id, message_index, role, timestamp, content_text, etc.)
+   and a stable idempotency key is computed using the format
+   `platform:conversation_id:message_index`.
 
 4. **Given** normalized items are ready for ingestion, **When** the
    system checks the local ingestion ledger, **Then** new items (no
-   matching event ID) are ingested into EverMemOS, items with changed
-   content (same event ID, different content hash) are updated, and
+   matching item_key) are ingested into EverMemOS, items with changed
+   content (same item_key, different content_hash) are updated, and
    unchanged items are skipped.
 
 5. **Given** a workflow run completes, **When** the user re-runs the
@@ -230,17 +248,22 @@ and inspect the event timeline for a completed or failed run.
 
 1. **Given** the sidepanel Workflows tab is open, **When** workflows
    are listed, **Then** each shows platform name/icon, last run status
-   (success/failed/never run), and timestamp.
+   (success/failed/never run), timestamp, cron enable/disable toggle,
+   and cron period configuration.
 
-2. **Given** a workflow is listed, **When** the user clicks "Run",
-   **Then** the workflow begins executing and its status updates in
-   real time (items processed, current step, errors).
+2. **Given** a workflow is listed, **When** the user clicks "Run"
+   (manual trigger), **Then** the workflow begins executing and its
+   status updates in real time (items processed, current step, errors).
 
-3. **Given** a workflow run has completed, **When** the user views the
+3. **Given** a workflow has cron enabled, **When** the configured
+   cron period elapses, **Then** RR-V3 automatically enqueues a flow
+   run (best-effort, only while browser is running).
+
+4. **Given** a workflow run has completed, **When** the user views the
    run history, **Then** they can see the RR-V3 event timeline with
    timestamps, node statuses, and any errors for debugging.
 
-4. **Given** a workflow is running, **When** the user clicks "Stop",
+5. **Given** a workflow is running, **When** the user clicks "Stop",
    **Then** the run is cancelled and the cursor is preserved at the
    last successfully ingested checkpoint.
 
@@ -295,9 +318,15 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - What happens when EverMemOS is unreachable during an ingestion run?
   The system MUST retry with exponential backoff, log the failure in
-  the ingestion ledger with status "failed" and the error details,
-  and NOT advance the cursor past the failed item. The user sees a
-  clear "connection failed" status with a "retry" action.
+  the ingestion ledger with status "failed" and the error details, and
+  NOT advance the cursor past the failed item. The user sees a clear
+  "connection failed" status with a "retry" action.
+
+- What happens when the idempotency key format changes? The system
+  MUST use the stable format `platform:conversation_id:message_index`
+  where `message_index` is the 0-based position in the conversation.
+  Re-runs with the same item_key keep the same identity; content edits
+  are detected by content_hash.
 
 - What happens when a platform requires re-authentication mid-workflow?
   The system MUST pause the workflow, surface an "action required:
@@ -344,13 +373,17 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 **Tool Groups**
 
-- **FR-006**: Browser capabilities MUST be divided into groups by
-  side-effect level: Observe (read-only), Navigate (page/tab changes),
-  Interact (DOM manipulation), Execute (code/network/file I/O),
-  Workflow (record/replay).
+- **FR-006**: Browser tools MUST be divided into five groups by
+  side-effect level: Observe (snapshots, screenshots, tab listing,
+  console read, interactive element listing, history read, bookmarks
+  read/search, ledger — default On), Navigate (navigation, open/switch/
+  close tabs — default On), Interact (click/type/scroll, dialogs,
+  element selection — default Off), Execute (cookie-enabled network
+  requests, file upload — default Off), Workflow (RR-V3 flow/trigger/
+  run management, run queue controls — default On).
 - **FR-007**: Users MUST be able to toggle tool groups on/off from the
   sidepanel chat header. When a group is disabled, the extension MUST
-  prevent the agent from successfully executing capabilities in that
+  prevent the agent from successfully executing tools in that
   group (prompt restriction + runtime rejection).
 - **FR-008**: Tool group defaults MUST be safe: Observe and Navigate on,
   Interact and Execute off, Workflow on.
@@ -370,34 +403,49 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-013**: Every automated action MUST be visible to the user and
   stoppable (pause, cancel) at any point during execution.
 
-**EverMemOS Integration**
+**OpenClaw Integration**
 
 - **FR-014**: System MUST allow configuring the OpenClaw Gateway
-  connection and an EMOS connection in the Options page, with
-  connection tests and clear error messages.
-- **FR-015**: System MUST support two EMOS integration paths:
-  OpenClaw's `evermemos` plugin (memory search + auto-ingest OpenClaw
-  chats) and the extension's direct EMOS client (autonomous ingestion
-  workflows). The extension MUST store its EMOS credentials locally and
-  MUST NOT transmit them to OpenClaw.
+  connection (WS URL + auth token) and an EMOS connection (base URL +
+  API key + tenant/space IDs) in the Options page, with connection
+  tests and clear error messages. The extension MUST connect to the
+  Gateway as a node (role: "node", caps: ["browser"]) and implement a
+  superset `browser.proxy` route dispatcher that handles both standard
+  browser automation routes and extension-specific routes. The
+  `browser-ext` OpenClaw plugin MUST register a single `browser-ext`
+  tool that maps extension-specific actions (flows, bookmarks, history,
+  network, element selection, ledger) to `browser.request` gateway calls.
+
+**EverMemOS Integration**
+
+- **FR-015**: System MUST support two EMOS integration paths: (1)
+  OpenClaw's `evermemos` plugin (configured in `openclaw.plugin.json`,
+  provides memory search + auto-ingest OpenClaw chats) and (2) the
+  extension's direct EMOS client (configured in extension Options via
+  `chrome.storage.local`, provides direct API access for ingestion
+  workflows). Both paths target the same EMOS instance with the same
+  credentials. The extension MUST NOT transmit its EMOS credentials to
+  OpenClaw.
 - **FR-016**: System MUST normalize extracted chat messages into the
-  canonical raw item schema (source, content_type, account_id,
-  conversation_id, role, timestamp, content_text, model_id,
-  parent_message_id, etc.).
-- **FR-017**: System MUST compute stable idempotency keys using
-  source + account_id + source_item_id (preferred) or normalized
-  canonical_url (fallback), and derive event_id and content_hash via
-  hashing.
-- **FR-018**: System MUST maintain a local ingestion ledger keyed by
-  event_id that tracks ingestion status, content hashes, and timestamps
-  to prevent duplicate ingestion.
+  canonical raw item schema (platform, content_type, conversation_id,
+  message_index, conversation_title, timestamp, role, model_id,
+  content_text, content_html, language, media, canonical_url,
+  parent_message_id, debug_fingerprint, raw_payload).
+- **FR-017**: System MUST compute stable idempotency keys using the
+  format `platform:conversation_id:message_index`, and derive content_hash
+  via sha256 of content bytes. The item_key is used as the EverMemOS
+  message_id for strict idempotency.
+- **FR-018**: System MUST maintain a local ingestion ledger (IndexedDB
+  `ruminer.ingestion_ledger`) keyed by item_key that tracks ingestion
+  status, content hashes, and timestamps to prevent duplicate ingestion.
 - **FR-019**: The extension MUST be able to ingest canonical items into
   EMOS directly (autonomous ingestion workflows). For agent-driven
   ingestion, the extension MUST be able to return canonical raw items
   to OpenClaw so it can ingest via its EMOS integration using the
-  identity conventions (sender = "me" for user messages, sender =
-  "{platform}:{model_id}" for AI replies, group_id =
-  "{platform}:{conversation_id}").
+  identity conventions: sender = "me" for user messages, sender =
+  "{platform}" (e.g., "chatgpt", "gemini", "claude", "deepseek") for AI
+  replies, sender = "agent" for OpenClaw agent replies, and group_id =
+  "{platform}:{conversation_id}".
 
 **Workflow Execution**
 
@@ -407,71 +455,113 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-021**: Ingestion workflows MUST process items in bounded,
   resumable batches and enqueue continuation runs when more items
   remain, rather than looping within a single service worker activation.
-- **FR-022**: All four MVP platform packs (ChatGPT, Gemini, Claude,
-  DeepSeek) MUST follow the same workflow pattern: conversation list ->
-  conversation thread -> messages.
+- **FR-022**: Built-in ingestion workflows MUST be provided for all four
+  MVP platforms (ChatGPT, Gemini, Claude, DeepSeek). These workflows are
+  AI-authored during development and follow the same pattern: conversation
+  list -> conversation thread -> messages. Users can request the agent to
+  develop additional workflows for custom needs.
 - **FR-023**: Workflows MUST detect authentication state and pause with
   an "action required: please log in" notification if the user is not
   authenticated on the target platform.
 
+- **FR-024**: Users MUST be able to configure cron schedules for each
+  workflow in the Workflows tab: enable/disable cron, set cron period
+  (e.g., "every 6 hours", "daily at 2am"). Scheduled runs are best-effort
+  and only execute while the browser is running. Users MUST also be able
+  to manually trigger any workflow for immediate execution regardless of
+  cron configuration.
+- **FR-025**: Workflows MUST have a fixed set of tools declared at
+  authoring time. Workflow execution MUST be independent of the tool groups
+  currently selected in the chat panel (no runtime elevation requests).
+- **FR-026**: Workflows MUST include configurable and randomized delays
+  between page loads and interactions to avoid triggering platform rate
+  limits or anti-bot mechanisms.
+- **FR-027**: Users MUST be able to optionally filter which conversations
+  to ingest (e.g., by date range or conversation length) before triggering
+  a workflow.
+
 **AI Authoring & Drift Repair**
 
-- **FR-024**: System MUST expose RR-V3 management APIs (flow/trigger/run
+- **FR-028**: System MUST expose RR-V3 management APIs (flow/trigger/run
   CRUD) so OpenClaw can author and operate workflows programmatically.
-- **FR-025**: When extraction fails repeatedly, system MUST capture a
+- **FR-029**: When extraction fails repeatedly, system MUST capture a
   bounded screenshot and HTML snippet, surface a "needs repair"
   notification with flow contract details, and provide a reproducible
   "open failing run" action for AI-assisted diagnosis.
 
 **Security & Privacy**
 
-- **FR-026**: OpenClaw Gateway access MUST be localhost-only (no LAN
-  exposure). The extension MUST connect via authenticated WebSocket.
-  Tool group toggles MUST enforce which capabilities can be executed.
-- **FR-027**: Host permissions MUST be limited to AI chat platform
-  domains (ChatGPT, Gemini, Claude, DeepSeek). No `<all_urls>` needed.
-- **FR-028**: Flow version/hash MUST be displayed for every run.
+- **FR-030**: OpenClaw Gateway access MUST be localhost-only (no LAN
+  exposure). The extension MUST connect via authenticated WebSocket
+  with a WS auth token. Tool group enforcement MUST happen at two
+  layers in the extension: (1) prompt layer — the extension injects
+  disabled tool instructions into the system prompt when sending
+  `chat.send` to OpenClaw, and (2) runtime layer — the extension's
+  `browser.proxy` route dispatcher rejects requests for routes in
+  disabled groups. The `browser-ext` plugin has no knowledge of tool
+  groups.
+- **FR-031**: Host permissions MUST support any URL by requesting
+  permissions at runtime via `chrome.permissions.request` as needed,
+  plus EMOS API host permission. Platform packs define recommended
+  default origins for AI chat platforms (ChatGPT, Gemini, Claude,
+  DeepSeek). No `<all_urls>` in manifest.
+- **FR-032**: Flow version/hash MUST be displayed for every run.
   Silent mutation of a flow MUST NOT bypass capability re-approval.
+  Flows are executable code; flow permissions/tools should be
+  declared and enforced at runtime.
 
 **Modular Degradation**
 
-- **FR-029**: Without OpenClaw's EMOS integration available, the
+- **FR-033**: Without OpenClaw's EMOS integration available, the
   sidepanel chat MUST function as a plain chat interface (no memory
   search and no automatic chat ingestion). Without EMOS configured in
   the extension Options, ingestion workflows MUST be disabled with a
   clear message directing the user to configure EMOS.
-- **FR-030**: Without OpenClaw connected, the extension UI MUST render
+- **FR-034**: Without OpenClaw connected, the extension UI MUST render
   but clearly indicate that chat/agent features are unavailable.
   Ingestion workflows remain available as long as EMOS is configured.
 
 ### Key Entities
 
 - **Canonical Raw Item**: A platform-agnostic representation of an
-  extracted chat message. Attributes: source, content_type, account_id,
-  source_item_id, conversation_id, conversation_title, timestamp, role,
-  model_id, content_text, content_html, media, canonical_url,
-  parent_message_id, debug_fingerprint.
+  extracted chat message. Attributes: platform (chatgpt|gemini|claude|deepseek),
+  content_type (message), conversation_id, message_index (stable 0-based
+  position), conversation_title, timestamp, role (user|assistant|system),
+  model_id, content_text, content_html, language, media (type, url),
+  canonical_url, parent_message_id, debug_fingerprint (extraction_schema_version,
+  sentinels, page_kind), raw_payload.
 
 - **Ingestion Ledger Entry**: A local record tracking the idempotency
-  status of each extracted item. Attributes: event_id (hash of
-  item_key), item_key, content_hash, canonical_url, group_id, sender,
-  evermemos_message_id, first_seen_at, last_seen_at, last_ingested_at,
-  status (ingested/skipped/failed), last_error.
+  status of each extracted item. Attributes: item_key (platform:conversation_id:message_index),
+  content_hash (sha256), canonical_url, group_id ({platform}:{conversation_id}),
+  sender (me or platform name), evermemos_message_id, first_seen_at,
+  last_seen_at, last_ingested_at, status (ingested/skipped/failed), last_error.
 
-- **Flow**: An RR-V3 workflow definition (DAG of nodes). Attributes:
-  ID, name, version, node graph, entry node, declared capabilities,
-  allowed origins, extraction schema version, drift sentinels.
+- **Flow**: An RR-V3 workflow definition (DAG of nodes with explicit
+  entryNodeId). Attributes: ID, name, version, node graph, entry node,
+  declared tools (fixed at authoring time, independent of chat
+  tool groups), allowed origins, auth checks, cursor/checkpoint keys,
+  max items per run, rate limit policies, extraction schema version,
+  drift sentinels. Flows must be acyclic (no graph-level loops or cycles;
+  pagination/scrolling/iteration implemented as composite nodes that loop
+  internally but still return a single node result).
 
 - **Trigger**: A schedule or event configuration attached to a flow.
-  Types: interval, cron, URL, DOM, command, context menu, manual, once.
+  Types: interval, cron, url, dom, command, contextMenu, once, manual.
+  Scheduled triggers are best-effort and only run while the browser is
+  running (MV3 cannot wake a fully closed Chrome reliably).
 
 - **Run**: A single execution instance of a flow. Attributes: run ID,
   flow ID, flow version hash, status, start time, end time, event log,
   cursor state.
 
-- **Tool Group**: A named set of browser capabilities grouped by
-  side-effect level. Attributes: group name, capability list, enabled
-  state, default state.
+- **Tool Group**: A named set of browser tools grouped by
+  side-effect level. Attributes: group name, side-effect description,
+  capability list, enabled state, default state. Groups: Observe
+  (read-only tools, default On), Navigate (page/tab changes,
+  default On), Interact (DOM manipulation, default Off), Execute
+  (code/network/file I/O, default Off), Workflow (RR-V3 flow management,
+  default On). Tool group state is persisted in `chrome.storage.local`.
 
 ## Success Criteria _(mandatory)_
 
@@ -499,17 +589,26 @@ a flow, run the flow, and verify it executes the recorded actions.
 ### Assumptions
 
 - **OpenClaw** is the primary LLM orchestrator. The extension connects
-  to the OpenClaw Gateway via localhost WebSocket and exposes browser
-  capabilities to OpenClaw.
+  to the OpenClaw Gateway via localhost WebSocket as a node (role:
+  "node", caps: ["browser"]) and implements a superset `browser.proxy`
+  route dispatcher. The `browser-ext` OpenClaw plugin registers a single
+  tool that maps extension-specific actions to `browser.request` gateway
+  calls. There is no separate MCP server or native messaging host.
 - **EverMemOS** is the central memory system for all of a human's
   conversations with any AI chatbot (OpenClaw, ChatGPT, Gemini, etc.).
-  Configured in two places: OpenClaw's `evermemos` plugin (memory
-  search + auto-ingest OpenClaw chats) and the extension Options
-  (autonomous ingestion workflows). The system degrades gracefully when
-  one path is unavailable.
+  EMOS is configured in two places: OpenClaw's `evermemos` plugin
+  (`openclaw.plugin.json`) for memory search + auto-ingest OpenClaw
+  chats, and the extension Options (`chrome.storage.local`) for
+  autonomous ingestion workflows. Both paths target the same EMOS
+  instance with the same credentials. The system degrades gracefully
+  when one path is unavailable.
+- **Ruminer identity conventions** (single-user local): sender =
+  "me" for user messages, sender = "{platform}" (e.g., "chatgpt",
+  "gemini", "claude", "deepseek") for AI replies, sender = "agent" for
+  OpenClaw agent replies, and group_id = "{platform}:{conversation_id}".
 - The user's Chrome browser is running and the extension is installed
   with appropriate host permissions for AI chat platform domains.
 - The OpenClaw Gateway binds to localhost only; no LAN or remote access
   is supported for MVP.
-- MVP platform packs ship iteratively: **ChatGPT** first, then
-  **Gemini**, **Claude**, and **DeepSeek**.
+- MVP platform packs ship iteratively: **ChatGPT** first (Phase 1),
+  then **Gemini**, **Claude**, and **DeepSeek** (Phase 2).
