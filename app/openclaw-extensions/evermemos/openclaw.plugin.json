@@ -1,6 +1,6 @@
 {
-  "id": "evermemos-sync",
-  "name": "EverMemOS Sync",
+  "id": "evermemos",
+  "name": "EverMemOS Plugin",
   "version": "0.1.0",
   "extensions": ["./index.ts"],
   "configSchema": {

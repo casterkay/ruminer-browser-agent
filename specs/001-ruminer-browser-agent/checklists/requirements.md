@@ -3,6 +3,7 @@
 **Purpose**: Validate specification completeness and quality before
 proceeding to planning
 **Created**: 2026-02-25
+**Updated**: 2026-02-26
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -34,10 +35,15 @@ proceeding to planning
 
 - All items pass. Spec is ready for `/speckit.plan`.
 - Clarification session (2026-02-25) resolved 4 questions:
-  - Digest generation trigger → OpenClaw heartbeat/cron
-  - MVP platform packs → ChatGPT + X/Twitter
-  - Behavior without EMOS → modular degradation (FAB as plain chat)
-  - Separation of concerns → OpenClaw (Chrome MCP + EMOS plugin) / extension / EMOS
-- Reasonable defaults applied for: local retention policy (30 days
-  for subscribed items) and MCP binding (localhost-only).
-- Blueprint updated to v0.5 in sync with spec clarifications.
+  - Digest generation trigger -> OpenClaw heartbeat/cron
+  - MVP platform packs -> ChatGPT + X/Twitter
+  - Behavior without EMOS -> modular degradation (FAB as plain chat)
+  - Separation of concerns -> OpenClaw (Chrome MCP + EMOS plugin) / extension / EMOS
+- Scope reduction (2026-02-26):
+  - Removed FAB (floating action button) -> sidepanel-only UI
+  - Removed watch workflows and digest/feed features
+  - Removed social media ingestion (X/Twitter, Reddit, etc.)
+  - Removed source_kind distinctions -> all content is AI chat history
+  - MVP platforms: ChatGPT, Gemini, Claude, DeepSeek (AI chat only)
+  - Replaced binary agent mode with tool group toggles (5 groups by side-effect level)
+- Blueprint updated to v0.6 in sync with spec updates.
