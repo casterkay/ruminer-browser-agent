@@ -182,14 +182,13 @@ All workflows normalize extracted chat messages into a canonical raw item (befor
 
 ```json
 {
-  "source": "chatgpt|gemini|claude|deepseek",
+  "platform": "chatgpt|gemini|claude|deepseek",
   "content_type": "message",
-  "account_id": "my_handle_or_user_id",
-  "source_item_id": "platform_immutable_message_id",
   "conversation_id": "platform_conversation_id",
+  "message_index": 0,
   "conversation_title": "Optional conversation title",
-  "timestamp": "2026-02-25T01:23:45Z",
-  "updated_at": "2026-02-25T01:23:45Z",
+  "timestamp": "iso8601_or_null",
+  "updated_at": "iso8601_or_null",
   "role": "user|assistant|system",
   "model_id": "optional_model_identifier",
   "content_text": "Plain text content",
@@ -209,28 +208,25 @@ All workflows normalize extracted chat messages into a canonical raw item (befor
 
 Notes on granularity:
 
-- Prefer **one canonical raw item per message/turn** (sender = `me` or the AI model) with `group_id = {source}:{conversation_id}` so EMOS can preserve conversational structure.
+- Prefer **one canonical raw item per message/turn** (sender = `me` or the AI model) with `group_id = {platform}:{conversation_id}` so EMOS can preserve conversational structure.
 - Each message in a conversation is a separate item with `parent_message_id` linking to the prior turn when available.
+- `message_index` is the required, stable 0-based position of the message within the canonical conversation order.
 
 ### 5.4 Idempotency Keys
 
 Ruminer dedupes at the item level with stable keys:
 
 ```text
-item_key = one_of(
-  source + "|" + account_id + "|" + source_item_id,   # preferred
-  source + "|" + account_id + "|" + normalize_url(canonical_url)  # fallback
-)
+item_key = platform + ":" + conversation_id + ":" + message_index
 
-event_id     = sha256(item_key)
-content_hash = sha256(normalize(content_text) + "|" + normalize(content_html))
+content_hash = sha256(content_bytes)
 ```
 
 Rules:
 
-1. Every workflow **must** produce a stable `item_key`.
-2. Re-runs update the same `event_id` when content changes (new `content_hash`).
-3. Ruminer maintains an **ingestion ledger** keyed by `event_id` to ensure reruns are safe.
+1. The idempotency key is universally `platform:conversation_id:message_index`.
+2. Re-runs keep the same `item_key`; content edits are detected by `content_hash`.
+3. Ruminer maintains an **ingestion ledger** keyed by `item_key` to ensure reruns are safe.
 
 ### 5.5 EverMemOS Message Mapping
 
@@ -238,12 +234,12 @@ Each canonical item becomes exactly one EverMemOS message:
 
 ```json
 {
-  "message_id": "ruminer:{event_id}",
+  "message_id": "{item_key}",
   "create_time": "2026-02-25T01:23:45+00:00",
   "sender": "me",
   "sender_name": "Me",
   "content": "content_text (optionally prefixed with minimal metadata)",
-  "refer_list": ["ruminer:{parent_event_id}"],
+  "refer_list": ["{parent_item_key}"],
   "group_id": "chatgpt:conv_abc123",
   "group_name": "ChatGPT: My conversation title",
   "scene": "group_chat"
@@ -252,27 +248,27 @@ Each canonical item becomes exactly one EverMemOS message:
 
 Notes:
 
-1. Prefer `message_id = ruminer:{event_id}` for strict idempotency.
+1. Prefer `message_id = item_key` for strict idempotency.
 2. Use `refer_list` for message chains when `parent_message_id` is available.
 3. Use `group_id` to preserve conversation context for EMOS boundary detection and episodic extraction.
-4. For AI assistant messages, set `sender = {platform}:{model_id}` and `sender_name = model_display_name`.
-5. EverMemOS supports **idempotent upsert** by `message_id` (create-or-update). Ruminer should still keep the local ledger as the first line of defense for idempotency and debugging.
+4. For AI messages, set `sender = {platform}` and `sender_name = {platform_name}`.
+5. If the source does not expose message timestamps, use ingestion time for `create_time`.
+6. EverMemOS supports **idempotent upsert** by `message_id` (create-or-update). Ruminer should still keep the local ledger as the first line of defense for idempotency and debugging.
 
 ### 5.6 Ingestion Ledger (Local)
 
-Ruminer maintains a local idempotency ledger in IndexedDB (`ruminer.ingestion_ledger`) keyed by `event_id`.
+Ruminer maintains a local idempotency ledger in IndexedDB (`ruminer.ingestion_ledger`) keyed by `item_key`.
 
 Minimum record:
 
 ```json
 {
-  "event_id": "sha256...",
-  "item_key": "source|account_id|source_item_id",
+  "item_key": "platform:conversation_id:message_index",
   "content_hash": "sha256...",
   "canonical_url": "https://...",
   "group_id": "{platform}:{conversation_id}",
   "sender": "me",
-  "evermemos_message_id": "ruminer:{event_id}",
+  "evermemos_message_id": "{item_key}",
   "first_seen_at": "2026-02-25T01:23:45Z",
   "last_seen_at": "2026-02-25T01:23:45Z",
   "last_ingested_at": "2026-02-25T01:25:00Z",
@@ -283,9 +279,9 @@ Minimum record:
 
 Rules:
 
-1. If `event_id` is new -> ingest.
-2. If `event_id` exists and `content_hash` changed -> ingest update (same message_id).
-3. Cursor updates happen only after `status=ingested`.
+1. If `item_key` is new -> ingest.
+2. If `item_key` exists and `content_hash` changed -> ingest update (same `message_id` / same item identity).
+3. Cursor updates happen after each processed item with `status in {ingested, skipped}` and never after `failed`.
 
 ## 6. Workflow Runtime: Record-and-Replay V3 (RR-V3)
 
@@ -322,7 +318,7 @@ RR-V3 can execute nodes via a plugin registry (Zod-validated configs). Ruminer a
 
 - `ruminer.extract_conversations` (list conversations, paginate, return conversation IDs + metadata)
 - `ruminer.extract_messages` (open a conversation and extract messages as canonical raw items)
-- `ruminer.normalize_and_hash` (compute `event_id`, `content_hash`, validate required fields)
+- `ruminer.normalize_and_hash` (compute `item_key`, `content_hash`, validate required fields)
 - `ruminer.ledger_upsert` (idempotency ledger -- local)
 
 - `ruminer.emos_ingest` (write canonical items to EMOS via the extension's direct EMOS client)
@@ -336,14 +332,14 @@ We store run-to-run cursors in RR-V3 persistent vars (IndexedDB store `persisten
 - `$cursor.{workflow_id}.last_seen_time`
 - `$cursor.{workflow_id}.last_seen_conversation_id`
 
-Cursor update happens only after successful ingestion + ledger update.
+Cursor update happens after a processed item (`ingested` or `skipped`) and ledger commit; never advance cursor after `failed`.
 
 ### 6.4 Chunked Iteration + Continuations (MV3-Friendly)
 
 Because MV3 service workers can restart mid-run, any "scroll/paginate over many conversations" work should be designed as a sequence of small, resumable chunks:
 
 1. Process a bounded batch (e.g., 20-50 conversations max) per run.
-2. Persist progress (`$cursor.*`, plus any continuation token) after each successful ingest.
+2. Persist progress (`$cursor.*`, plus any continuation token) after each processed item (`ingested` or `skipped`).
 3. If more work remains, enqueue a follow-up run ("continuation") rather than looping for minutes inside a single composite node.
 
 ## 7. Ingestion Workflows
@@ -369,11 +365,11 @@ Additional AI platforms can be added iteratively post-MVP.
 - Prioritizes correctness, idempotency, and stable IDs.
 - Each platform workflow follows the same pattern:
   1. Navigate to the platform's conversation list.
-  2. Extract conversation metadata (IDs, titles, timestamps).
+  2. Extract conversation metadata (IDs, titles, and timestamps if available).
   3. For each conversation (or new conversations since last cursor), open and extract messages.
   4. Normalize each message into the canonical raw item schema.
   5. Check ledger, ingest new/changed items to EMOS (direct API call from extension).
-  6. Update cursor on success.
+  6. Update cursor after each processed item (`ingested` or `skipped`), never after `failed`.
 
 ### 7.4 Platform-Specific Notes
 
@@ -538,9 +534,9 @@ Ruminer adds:
 
 Idempotency is enforced in three places:
 
-1. `event_id` + ledger (local): prevents duplicate ingest within Ruminer.
-2. EverMemOS `message_id = ruminer:{event_id}`: prevents duplicates server-side.
-3. Cursor update only on success: prevents "skipping" items.
+1. `item_key` + ledger (local): prevents duplicate ingest within Ruminer.
+2. EverMemOS `message_id = item_key`: prevents duplicates server-side.
+3. Cursor advances only after a processed item (`ingested` or `skipped`) with ledger commit; failed items do not advance the cursor.
 
 ### 10.3 Drift Repair Workflow
 
@@ -554,7 +550,7 @@ When extraction fails repeatedly:
 ## 11. Security, Privacy, and Permissions
 
 1. **Local-first**: all browser control happens locally via the extension. Communication with the Gateway is localhost WebSocket only.
-2. **Minimal permissions**: request host permissions per platform pack (ChatGPT, Gemini, Claude, DeepSeek domains) plus EMOS API host. No `<all_urls>` needed since there is no FAB injection.
+2. **Any-URL support with progressive permissions**: support automation on any URL by requesting host permissions at runtime (`chrome.permissions.request`) as needed, plus EMOS API host permission. Platform packs still define recommended default origins, but the system is not restricted to a fixed domain list.
 3. **Secret handling**:
    - EMOS credentials are stored in two places: OpenClaw's `evermemos` plugin config and the extension's `chrome.storage.local` (for autonomous ingestion). Both are local-only.
    - Gateway WS auth token is stored in `chrome.storage.local`.
