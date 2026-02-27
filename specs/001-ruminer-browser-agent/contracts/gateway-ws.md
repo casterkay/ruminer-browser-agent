@@ -76,10 +76,7 @@ The extension background service worker connects as:
 
 ### 3.3 Pairing requirements
 
-The Gateway may require first-time device pairing approval. The extension must surface a clear UI
-state:
-
-- “Pairing required” with next steps to approve the device in OpenClaw (outside extension).
+The Gateway may require first-time device pairing approval if OpenClaw is not served on localhost. Out of MVP scope.
 
 ## 4) Chat methods (sidepanel)
 

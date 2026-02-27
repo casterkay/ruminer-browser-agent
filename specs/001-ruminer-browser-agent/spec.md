@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-ruminer-browser-agent`
 **Created**: 2026-02-25
-**Updated**: 2026-02-26
+**Updated**: 2026-02-27
 **Status**: Draft
 **Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
 that connects to the OpenClaw Gateway via localhost WebSocket (as a node
@@ -59,6 +59,34 @@ ingestion workflows). The MCP server and native messaging host from
   side-effect level (Observe, Navigate, Interact, Execute, Workflow).
   Users toggle groups on/off from the sidepanel. Disabled groups are
   enforced by the extension (prompt restriction + runtime rejection).
+
+### Session 2026-02-27
+
+- Q: What is the concurrent workflow execution policy? → A: Multiple
+  different workflows can run simultaneously in parallel tabs, but the
+  same workflow cannot have multiple concurrent runs (at most one
+  process per workflow at any time).
+- Q: What happens on first Gateway connect when the node is not yet
+  paired? → A: Auto-pair silently. Since the Gateway is localhost-only,
+  no explicit pairing approval is required.
+- Q: What happens to in-flight work when the user clicks "Stop" on a
+  running workflow? → A: Abandon in-flight items immediately. The cursor
+  stays at the last committed ledger entry. Idempotency guarantees make
+  this safe — any items that were mid-flight are deduped on the next run.
+- Q: What are the EMOS retry limits for failed ingestion API calls? →
+  A: 3 retries with exponential backoff (1s, 2s, 4s), then fail the
+  entire run and stop. EMOS unreachability is a systemic failure, not
+  item-level — continuing would just accumulate failures.
+- Q: What level of operational logging should the extension provide? →
+  A: Structured debug log to IndexedDB with auto-rotation (last 1000
+  entries), sensitive fields (auth tokens, API keys) redacted
+  automatically, viewable in a debug panel in the extension.
+
+### Session 2026-02-27 (round 2)
+
+- Q: Does EverMemOS expose a delete API for individual memories? → A:
+  No. Remove "delete" from FR-010; Memory tab is read-only + open
+  canonical URL. EMOS does not support deletion.
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -196,7 +224,7 @@ sidepanel and switch to the Memory tab. The tab shows a search/browse
 interface for EMOS items (messages from ChatGPT, Gemini, Claude,
 DeepSeek, and OpenClaw conversations). The user can filter by source
 platform, date range, or keyword. They can open any item's canonical
-URL, view its full content with conversation context, or delete items.
+URL or view its full content with conversation context.
 
 **Why this priority**: The Memory tab provides visibility into what's
 been collected and gives users confidence that the system is working.
@@ -205,7 +233,7 @@ results.
 
 **Independent Test**: Open the sidepanel Memory tab, browse items
 (requires at least one ingested conversation), search for items, and
-perform management actions (open, delete).
+perform actions (open item, open canonical URL).
 
 **Acceptance Scenarios**:
 
@@ -262,8 +290,10 @@ and inspect the event timeline for a completed or failed run.
    timestamps, node statuses, and any errors for debugging.
 
 5. **Given** a workflow is running, **When** the user clicks "Stop",
-   **Then** the run is cancelled and the cursor is preserved at the
-   last successfully ingested checkpoint.
+   **Then** in-flight items are abandoned immediately (within 2 seconds),
+   the cursor is preserved at the last committed ledger entry, and
+   any mid-flight items are safely deduped on the next run via
+   idempotency.
 
 ---
 
@@ -315,10 +345,12 @@ a flow, run the flow, and verify it executes the recorded actions.
 ### Edge Cases
 
 - What happens when EverMemOS is unreachable during an ingestion run?
-  The system MUST retry with exponential backoff, log the failure in
-  the ingestion ledger with status "failed" and the error details, and
-  NOT advance the cursor past the failed item. The user sees a clear
-  "connection failed" status with a "retry" action.
+  The system MUST retry with exponential backoff (3 attempts: 1s, 2s,
+  4s delays), log the failure in the ingestion ledger with status
+  "failed" and the error details, NOT advance the cursor past the
+  failed item, and **fail the entire run** after exhausting retries
+  (EMOS unreachability is systemic — continuing is wasteful). The user
+  sees a "connection failed" status with a "retry" action.
 
 - What happens when the idempotency key format changes? The system
   MUST use the stable format `platform:conversation_id:message_index`
@@ -396,7 +428,8 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **FR-010**: Memory tab MUST support searching and browsing EverMemOS
   items by keyword, source platform, and date, with the ability to
-  open canonical URLs and delete items.
+  open canonical URLs. Memory tab is read-only (no delete); EMOS does
+  not expose a delete API.
 - **FR-011**: Workflows tab MUST list saved workflows with platform
   name, last run status, and a one-click "Run" action.
 - **FR-012**: Workflows tab MUST display real-time run progress and
@@ -416,6 +449,9 @@ a flow, run the flow, and verify it executes the recorded actions.
   `browser-ext` OpenClaw plugin MUST register a single `browser-ext`
   tool that maps extension-specific actions (flows, bookmarks, history,
   network, element selection, ledger) to `browser.request` gateway calls.
+- **FR-014a**: On first connect to the Gateway, the extension MUST
+  auto-pair silently (no explicit pairing approval step). Since the
+  Gateway is localhost-only, the localhost trust boundary is sufficient.
 
 **EverMemOS Integration**
 
@@ -451,6 +487,11 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-020**: Ingestion workflows MUST be idempotent: re-runs MUST NOT
   create duplicate entries. New items are ingested, changed items are
   updated, unchanged items are skipped.
+- **FR-020a**: Multiple different workflows MAY run simultaneously in
+  parallel tabs. However, the same workflow MUST NOT have multiple
+  concurrent runs — at most one process per workflow at any time.
+  Triggering an already-running workflow MUST be rejected with a clear
+  "already running" message.
 - **FR-021**: Ingestion workflows MUST process items in bounded,
   resumable batches and enqueue continuation runs when more items
   remain, rather than looping within a single service worker activation.
@@ -508,6 +549,14 @@ a flow, run the flow, and verify it executes the recorded actions.
   Silent mutation of a flow MUST NOT bypass tool re-approval.
   Flows are executable code; flow permissions/tools should be
   declared and enforced at runtime.
+
+**Observability**
+
+- **FR-035**: The extension MUST maintain a structured debug log in
+  IndexedDB with auto-rotation (last 1000 entries). Sensitive fields
+  (auth tokens, API keys) MUST be redacted automatically before
+  logging. The log MUST be viewable in a debug panel within the
+  extension UI.
 
 **Modular Degradation**
 
