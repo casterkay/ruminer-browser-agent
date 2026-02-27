@@ -147,7 +147,7 @@ Ruminer treats "who is asking the browser to do things" as a first-class concept
    - The `browser-ext` plugin has no knowledge of tool groups. All enforcement logic is self-contained in the extension.
 3. **Flows are executable code**
    - A saved flow is an executable artifact; flow permissions/tools should be declared and enforced at runtime.
-4. **Tool groups as capability boundaries**
+4. **Tool groups as permission boundaries**
    - Tools are divided into groups by side-effect level (see §8.2).
    - Users can enable/disable entire groups from the sidepanel.
    - Host permissions and runtime tools should align (progressive permissions).

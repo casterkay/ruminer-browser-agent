@@ -60,7 +60,7 @@ to it rather than inventing alternatives.
   (e.g., raw `chrome.storage` calls alongside a state abstraction).
 - File and directory naming MUST follow the conventions already
   established in the monorepo: kebab-case for files, PascalCase for
-  React/UI components, barrel exports where the package already uses
+  Vue/UI components, barrel exports where the package already uses
   them.
 - New tools and routes (OpenClaw plugin tools, Gateway methods, and
   `browser.proxy` routes) MUST follow the registration, validation, and

@@ -10,7 +10,7 @@
 - [ ] CHK002 Are all required user-configurable connection fields specified for extension-direct EMOS (base URL, API key, tenant/space IDs, “test connection” behavior)? [Completeness, Spec FR-014, FR-015]
 - [ ] CHK003 Are requirements specified for first-time Gateway node pairing approval (“pairing required” state and user next steps)? [Gap, Spec FR-014, FR-030]
 - [ ] CHK004 Is the sidepanel chat session routing strategy specified (what `sessionKey` is used, whether it’s user-visible, and whether it is stable across restarts)? [Clarity, Spec US1]
-- [ ] CHK005 Are the required Gateway chat capabilities explicitly listed (history, send, abort, streaming events) in requirements (not just in design docs)? [Gap, Spec FR-003, FR-014]
+- [ ] CHK005 Are the required Gateway chat methods explicitly listed (history, send, abort, streaming events) in requirements (not just in design docs)? [Gap, Spec FR-003, FR-014]
 - [ ] CHK006 Are the tool-call inline rendering requirements complete (what statuses exist, what fields must be displayed, truncation rules for large tool payloads)? [Completeness, Spec US1]
 - [ ] CHK007 Are ingestion workflow prerequisites explicitly specified (must be logged in; what constitutes “authenticated”; what is “action required”)? [Completeness, Spec FR-023, Edge Cases]
 - [ ] CHK008 Are ingestion workflow batch bounds fully specified (default size, configurability, continuation triggers, maximum run duration constraints)? [Completeness, Spec FR-021, US2]
@@ -51,7 +51,7 @@
 
 ## Edge Case Coverage
 
-- [ ] CHK031 Are requirements specified for schema evolution (what happens if canonical raw item schema version increments; migration expectations for ledger/cursors)? [Gap, Spec FR-016, FR-018]
+- [ ] CHK031 Are requirements specified for schema evolution (what happens if Standard EMOS Message JSON schema version increments; migration expectations for ledger/cursors)? [Gap, Spec FR-016, FR-018]
 - [ ] CHK032 Are requirements specified for idempotency-key format changes (explicitly treated as forbidden vs allowed with migration path)? [Coverage, Spec Edge Cases]
 
 ## Non-Functional Requirements (Security / Privacy / Reliability)
@@ -68,7 +68,7 @@
 ## Ambiguities & Conflicts
 
 - [ ] CHK038 Are potentially ambiguous UX terms in the spec quantified (“visible progress”, “clear message”, “suggested next steps”, “action required”)? [Ambiguity, Spec US1–US4]
-- [ ] CHK039 Are there any conflicts between user stories and functional requirements (e.g., Memory tab delete semantics vs EMOS API capabilities) explicitly resolved in the requirements? [Conflict, Spec FR-010]
+- [ ] CHK039 Are there any conflicts between user stories and functional requirements (e.g., Memory tab delete semantics vs EMOS API support) explicitly resolved in the requirements? [Conflict, Spec FR-010]
 
 ## Notes
 

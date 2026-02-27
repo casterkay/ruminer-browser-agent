@@ -166,8 +166,7 @@ created.
 
 3. **Given** an ingestion workflow is running, **When** it extracts
    messages from the target platform, **Then** each message is
-   normalized into the canonical raw item schema (platform, content_type,
-   conversation_id, message_index, role, timestamp, content_text, etc.)
+   normalized into the Standard EMOS Message JSON schema (`message_id`, `create_time`, `sender`, `content`, `group_id`, plus optional fields)
    and a stable idempotency key is computed using the format
    `platform:conversation_id:message_index`.
 
@@ -340,7 +339,7 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - What happens when OpenClaw is connected but the EMOS plugin is not
   enabled? The sidepanel chat functions as a plain chat interface with
-  OpenClaw — full chat and browser automation capability, but no memory
+  OpenClaw — full chat and browser automation tools, but no memory
   search and no automatic chat ingestion into EMOS. Ingestion workflows
   remain available as long as EMOS is configured in the extension.
 
@@ -506,7 +505,7 @@ a flow, run the flow, and verify it executes the recorded actions.
   permissions; either is acceptable as long as the user experience and
   security posture are clear.)
 - **FR-032**: Flow version/hash MUST be displayed for every run.
-  Silent mutation of a flow MUST NOT bypass capability re-approval.
+  Silent mutation of a flow MUST NOT bypass tool re-approval.
   Flows are executable code; flow permissions/tools should be
   declared and enforced at runtime.
 
@@ -554,7 +553,7 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **Tool Group**: A named set of browser tools grouped by
   side-effect level. Attributes: group name, side-effect description,
-  capability list, enabled state, default state. Groups: Observe
+  tool list, enabled state, default state. Groups: Observe
   (read-only tools, default On), Navigate (page/tab changes,
   default On), Interact (DOM manipulation, default Off), Execute
   (code/network/file I/O, default Off), Workflow (RR-V3 flow management,

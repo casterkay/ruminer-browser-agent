@@ -1,6 +1,6 @@
 # Contract — Tool Groups (prompt + runtime enforcement)
 
-Tool groups define capability boundaries for browser actions. Ruminer enforces them in **two
+Tool groups define permission boundaries for browser actions. Ruminer enforces them in **two
 layers**, both inside the extension:
 
 1. **Prompt layer** (soft): sidepanel chat prepends instructions to `chat.send`
@@ -80,7 +80,7 @@ Tool group restrictions:
 - Interact: disabled (do not click/type/scroll or request element selection)
 - Execute: disabled (do not run JS, do not make cookie-auth network requests)
 
-If you need a disabled capability, ask the user to enable the group first.
+If you need a disabled tool, ask the user to enable the group first.
 ```
 
 ## 5) Workflows vs chat tool groups

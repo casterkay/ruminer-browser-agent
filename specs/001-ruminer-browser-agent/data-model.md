@@ -72,7 +72,7 @@ The normalized message object Ruminer writes to EverMemOS. One item per message/
 - **group_name**: string | null
 - **sender_name**: string | null
 - **role**: `'user' | 'assistant' | 'system' | null`
-- **refer_list**: array of `{ type: string; url: string }`
+- **refer_list**: `string[]` (array of referenced message IDs)
 
 **Internal/Derived tracking (for ledger and dedupe)**
 

@@ -40,7 +40,7 @@ artifacts and implementation tasks.
   - Listen for push events (event frames) and sequence gaps.
 - **Rationale**:
   - Keeps the extension aligned with the documented Gateway schemas (the Gateway validates frames).
-  - Enables both node capability handling (`node.invoke`) and chat UI (`chat.*`) over one socket.
+  - Enables both node tool handling (`node.invoke`) and chat UI (`chat.*`) over one socket.
 
 ## Decision 3 — Sidepanel chat session strategy
 
