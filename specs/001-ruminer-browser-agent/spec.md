@@ -182,7 +182,16 @@ created.
 1. **Given** the user opens the Options page, **When** they verify the
    OpenClaw Gateway connection and EMOS connection, **Then** the system
    reports connectivity status for both services with clear error
-   messages and suggested next steps if either is unreachable.
+   messages and suggested next steps if either is unreachable, using
+   one of three error classes:
+   - "Cannot reach Gateway": explain that OpenClaw is not running on
+     `127.0.0.1:18789` and direct the user to start OpenClaw locally.
+   - "Invalid token or credentials": explain that the provided token or
+     API key is invalid or expired and direct the user to re-enter
+     credentials.
+   - "Cannot reach EverMemOS": explain that EMOS is unreachable or
+     misconfigured and direct the user to check the EMOS URL and server
+     health.
 
 2. **Given** OpenClaw and EMOS are connected, **When** the user opens
    the sidepanel Workflows tab and clicks "Run" on an ingestion
@@ -433,7 +442,10 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-011**: Workflows tab MUST list saved workflows with platform
   name, last run status, and a one-click "Run" action.
 - **FR-012**: Workflows tab MUST display real-time run progress and
-  provide access to the RR-V3 event timeline for debugging.
+  provide access to the RR-V3 event timeline for debugging. "Real-time
+  run progress" is defined as, for any in-flight run, showing the
+  current logical step label (e.g., "Listing conversations",
+  "Ingesting messages") and a numeric counter of processed items.
 - **FR-013**: Every automated action MUST be visible to the user and
   stoppable (pause, cancel) at any point during execution.
 
