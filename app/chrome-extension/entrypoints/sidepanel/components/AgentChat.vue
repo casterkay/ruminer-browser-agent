@@ -48,7 +48,15 @@
           <strong>{{ message.role }}</strong>
           <span>{{ formatTime(message.createdAt) }}</span>
         </header>
-        <pre class="message-content">{{ message.content }}</pre>
+        <TimelineToolCallStep
+          v-if="isToolUseMessage(message)"
+          :item="toToolUseTimelineItem(message)"
+        />
+        <TimelineToolResultCardStep
+          v-else-if="isToolResultMessage(message)"
+          :item="toToolResultTimelineItem(message)"
+        />
+        <pre v-else class="message-content">{{ message.content }}</pre>
       </article>
     </section>
 
@@ -88,7 +96,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useOpenClawGateway } from '../composables/useOpenClawGateway';
-import { useOpenClawChat } from '../composables/useOpenClawChat';
+import {
+  useOpenClawChat,
+  type ChatMessage,
+  type ToolCardData,
+} from '../composables/useOpenClawChat';
 import { useEmosSuggestions } from '../composables/useEmosSuggestions';
 import {
   getToolGroupState,
@@ -96,6 +108,9 @@ import {
   type ToolGroupId,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
+import type { TimelineItem, ToolPresentation, ToolSeverity } from '../composables/useAgentThreads';
+import TimelineToolCallStep from './agent-chat/timeline/TimelineToolCallStep.vue';
+import TimelineToolResultCardStep from './agent-chat/timeline/TimelineToolResultCardStep.vue';
 
 const gateway = useOpenClawGateway();
 const chat = useOpenClawChat(gateway);
@@ -118,6 +133,78 @@ const groupItems = computed(() => [
   { id: 'execute' as const, label: 'Execute', enabled: toolGroups.value.execute },
   { id: 'workflow' as const, label: 'Workflow', enabled: toolGroups.value.workflow },
 ]);
+
+function toolSeverity(card: ToolCardData): ToolSeverity {
+  if (card.isError) {
+    return 'error';
+  }
+  if (card.phase === 'result') {
+    return 'success';
+  }
+  return 'info';
+}
+
+function toToolPresentation(card: ToolCardData): ToolPresentation {
+  return {
+    kind: card.kind,
+    label: card.label,
+    title: card.title,
+    details: card.details,
+    files: card.files,
+    filePath: card.filePath,
+    diffStats: card.diffStats,
+    command: card.command,
+    commandDescription: card.commandDescription,
+    pattern: card.pattern,
+    searchPath: card.searchPath,
+    severity: toolSeverity(card),
+    phase: card.phase,
+    raw: {
+      content: card.details || '',
+      metadata: card.raw,
+    },
+  };
+}
+
+function isToolUseMessage(
+  message: ChatMessage,
+): message is ChatMessage & { toolCard: ToolCardData & { phase: 'use' } } {
+  return message.role === 'tool' && message.toolCard?.phase === 'use';
+}
+
+function isToolResultMessage(
+  message: ChatMessage,
+): message is ChatMessage & { toolCard: ToolCardData & { phase: 'result' } } {
+  return message.role === 'tool' && message.toolCard?.phase === 'result';
+}
+
+function toToolUseTimelineItem(message: ChatMessage): Extract<TimelineItem, { kind: 'tool_use' }> {
+  const card = message.toolCard as ToolCardData;
+  return {
+    kind: 'tool_use',
+    id: `tool-use:${message.id}`,
+    createdAt: message.createdAt,
+    messageId: message.id,
+    tool: toToolPresentation(card),
+    isStreaming: message.isStreaming === true,
+    requestId: message.runId,
+  };
+}
+
+function toToolResultTimelineItem(
+  message: ChatMessage,
+): Extract<TimelineItem, { kind: 'tool_result' }> {
+  const card = message.toolCard as ToolCardData;
+  return {
+    kind: 'tool_result',
+    id: `tool-result:${message.id}`,
+    createdAt: message.createdAt,
+    messageId: message.id,
+    tool: toToolPresentation(card),
+    isError: card.isError === true,
+    requestId: message.runId,
+  };
+}
 
 function formatTime(value: string): string {
   try {
