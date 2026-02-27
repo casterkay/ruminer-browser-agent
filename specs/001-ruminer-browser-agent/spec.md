@@ -70,8 +70,8 @@ ingestion workflows). The MCP server and native messaging host from
   paired? → A: Auto-pair silently. Since the Gateway is localhost-only,
   no explicit pairing approval is required.
 - Q: What happens to in-flight work when the user clicks "Stop" on a
-  running workflow? → A: Abandon in-flight items immediately. The cursor
-  stays at the last committed ledger entry. Idempotency guarantees make
+  running workflow? → A: Abandon in-flight items immediately. The stored
+  conversation order list is NOT updated. Idempotency guarantees make
   this safe — any items that were mid-flight are deduped on the next run.
 - Q: What are the EMOS retry limits for failed ingestion API calls? →
   A: 3 retries with exponential backoff (1s, 2s, 4s), then fail the
@@ -87,6 +87,52 @@ ingestion workflows). The MCP server and native messaging host from
 - Q: Does EverMemOS expose a delete API for individual memories? → A:
   No. Remove "delete" from FR-010; Memory tab is read-only + open
   canonical URL. EMOS does not support deletion.
+- Q: How should the system handle message insertion/reordering in
+  source conversations (index shift breaking idempotency)? → A: Not
+  applicable. None of the target AI chat platforms (ChatGPT, Gemini,
+  Claude, DeepSeek) support message insertion. Message edits are
+  handled by content_hash change detection, which triggers an update
+  in the ledger. Positional `message_index` is stable.
+- Q: How does a workflow resume after platform re-authentication? → A:
+  It doesn't. If not authenticated, the workflow fails immediately
+  with a notification to the user. No "waiting for user" state. The
+  user authenticates manually and the next cron run (or manual trigger)
+  picks up where it left off via the stored conversation order list.
+- Q: How do conversation filters interact with scanning? → A: Filters
+  are workflow configuration parameters (e.g., minimum message count
+  in a conversation). They are pre-applied on the conversation list
+  before scanning logic. Filtered-out conversations are skipped (not
+  ingested). If the user updates filter parameters, the stored
+  conversation order list MUST be cleared, forcing a full re-scan.
+- Q: Which host permission model should the extension use? → A:
+  `<all_urls>` in manifest (granted at install, no per-site prompts).
+  Standard for browser automation extensions that must work on
+  arbitrary sites.
+- Q: How does the workflow know when to stop scanning the conversation
+  list (activity-sorted, lazy-loaded, no per-item timestamps in DOM)?
+  → A: Store an **ordered list** of all ingested conversation IDs (in
+  platform list order). On each run, scan from the top; if 3
+  consecutive conversations appear in the **same order** as the stored
+  list, consider it past the "new activity" zone and stop. New IDs or
+  IDs that moved out of position indicate new activity and must be
+  processed. Periodic full scans catch edge cases. On filter parameter
+  change, clear the stored list (forces full scan). On stop/failure,
+  do not update the stored list (next run rescans from previous state).
+- Q: How are ingestion workflows structured per platform? → A: Two
+  workflows per platform: (1) a **conversation ingestion workflow**
+  that takes a single conversation URL, extracts all messages, and
+  ingests them into EMOS via the ledger; and (2) a **conversation list
+  scanner workflow** that scans the platform's conversation list,
+  applies the heuristic stop and filter logic, identifies conversations
+  needing processing, and enqueues a conversation ingestion run for
+  each. The scanner is the entry point the user triggers (manually or
+  via cron); the conversation ingestion workflow is triggered by the
+  scanner (or manually by the user for a specific conversation URL).
+- Q: Can conversation ingestion workflows run in parallel? → A: Yes.
+  Multiple conversation ingestion runs (same platform, different
+  conversation URLs) MAY execute in parallel, each in its own tab,
+  bounded by a configurable max parallel tabs limit (default 3).
+  Scanner workflows remain single-instance per platform.
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -156,15 +202,19 @@ tools are restricted immediately.
 A user wants to collect their AI chat conversations from platforms
 (ChatGPT, Gemini, Claude, DeepSeek) into their personal knowledge base
 (EverMemOS). The user opens the sidepanel Workflows tab and clicks
-"Run" on a pre-built ingestion workflow for their target platform.
-Ruminer runs the pipeline locally using RR-V3: the extension navigates
-to the platform and extracts conversations, normalizes and hashes
-messages, checks the local ingestion ledger, and ingests items into
-EMOS via its direct EMOS client. OpenClaw is not required for ingestion
-runs, but can be used for agent-driven ingestion and workflow
-authoring/repair. The user can see progress and stop the workflow at
-any time. Re-running the same workflow is always safe — no duplicates
-are created.
+"Run" on the scanner workflow for their target platform. Ruminer runs
+the pipeline locally using RR-V3: the scanner navigates to the
+platform's conversation list, identifies conversations needing
+processing (using the heuristic stop and filter logic), and enqueues
+a conversation ingestion run for each. Each conversation ingestion run
+navigates to the conversation, extracts messages, normalizes and hashes
+them, checks the local ingestion ledger, and ingests items into EMOS
+via its direct EMOS client. The user can also trigger the conversation
+ingestion workflow directly for a specific conversation URL. OpenClaw
+is not required for ingestion runs, but can be used for agent-driven
+ingestion and workflow authoring/repair. The user can see progress and
+stop the workflow at any time. Re-running is always safe — no
+duplicates are created.
 
 **Why this priority**: Ingestion is the foundational data pipeline.
 Without content flowing into EverMemOS, the memory-grounded chat
@@ -173,9 +223,11 @@ core "AI chat history collector" value proposition.
 
 **Independent Test**: Verify OpenClaw Gateway connectivity (for chat)
 and EMOS connectivity (for ingestion) in Options, run the ChatGPT
-ingestion workflow from the sidepanel, verify items appear in the
-Memory tab, re-run the workflow, and confirm no duplicates are
-created.
+scanner workflow from the sidepanel (which enqueues conversation
+ingestion runs), verify items appear in the Memory tab, re-run the
+scanner, and confirm no duplicates are created. Also test triggering
+the conversation ingestion workflow directly with a specific
+conversation URL.
 
 **Acceptance Scenarios**:
 
@@ -194,18 +246,20 @@ created.
      health.
 
 2. **Given** OpenClaw and EMOS are connected, **When** the user opens
-   the sidepanel Workflows tab and clicks "Run" on an ingestion
-   workflow, **Then** the workflow begins executing with visible
-   progress (current step, items processed) and the user can stop at
-   any time. Workflows process bounded batches (20-50 conversations)
-   per run and enqueue continuation runs if more items remain, rather
-   than looping for minutes within a single service worker activation.
+   the sidepanel Workflows tab and clicks "Run" on a scanner workflow,
+   **Then** the scanner scans the conversation list (using heuristic
+   stop), enqueues conversation ingestion runs for conversations
+   needing processing, and the run queue dispatches them up to the
+   max parallel tabs limit (default 3). The user sees visible progress
+   (scanner: conversations found; ingestion: messages processed per
+   conversation) and can stop at any time.
 
-3. **Given** an ingestion workflow is running, **When** it extracts
-   messages from the target platform, **Then** each message is
-   normalized into the Standard EMOS Message JSON schema (`message_id`, `create_time`, `sender`, `content`, `group_id`, plus optional fields)
-   and a stable idempotency key is computed using the format
-   `platform:conversation_id:message_index`.
+3. **Given** a conversation ingestion workflow is running, **When** it
+   extracts messages from the target conversation, **Then** each
+   message is normalized into the Standard EMOS Message JSON schema
+   (`message_id`, `create_time`, `sender`, `content`, `group_id`, plus
+   optional fields) and a stable idempotency key is computed using the
+   format `platform:conversation_id:message_index`.
 
 4. **Given** normalized items are ready for ingestion, **When** the
    system checks the local ingestion ledger, **Then** new items (no
@@ -300,9 +354,9 @@ and inspect the event timeline for a completed or failed run.
 
 5. **Given** a workflow is running, **When** the user clicks "Stop",
    **Then** in-flight items are abandoned immediately (within 2 seconds),
-   the cursor is preserved at the last committed ledger entry, and
-   any mid-flight items are safely deduped on the next run via
-   idempotency.
+   the stored conversation order list is NOT updated (preserving
+   previous scan state), and any mid-flight items are safely deduped
+   on the next run via the ingestion ledger.
 
 ---
 
@@ -356,27 +410,34 @@ a flow, run the flow, and verify it executes the recorded actions.
 - What happens when EverMemOS is unreachable during an ingestion run?
   The system MUST retry with exponential backoff (3 attempts: 1s, 2s,
   4s delays), log the failure in the ingestion ledger with status
-  "failed" and the error details, NOT advance the cursor past the
-  failed item, and **fail the entire run** after exhausting retries
+  "failed" and the error details, NOT update the stored conversation
+  order list, and **fail the entire run** after exhausting retries
   (EMOS unreachability is systemic — continuing is wasteful). The user
-  sees a "connection failed" status with a "retry" action.
+  sees a "connection failed" status with a "retry" action. The next
+  run rescans from the previous conversation order state.
 
 - What happens when the idempotency key format changes? The system
   MUST use the stable format `platform:conversation_id:message_index`
   where `message_index` is the 0-based position in the conversation.
   Re-runs with the same item_key keep the same identity; content edits
-  are detected by content_hash.
+  are detected by content_hash. Note: none of the target AI chat
+  platforms support message insertion, so positional `message_index`
+  is stable. Message edits are detected via content_hash and trigger
+  an update (not a duplicate).
 
 - What happens when a platform requires re-authentication mid-workflow?
-  The system MUST pause the workflow, surface an "action required:
-  please log in" notification, and wait for the user to complete
-  authentication before resuming. The workflow does not fail; it enters
-  a "waiting for user" state.
+  The workflow MUST fail immediately with a notification ("Not logged
+  in to {platform} — please log in and re-run or wait for next
+  scheduled run"). No "waiting for user" state. The stored conversation
+  order list is NOT updated, so the next run (cron or manual) rescans
+  from the previous state. The ledger ensures no duplicates.
 
 - What happens when the service worker restarts during a long-running
-  ingestion? RR-V3 crash recovery re-queues the interrupted run, and
-  the ingestion ledger + cursor ensure no items are duplicated or
-  skipped upon resumption.
+  ingestion? RR-V3 crash recovery re-queues the interrupted run. The
+  stored conversation order list is NOT updated mid-run (only on
+  successful batch completion), so the recovered run rescans from the
+  previous state. The ingestion ledger ensures no items are duplicated
+  or skipped upon resumption.
 
 - What happens when OpenClaw is connected but the EMOS plugin is not
   enabled? The sidepanel chat functions as a plain chat interface with
@@ -499,22 +560,62 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-020**: Ingestion workflows MUST be idempotent: re-runs MUST NOT
   create duplicate entries. New items are ingested, changed items are
   updated, unchanged items are skipped.
-- **FR-020a**: Multiple different workflows MAY run simultaneously in
-  parallel tabs. However, the same workflow MUST NOT have multiple
-  concurrent runs — at most one process per workflow at any time.
-  Triggering an already-running workflow MUST be rejected with a clear
-  "already running" message.
+- **FR-020a**: Concurrency rules differ by workflow type:
+  - **Scanner workflows**: At most one concurrent run per platform.
+    Triggering an already-running scanner MUST be rejected with a
+    clear "already running" message.
+  - **Conversation ingestion workflows**: Multiple runs of the same
+    workflow MAY execute in parallel (each in its own tab, targeting a
+    different conversation URL). Concurrency MUST be bounded by a
+    configurable **max parallel tabs** limit (e.g., default 3). The
+    RR-V3 run queue manages the concurrency — the scanner enqueues all
+    identified conversations, and the queue dispatches up to the max
+    in parallel, starting the next as each completes.
+  - **Cross-platform**: Different platform scanners MAY run
+    simultaneously.
 - **FR-021**: Ingestion workflows MUST process items in bounded,
   resumable batches and enqueue continuation runs when more items
   remain, rather than looping within a single service worker activation.
-- **FR-022**: Built-in ingestion workflows MUST ship iteratively:
-  - **MVP**: ChatGPT conversations ingestion workflow only
-  - **Later**: Gemini, Claude, DeepSeek ingestion workflows
-    All workflows are AI-authored during development and follow the same
-    pattern: conversation list -> conversation thread -> messages.
-- **FR-023**: Workflows MUST detect authentication state and pause with
-  an "action required: please log in" notification if the user is not
-  authenticated on the target platform.
+- **FR-021a**: The **scanner workflow** MUST use an **ordered
+  conversation ID list** (stored as a persistent var) to determine
+  when to stop scanning. The algorithm: scan the platform's
+  conversation list from the top (newest activity); if **3 consecutive
+  conversations** appear in the **same order** as the stored list,
+  consider the scan past the "new activity" zone and stop. New IDs
+  (not in stored list) or IDs that moved out of position indicate new
+  activity — the scanner enqueues a conversation ingestion run for
+  each. The stored list MUST be updated only on successful scanner
+  batch completion; on stop or failure, the list MUST NOT be updated
+  (next run rescans from previous state).
+- **FR-021b**: The scanner workflow MUST perform a **periodic full
+  scan** (configurable interval, e.g., every N runs or every N days)
+  that ignores the heuristic stop and scans the entire conversation
+  list. This catches edge cases where conversations with new activity
+  were missed by the heuristic.
+- **FR-022**: Each platform MUST have **two workflows**:
+  - **Conversation ingestion workflow**: Takes a single conversation
+    URL as input, navigates to the conversation, extracts all messages,
+    normalizes them into Standard EMOS Message JSON, and ingests via
+    the ledger. Can be triggered independently by the user for a
+    specific conversation URL.
+  - **Conversation list scanner workflow**: Scans the platform's
+    conversation list, applies the heuristic stop (FR-021a) and filter
+    logic (FR-027), identifies conversations needing processing, and
+    enqueues a conversation ingestion run for each. The RR-V3 run
+    queue dispatches enqueued runs up to the max parallel tabs limit
+    (FR-020a). This is the entry point the user triggers (manually or
+    via cron).
+    Built-in workflows MUST ship iteratively:
+  - **MVP**: ChatGPT (scanner + conversation ingestion)
+  - **Later**: Gemini, Claude, DeepSeek (scanner + conversation
+    ingestion each)
+    All workflows are AI-authored during development.
+- **FR-023**: Workflows MUST detect authentication state. If the user
+  is not authenticated on the target platform, the workflow MUST fail
+  immediately with a notification ("Not logged in to {platform} —
+  please log in and re-run or wait for next scheduled run"). The stored
+  conversation order list is NOT updated, so the next cron run or
+  manual trigger rescans from the previous state.
 
 - **FR-024**: Users MUST be able to configure cron schedules for each
   workflow in the Workflows tab: enable/disable cron, set cron period
@@ -527,19 +628,26 @@ a flow, run the flow, and verify it executes the recorded actions.
   currently selected in the chat panel (no runtime elevation requests).
 - **FR-026**: Workflows MUST include configurable and randomized delays
   between page loads and interactions to avoid triggering platform rate
-  limits or anti-bot mechanisms.
-- **FR-027**: Users MUST be able to optionally filter which conversations
-  to ingest (e.g., by date range or conversation length) before triggering
-  a workflow.
+  limits or anti-bot mechanisms. Default delay ranges: **1--3 seconds**
+  between page loads, **200--500ms** between interactions.
+- **FR-027**: Workflows MUST support configurable filter parameters
+  (e.g., minimum message count, date range) defined in the workflow
+  configuration. Filters are pre-applied on the conversation list
+  before scanning logic; filtered-out conversations are skipped (not
+  ingested). If filter parameters are changed, the stored ordered
+  conversation ID list (FR-021a) MUST be cleared, forcing a full
+  re-scan on the next run. Already-ingested items are still
+  deduplicated via the ledger.
 
 **AI Authoring & Drift Repair**
 
 - **FR-028**: System MUST expose RR-V3 management APIs (flow/trigger/run
   CRUD) so OpenClaw can author and operate workflows programmatically.
-- **FR-029**: When extraction fails repeatedly, system MUST capture a
-  bounded screenshot and HTML snippet, surface a "needs repair"
-  notification with flow contract details, and provide a reproducible
-  "open failing run" action for AI-assisted diagnosis.
+- **FR-029**: When extraction fails **3 consecutive times for the same
+  node within a single run**, system MUST capture a bounded screenshot
+  and HTML snippet, surface a "needs repair" notification with flow
+  contract details, and provide a reproducible "open failing run"
+  action for AI-assisted diagnosis.
 
 **Security & Privacy**
 
@@ -552,15 +660,16 @@ a flow, run the flow, and verify it executes the recorded actions.
   `browser.proxy` route dispatcher rejects requests for routes in
   disabled groups. The `browser-ext` plugin has no knowledge of tool
   groups.
-- **FR-031**: Host permissions MUST support **automation on any URL**.
-  The extension MUST NOT be restricted to a fixed allowlist of AI chat
-  platform domains. (Implementation may use `<all_urls>` or optional host
-  permissions; either is acceptable as long as the user experience and
-  security posture are clear.)
+- **FR-031**: Host permissions MUST use `<all_urls>` in the manifest,
+  granted at install time with no per-site prompts. The extension MUST
+  NOT be restricted to a fixed allowlist of AI chat platform domains.
 - **FR-032**: Flow version/hash MUST be displayed for every run.
-  Silent mutation of a flow MUST NOT bypass tool re-approval.
-  Flows are executable code; flow permissions/tools should be
-  declared and enforced at runtime.
+  Silent mutation of a flow MUST NOT bypass tool re-approval: if the
+  flow's declared tool set has expanded since the user last approved
+  it, a **blocking modal** MUST be shown before execution listing the
+  added tools (diff view) and requiring explicit approval. Flows are
+  executable code; flow permissions/tools should be declared and
+  enforced at runtime.
 
 **Observability**
 
@@ -595,13 +704,18 @@ a flow, run the flow, and verify it executes the recorded actions.
   last_seen_at, last_ingested_at, status (ingested/skipped/failed), last_error.
 
 - **Flow**: An RR-V3 workflow definition (DAG of nodes with explicit
-  entryNodeId). Attributes: ID, name, version, node graph, entry node,
-  declared tools (fixed at authoring time, independent of chat
-  tool groups), allowed origins, auth checks, cursor/checkpoint keys,
-  max items per run, rate limit policies, extraction schema version,
-  drift sentinels. Flows must be acyclic (no graph-level loops or cycles;
-  pagination/scrolling/iteration implemented as composite nodes that loop
-  internally but still return a single node result).
+  entryNodeId). Two types per platform: **scanner** (scans conversation
+  list, enqueues ingestion runs) and **conversation ingestion** (takes
+  a conversation URL, extracts and ingests messages). Attributes: ID,
+  name, version, node graph, entry node, declared tools (fixed at
+  authoring time, independent of chat tool groups), allowed origins,
+  auth checks, max parallel runs (scanner: 1, ingestion: configurable,
+  default 3), scanning config (scanner only: heuristic stop threshold,
+  full scan interval), filter parameters, max items per run, rate limit
+  policies, extraction schema version, drift sentinels. Flows must be
+  acyclic (no graph-level loops or cycles; pagination/scrolling/
+  iteration implemented as composite nodes that loop internally but
+  still return a single node result).
 
 - **Trigger**: A schedule or event configuration attached to a flow.
   Types: interval, cron, url, dom, command, contextMenu, once, manual.
@@ -610,7 +724,7 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **Run**: A single execution instance of a flow. Attributes: run ID,
   flow ID, flow version hash, status, start time, end time, event log,
-  cursor state.
+  scan state (conversations processed in this run).
 
 - **Tool Group**: A named set of browser tools grouped by
   side-effect level. Attributes: group name, side-effect description,

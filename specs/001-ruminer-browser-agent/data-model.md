@@ -103,7 +103,9 @@ Keyed by `item_key` (unique).
 - New `item_key` → ingest.
 - Same `item_key` + changed `content_hash` → ingest update.
 - Same `item_key` + same `content_hash` → skip.
-- Cursor advances only after ledger commit with `status in {ingested, skipped}`.
+- The stored conversation order list (§4.4) is updated only after
+  successful batch completion, ensuring failed/stopped runs rescan
+  from the previous state.
 
 ## 4) RR‑V3 workflow runtime (IndexedDB via existing RR-V3 stores)
 
@@ -124,6 +126,18 @@ Ruminer uses the existing RR‑V3 stores implemented under
 - **extraction_schema_version**: number
 - **drift_sentinels**: string[]
 - **maxItemsPerRun**: number (20–50 recommended)
+- **maxParallelRuns**: number (default 1)
+  - For conversation ingestion workflows: max concurrent runs in
+    parallel tabs (e.g., 3). For scanner workflows: always 1.
+- **scanHeuristicStopThreshold**: number (default 3)
+  - Number of consecutive same-order conversation ID matches to trigger
+    heuristic stop (FR-021a).
+- **fullScanInterval**: number | null (default: every 10 runs)
+  - If set, forces a full conversation list scan every N runs (FR-021b).
+- **filterParams**: object | null
+  - Configurable filter parameters (e.g., `{ minMessages: 3 }`).
+    Changing filter params clears the stored conversation order list,
+    forcing a full re-scan (FR-027).
 
 ### 4.2 Trigger
 
@@ -159,10 +173,19 @@ Ruminer uses the existing RR‑V3 stores implemented under
 - **value**: JSON
 - **updatedAt**: unix ms
 
-**Cursor convention**
+**Conversation scanning vars**
 
-- `$cursor.{workflow_id}.last_seen_time`
-- `$cursor.{workflow_id}.last_seen_conversation_id`
+- `$scan.{workflow_id}.conversation_order`: `string[]`
+  - Ordered list of all ingested conversation IDs, in the order they
+    appeared in the platform's conversation list at end of last
+    successful batch. Used by the heuristic stop algorithm (FR-021a):
+    3 consecutive same-order matches → stop scanning.
+  - Cleared on filter parameter change (FR-027) → forces full re-scan.
+  - NOT updated on stop or failure → next run rescans from previous state.
+- `$scan.{workflow_id}.last_full_scan_at`: ISO string | null
+  - Timestamp of the last periodic full scan (FR-021b).
+- `$scan.{workflow_id}.runs_since_full_scan`: number
+  - Counter incremented each run; reset to 0 after a full scan.
 
 ## 5) UI state (sidepanel)
 

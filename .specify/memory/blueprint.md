@@ -8,7 +8,7 @@
 
 ## 2. Executive Summary
 
-Ruminer Browser Agent is a fork of `mcp-chrome` that turns the user's everyday Chrome into a **browser agent with centralized AI chat history**. Its single mission: integrate all of a user's conversations on various AI chat platforms (ChatGPT, Gemini, Claude, DeepSeek) into a central long-term memory system, **EverMemOS (EMOS)**.
+Ruminer Browser Agent turns the user's everyday Chrome into a **browser agent with centralized AI chat history**. Its single mission: integrate all of a user's conversations on various AI chat platforms (ChatGPT, Gemini, Claude, DeepSeek) into a central long-term memory system, **EverMemOS (EMOS)**.
 
 The user interacts with Ruminer through a **sidepanel** that provides:
 

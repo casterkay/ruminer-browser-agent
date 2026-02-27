@@ -1,14 +1,14 @@
 {
   "extensionName": {
-    "message": "chrome-mcp-server",
+    "message": "Ruminer",
     "description": "扩展名称"
   },
   "extensionDescription": {
-    "message": "使用你自己的 Chrome 浏览器暴露浏览器功能",
+    "message": "Ruminer 浏览器代理，通过 OpenClaw Gateway 连接",
     "description": "扩展描述"
   },
   "nativeServerConfigLabel": {
-    "message": "Native Server 配置",
+    "message": "OpenClaw Gateway 配置",
     "description": "本地服务器设置的主要节标题"
   },
   "semanticEngineLabel": {
@@ -86,7 +86,7 @@
     "description": "已连接但服务未启动状态"
   },
   "mcpServerConfigLabel": {
-    "message": "MCP 服务器配置",
+    "message": "OpenClaw 插件配置",
     "description": "MCP 服务器配置节标签"
   },
   "connectionPortLabel": {

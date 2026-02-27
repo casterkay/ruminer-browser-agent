@@ -1,14 +1,14 @@
 {
   "extensionName": {
-    "message": "chrome-mcp-server",
+    "message": "Ruminer",
     "description": "확장 프로그램 이름"
   },
   "extensionDescription": {
-    "message": "크롬 브라우저와 연동하여 브라우저 기능을 제어하는 MCP 서버입니다.",
+    "message": "OpenClaw Gateway 기반 Ruminer 브라우저 에이전트",
     "description": "확장 프로그램 설명"
   },
   "nativeServerConfigLabel": {
-    "message": "네이티브 서버 설정",
+    "message": "OpenClaw Gateway 설정",
     "description": "네이티브 서버 설정의 주 섹션 제목"
   },
   "semanticEngineLabel": {
@@ -86,7 +86,7 @@
     "description": "연결되었지만 서비스가 시작되지 않은 상태"
   },
   "mcpServerConfigLabel": {
-    "message": "MCP 서버 설정",
+    "message": "OpenClaw 플러그인 설정",
     "description": "MCP 서버 설정 섹션 레이블"
   },
   "connectionPortLabel": {

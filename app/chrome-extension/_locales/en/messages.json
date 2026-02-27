@@ -1,14 +1,14 @@
 {
   "extensionName": {
-    "message": "chrome-mcp-server",
+    "message": "Ruminer",
     "description": "Extension name"
   },
   "extensionDescription": {
-    "message": "Exposes browser capabilities with your own chrome",
+    "message": "Ruminer Browser Agent powered by OpenClaw Gateway",
     "description": "Extension description"
   },
   "nativeServerConfigLabel": {
-    "message": "Native Server Configuration",
+    "message": "OpenClaw Gateway Configuration",
     "description": "Main section header for native server settings"
   },
   "semanticEngineLabel": {
@@ -86,7 +86,7 @@
     "description": "Connected but service not started status"
   },
   "mcpServerConfigLabel": {
-    "message": "MCP Server Configuration",
+    "message": "OpenClaw Plugin Configuration",
     "description": "MCP server configuration section label"
   },
   "connectionPortLabel": {
