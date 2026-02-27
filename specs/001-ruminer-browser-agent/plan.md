@@ -12,8 +12,8 @@ WebSocket (as a `node` with `caps: ["browser"]`), implements a superset `browser
 enforces tool groups (prompt + runtime), runs RR-V3 for reliable workflows, and ingests AI chat
 history (ChatGPT first, then Gemini/Claude/DeepSeek) into EverMemOS via two paths:
 
-- OpenClaw `evermemos` plugin: memory search + auto-ingest sidepanel chat
-- Extension direct EMOS client: autonomous ingestion workflows (RR-V3 triggered)
+- Extension direct EMOS client: autonomous ingestion workflows (RR-V3 triggered) run within the extension and convert message elements in DOM into standard EMOS message JSON.
+- OpenClaw `evermemos` plugin: memory search + auto-ingest of the user's sidepanel chat with the agent.
 
 ## Technical Context
 
@@ -102,7 +102,7 @@ add the missing `app/openclaw-extensions/browser-ext` plugin module.
 - Define contracts for:
   - Gateway WS handshake + event framing (subset used by extension)
   - `browser.proxy` superset dispatcher routes + tool group gating
-  - Canonical raw item + ingestion ledger entry + EMOS API mapping
+  - Standard EMOS message JSON + ingestion ledger entry + EMOS API mapping
 - Produce data model for settings, tool groups, ledger, and RR-V3 workflow entities.
 
 ### Phase 2 — Implementation Planning (ready for `/speckit.tasks`)

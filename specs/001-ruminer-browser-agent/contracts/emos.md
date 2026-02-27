@@ -9,7 +9,7 @@ Ruminer integrates with EverMemOS (EMOS) through two independent paths:
    - Used by RR‑V3 ingestion workflows (ChatGPT/Gemini/Claude/DeepSeek)
    - Credentials live in extension Options (`chrome.storage.local`)
 
-This contract defines the canonical message mapping, idempotency rules, and the minimum EMOS HTTP
+This contract defines the message mapping to standard EMOS JSON, idempotency rules, and the minimum EMOS HTTP
 API expectations for the extension direct client.
 
 ## 1) Identity conventions (single-user local)
@@ -20,9 +20,9 @@ API expectations for the extension direct client.
   - OpenClaw agent replies (sidepanel chat): `agent`
 - **group_id**: `{platform}:{conversation_id}`
 
-## 2) Canonical raw item → EMOS message mapping
+## 2) Standard EMOS Message JSON mapping
 
-Each `CanonicalRawItem` becomes exactly one EMOS message:
+Each extracted message is formatted as a Standard EMOS Message JSON object:
 
 - **message_id**: `item_key = platform:conversation_id:message_index`
 - **create_time**: `timestamp` if available else ingestion time (ISO)

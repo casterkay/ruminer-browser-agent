@@ -55,38 +55,29 @@ This document extracts the core entities from `specs/001-ruminer-browser-agent/s
 - `disabledGroups`: list of group ids where value is false
 - `effectivePolicyVersion`: increment or hash used for debugging prompt/runtime mismatches
 
-## 2) Canonical raw item (platform-agnostic extracted message)
+## 2) Standard EMOS Message JSON
 
-**Entity**: `CanonicalRawItem`
+**Entity**: `StandardEmosMessageJson`
 
-From blueprint/spec. One item per message/turn.
+The normalized message object Ruminer writes to EverMemOS. One item per message/turn.
 
-- **platform**: `'chatgpt' | 'gemini' | 'claude' | 'deepseek'`
-- **content_type**: `'message'`
-- **conversation_id**: string
-- **message_index**: number (0-based, stable ordering)
-- **conversation_title**: string | null
-- **timestamp**: ISO string | null
-- **updated_at**: ISO string | null
-- **role**: `'user' | 'assistant' | 'system'`
-- **model_id**: string | null
-- **content_text**: string
-- **content_html**: string | null
-- **language**: string | null
-- **media**: array of `{ type: 'image' | 'file'; url: string }`
-- **canonical_url**: string | null
-- **parent_message_id**: string | null
-- **debug_fingerprint**:
-  - **extraction_schema_version**: number
-  - **sentinels**: string[]
-  - **page_kind**: string | null
-- **raw_payload**: unknown
+- **message_id**: string (same as item_key: `platform:conversation_id:message_index`)
+- **create_time**: ISO string | null
+- **sender**: `'me' | 'agent' | 'chatgpt' | 'gemini' | 'claude' | 'deepseek'`
+- **content**: string
+- **group_id**: string (`${platform}:${conversation_id}`)
 
-**Derived keys**
+**Optional Fields**
+
+- **group_name**: string | null
+- **sender_name**: string | null
+- **role**: `'user' | 'assistant' | 'system' | null`
+- **refer_list**: array of `{ type: string; url: string }`
+
+**Internal/Derived tracking (for ledger and dedupe)**
 
 - **item_key**: `platform:conversation_id:message_index`
 - **content_hash**: `sha256(content_bytes)`
-- **group_id**: `${platform}:${conversation_id}`
 
 ## 3) Ingestion ledger (IndexedDB)
 

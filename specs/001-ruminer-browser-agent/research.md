@@ -89,6 +89,7 @@ artifacts and implementation tasks.
   - OpenClaw `evermemos` plugin for **chat memory search** and **auto-ingest OpenClaw conversations**
   - Extension direct EMOS client for **autonomous ingestion workflows**
 - **Rationale**:
+  - Autonomous ingestion workflows (e.g. ChatGPT ingest) run within the extension, deterministically converting message elements in DOM into standard EMOS message JSON. OpenClaw is for authoring and repairing workflows, not in the ingestion path.
   - Matches modular degradation requirements: ingestion can work without OpenClaw running; chat can
     work without extension EMOS creds.
 

@@ -40,8 +40,7 @@ ingestion workflows). The MCP server and native messaging host from
 ### Session 2026-02-26
 
 - Q: What happened to the FAB (floating action button)? → A: Removed.
-  Sidepanel is the only UI surface. No content script injection for
-  in-page overlay.
+  Sidepanel is the primary UI surface. No in-page overlay / content-script UI.
 - Q: What happened to watch workflows and digests? → A: Removed from
   scope. Future features only.
 - Q: What about X/Twitter and social media ingestion? → A: Removed
@@ -363,6 +362,9 @@ a flow, run the flow, and verify it executes the recorded actions.
   results MUST appear in the panel (via OpenClaw querying EMOS). If
   EMOS is not configured, the input MUST function without search
   results.
+- **FR-002a**: The memory-search debounce MUST be configurable, with a
+  default of **250ms**. The UI should aim to display updated results
+  within **500ms** of the user's last keystroke on typical local setups.
 - **FR-003**: User MUST be able to submit prompts to OpenClaw by
   pressing Enter. The panel MUST transition to chat mode showing the
   conversation thread with inline tool call results.
@@ -427,10 +429,10 @@ a flow, run the flow, and verify it executes the recorded actions.
   credentials. The extension MUST NOT transmit its EMOS credentials to
   OpenClaw.
 - **FR-016**: System MUST normalize extracted chat messages into the
-  canonical raw item schema (platform, content_type, conversation_id,
-  message_index, conversation_title, timestamp, role, model_id,
-  content_text, content_html, language, media, canonical_url,
-  parent_message_id, debug_fingerprint, raw_payload).
+  **standard EverMemOS message JSON** (at minimum: `message_id`,
+  `create_time`, `sender`, `content`, `group_id`; optionally `group_name`,
+  `sender_name`, `role`, `refer_list`) plus any internal metadata needed
+  for debugging and dedupe.
 - **FR-017**: System MUST compute stable idempotency keys using the
   format `platform:conversation_id:message_index`, and derive content_hash
   via sha256 of content bytes. The item_key is used as the EverMemOS
@@ -439,13 +441,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   `ruminer.ingestion_ledger`) keyed by item_key that tracks ingestion
   status, content hashes, and timestamps to prevent duplicate ingestion.
 - **FR-019**: The extension MUST be able to ingest canonical items into
-  EMOS directly (autonomous ingestion workflows). For agent-driven
-  ingestion, the extension MUST be able to return canonical raw items
-  to OpenClaw so it can ingest via its EMOS integration using the
-  identity conventions: sender = "me" for user messages, sender =
-  "{platform}" (e.g., "chatgpt", "gemini", "claude", "deepseek") for AI
-  replies, sender = "agent" for OpenClaw agent replies, and group_id =
-  "{platform}:{conversation_id}".
+  EMOS directly (autonomous ingestion workflows). OpenClaw MAY be used
+  to _author and repair_ workflows (e.g., generate/iterate on extraction
+  JavaScript), but ingestion runs MUST be deterministic inside the
+  extension and MUST NOT depend on routing extracted content through
+  OpenClaw.
 
 **Workflow Execution**
 
@@ -455,11 +455,11 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-021**: Ingestion workflows MUST process items in bounded,
   resumable batches and enqueue continuation runs when more items
   remain, rather than looping within a single service worker activation.
-- **FR-022**: Built-in ingestion workflows MUST be provided for all four
-  MVP platforms (ChatGPT, Gemini, Claude, DeepSeek). These workflows are
-  AI-authored during development and follow the same pattern: conversation
-  list -> conversation thread -> messages. Users can request the agent to
-  develop additional workflows for custom needs.
+- **FR-022**: Built-in ingestion workflows MUST ship iteratively:
+  - **MVP**: ChatGPT conversations ingestion workflow only
+  - **Later**: Gemini, Claude, DeepSeek ingestion workflows
+    All workflows are AI-authored during development and follow the same
+    pattern: conversation list -> conversation thread -> messages.
 - **FR-023**: Workflows MUST detect authentication state and pause with
   an "action required: please log in" notification if the user is not
   authenticated on the target platform.
@@ -500,11 +500,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   `browser.proxy` route dispatcher rejects requests for routes in
   disabled groups. The `browser-ext` plugin has no knowledge of tool
   groups.
-- **FR-031**: Host permissions MUST support any URL by requesting
-  permissions at runtime via `chrome.permissions.request` as needed,
-  plus EMOS API host permission. Platform packs define recommended
-  default origins for AI chat platforms (ChatGPT, Gemini, Claude,
-  DeepSeek). No `<all_urls>` in manifest.
+- **FR-031**: Host permissions MUST support **automation on any URL**.
+  The extension MUST NOT be restricted to a fixed allowlist of AI chat
+  platform domains. (Implementation may use `<all_urls>` or optional host
+  permissions; either is acceptable as long as the user experience and
+  security posture are clear.)
 - **FR-032**: Flow version/hash MUST be displayed for every run.
   Silent mutation of a flow MUST NOT bypass capability re-approval.
   Flows are executable code; flow permissions/tools should be
@@ -523,13 +523,10 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 ### Key Entities
 
-- **Canonical Raw Item**: A platform-agnostic representation of an
-  extracted chat message. Attributes: platform (chatgpt|gemini|claude|deepseek),
-  content_type (message), conversation_id, message_index (stable 0-based
-  position), conversation_title, timestamp, role (user|assistant|system),
-  model_id, content_text, content_html, language, media (type, url),
-  canonical_url, parent_message_id, debug_fingerprint (extraction_schema_version,
-  sentinels, page_kind), raw_payload.
+- **Standard EMOS Message JSON**: The normalized message object Ruminer
+  writes to EverMemOS. Attributes at minimum: `message_id` (=`item_key`),
+  `create_time`, `sender`, `content`, `group_id`. Optional: `group_name`,
+  `sender_name`, `role`, `refer_list`.
 
 - **Ingestion Ledger Entry**: A local record tracking the idempotency
   status of each extracted item. Attributes: item_key (platform:conversation_id:message_index),

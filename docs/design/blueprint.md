@@ -107,7 +107,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
    - **Built-in `browser` tool**: OpenClaw ships with a `browser` tool that translates agent actions (snapshot, act, navigate, tabs, etc.) into `browser.proxy` commands routed to the extension node. No plugin needed for standard browser automation.
    - **`evermemos` plugin**: auto-ingests all OpenClaw conversations into EMOS; exposes `evermemos.addMemory` and `evermemos.searchMemory` as gateway methods callable by the agent. Persistent queue with retry for reliability.
    - **`browser-ext` plugin**: registers one additional tool (`browser-ext`) that maps extension-specific actions (bookmarks, history, network requests, flow management, ledger queries, element selection) to `browser.request` gateway calls, which route to the extension node as `browser.proxy` commands. The plugin is a pure action→route mapping with no logic, no hooks, and no knowledge of tool groups.
-   - The agent can also orchestrate ingestion on-demand: user asks "ingest my ChatGPT history" → agent uses browser tools to extract, then `evermemos.addMemory` to store.
+   - OpenClaw is used to **author and repair** ingestion workflows (e.g., generate/iterate on extraction JavaScript). Autonomous ingestion runs are deterministic inside the extension and do not route extracted content through OpenClaw.
    - Responds to user commands from the sidepanel chat.
 
 2. **Extension background service worker**
@@ -146,8 +146,7 @@ Ruminer treats "who is asking the browser to do things" as a first-class concept
    - **Runtime layer (extension dispatcher)**: the `browser.proxy` route dispatcher rejects requests for routes in disabled groups. This is the hard enforcement — even if the LLM ignores the prompt restriction, the extension refuses.
    - The `browser-ext` plugin has no knowledge of tool groups. All enforcement logic is self-contained in the extension.
 3. **Flows are executable code**
-   - A saved flow is an executable artifact; runs must always show the exact flow version/hash that was executed.
-   - Flow permissions/tools should be declared and enforced at runtime.
+   - A saved flow is an executable artifact; flow permissions/tools should be declared and enforced at runtime.
 4. **Tool groups as capability boundaries**
    - Tools are divided into groups by side-effect level (see §8.2).
    - Users can enable/disable entire groups from the sidepanel.
@@ -176,41 +175,30 @@ Ruminer runs as a single local user, and uses simple, human-readable sender IDs.
 - `group_id`: `{platform}:{conversation_id}`
   - `conversation_id` is the platform-native conversation/thread ID.
 
-### 5.3 Canonical Raw Item Schema
+### 5.3 Standard EMOS Message JSON
 
-All workflows normalize extracted chat messages into a canonical raw item (before hashing/dedup):
+All ingestion workflows normalize extracted chat messages into **standard EverMemOS message JSON** (the object written to EMOS):
 
 ```json
 {
-  "platform": "chatgpt|gemini|claude|deepseek",
-  "content_type": "message",
-  "conversation_id": "platform_conversation_id",
-  "message_index": 0,
-  "conversation_title": "Optional conversation title",
-  "timestamp": "iso8601_or_null",
-  "updated_at": "iso8601_or_null",
-  "role": "user|assistant|system",
-  "model_id": "optional_model_identifier",
-  "content_text": "Plain text content",
-  "content_html": "<p>Optional HTML</p>",
-  "language": "en",
-  "media": [{ "type": "image|file", "url": "https://..." }],
-  "canonical_url": "https://...",
-  "parent_message_id": "optional_parent_message_id",
-  "debug_fingerprint": {
-    "extraction_schema_version": 1,
-    "sentinels": ["optional anchor text / aria label / testid"],
-    "page_kind": "optional"
-  },
-  "raw_payload": {}
+  "message_id": "{item_key}",
+  "create_time": "iso8601_of_creation_time_or_ingestion_time",
+  "sender": "me|agent|chatgpt|gemini|claude|deepseek",
+  "sender_name": "Optional human-readable name",
+  "content": "Plain text content",
+  "group_id": "chatgpt:platform_conversation_id",
+  "group_name": "Optional conversation title",
+  "refer_list": ["optional_mentioned_message_ids"],
+  "scene": "group_chat"
 }
 ```
 
-Notes on granularity:
+Notes:
 
-- Prefer **one canonical raw item per message/turn** (sender = `me` or the AI model) with `group_id = {platform}:{conversation_id}` so EMOS can preserve conversational structure.
-- Each message in a conversation is a separate item with `parent_message_id` linking to the prior turn when available.
+- `message_id` MUST be stable and derived from `item_key = platform:conversation_id:message_index`.
 - `message_index` is the required, stable 0-based position of the message within the canonical conversation order.
+- For AI messages, set `sender = {platform}` and `sender_name = {platform_name}`.
+- If the source does not expose message timestamps, use ingestion time for `create_time`.
 
 ### 5.4 Idempotency Keys
 
@@ -228,34 +216,7 @@ Rules:
 2. Re-runs keep the same `item_key`; content edits are detected by `content_hash`.
 3. Ruminer maintains an **ingestion ledger** keyed by `item_key` to ensure reruns are safe.
 
-### 5.5 EverMemOS Message Mapping
-
-Each canonical item becomes exactly one EverMemOS message:
-
-```json
-{
-  "message_id": "{item_key}",
-  "create_time": "2026-02-25T01:23:45+00:00",
-  "sender": "me",
-  "sender_name": "Me",
-  "content": "content_text (optionally prefixed with minimal metadata)",
-  "refer_list": ["{parent_item_key}"],
-  "group_id": "chatgpt:conv_abc123",
-  "group_name": "ChatGPT: My conversation title",
-  "scene": "group_chat"
-}
-```
-
-Notes:
-
-1. Prefer `message_id = item_key` for strict idempotency.
-2. Use `refer_list` for message chains when `parent_message_id` is available.
-3. Use `group_id` to preserve conversation context for EMOS boundary detection and episodic extraction.
-4. For AI messages, set `sender = {platform}` and `sender_name = {platform_name}`.
-5. If the source does not expose message timestamps, use ingestion time for `create_time`.
-6. EverMemOS supports **idempotent upsert** by `message_id` (create-or-update). Ruminer should still keep the local ledger as the first line of defense for idempotency and debugging.
-
-### 5.6 Ingestion Ledger (Local)
+### 5.5 Ingestion Ledger (Local)
 
 Ruminer maintains a local idempotency ledger in IndexedDB (`ruminer.ingestion_ledger`) keyed by `item_key`.
 
@@ -317,13 +278,13 @@ Ruminer's approach:
 RR-V3 can execute nodes via a plugin registry (Zod-validated configs). Ruminer adds nodes for **browser-side** extraction and local bookkeeping:
 
 - `ruminer.extract_conversations` (list conversations, paginate, return conversation IDs + metadata)
-- `ruminer.extract_messages` (open a conversation and extract messages as canonical raw items)
+- `ruminer.extract_messages` (open a conversation and extract messages as standard EMOS message JSON)
 - `ruminer.normalize_and_hash` (compute `item_key`, `content_hash`, validate required fields)
 - `ruminer.ledger_upsert` (idempotency ledger -- local)
 
-- `ruminer.emos_ingest` (write canonical items to EMOS via the extension's direct EMOS client)
+- `ruminer.emos_ingest` (write standard EMOS message JSON to EMOS via the extension's direct EMOS client)
 
-For autonomous ingestion workflows (RR-V3 triggered), the full pipeline runs inside the extension: extract → normalize → ledger check → EMOS ingest → cursor update. OpenClaw is not involved. When the user explicitly asks OpenClaw to ingest ("ingest my ChatGPT history"), the agent can orchestrate the same steps via browser tools + `evermemos.addMemory`.
+For autonomous ingestion workflows (RR-V3 triggered), the full pipeline runs inside the extension: extract → normalize → ledger check → EMOS ingest → cursor update. OpenClaw is not involved in ingestion runs (it is used only to author/update workflows).
 
 ### 6.3 Checkpoints via Persistent Vars
 
@@ -350,24 +311,19 @@ Reliably ingest a user's AI chat conversations into EMOS, one platform at a time
 
 ### 7.2 MVP Platform Packs
 
-- **ChatGPT**: conversation list -> conversation thread -> messages.
-- **Gemini**: conversation list -> conversation thread -> messages.
-- **Claude**: conversation list -> conversation thread -> messages.
-- **DeepSeek**: conversation list -> conversation thread -> messages.
-
-Additional AI platforms can be added iteratively post-MVP.
+- **MVP**: **ChatGPT** (conversation list -> conversation thread -> messages)
+- **Later**: Gemini / Claude / DeepSeek and additional AI platforms iteratively post-MVP.
 
 ### 7.3 Characteristics
 
-- **Primary path (autonomous)**: RR-V3 triggers the workflow inside the extension. The extension performs browser automation (Chrome APIs), extracts content, normalizes it, checks the ledger, and writes to EMOS directly via its own EMOS client. OpenClaw is not involved.
-- **Alternative path (agent-driven)**: user asks OpenClaw to ingest. The agent uses browser tools (built-in `browser` tool + `browser-ext` tool) routed to the extension node to extract, then `evermemos.addMemory` to store. This path requires OpenClaw to be running.
+- **Autonomous path**: To create a new workflow, user first specify the requirements via chat interface. OpenClaw then uses browser tools (built-in `browser` tool + `browser-ext` tool) to explore webpage contents and finish the task. Finally it defines a repeatable workflow stored into RR-V3. For an existing workflow, RR-V3 triggers it inside the extension. The extension performs browser automation (Chrome APIs), extracts content, normalizes it, checks the ledger, and writes to EMOS directly via its own EMOS client. OpenClaw is not involved.
 - Runs on demand (user clicks "Run" in sidepanel Workflows tab) and optionally on a schedule for backfill.
 - Prioritizes correctness, idempotency, and stable IDs.
 - Each platform workflow follows the same pattern:
   1. Navigate to the platform's conversation list.
   2. Extract conversation metadata (IDs, titles, and timestamps if available).
   3. For each conversation (or new conversations since last cursor), open and extract messages.
-  4. Normalize each message into the canonical raw item schema.
+  4. Normalize each message into standard EMOS message JSON.
   5. Check ledger, ingest new/changed items to EMOS (direct API call from extension).
   6. Update cursor after each processed item (`ingested` or `skipped`), never after `failed`.
 
@@ -383,7 +339,7 @@ The main UI of the Ruminer extension is a sidepanel, which serves as the single 
 
 ### 8.1 Surfaces
 
-1. **Sidepanel (opens on extension button click)** -- the primary and only UI surface.
+1. **Sidepanel (opens on extension button click)** -- the primary UI surface.
    - **Chat tab**: text input with live EMOS search, full chat with OpenClaw.
    - **Memory tab**: browse/search/manage EMOS items.
    - **Workflows tab**: run, schedule, and monitor ingestion workflows.
@@ -564,7 +520,7 @@ When extraction fails repeatedly:
    - Tool group enforcement at two layers, both in the extension: prompt injection (via `chat.send`) and runtime rejection (route dispatcher). See §4.3. The `browser-ext` plugin has no role in enforcement.
    - WS auth token required for the extension to connect as a node.
 6. **Flow integrity**
-   - Display flow version/hash for every run.
+   - Display flow version for every run.
    - Prevent silent mutation: if a flow changes, require re-approval for tools that expanded.
 
 ## 12. Implementation Plan (Phased)
