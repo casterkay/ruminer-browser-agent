@@ -43,10 +43,10 @@ How these are installed depends on your OpenClaw environment:
 - **If your OpenClaw supports local plugin installs via CLI** (common pattern):
 
 ```bash
-openclaw plugins install "/absolute/path/to/ruminer-browser/app/openclaw-extensions/evermemos"
+openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"
 openclaw plugins enable evermemos
 
-openclaw plugins install "/absolute/path/to/ruminer-browser/app/openclaw-extensions/browser-ext"
+openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/browser-ext"
 openclaw plugins enable browser-ext
 ```
 
