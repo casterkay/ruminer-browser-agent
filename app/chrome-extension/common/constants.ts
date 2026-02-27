@@ -222,6 +222,11 @@ export const STORAGE_KEYS = {
   SERVER_STATUS: 'serverStatus',
   NATIVE_SERVER_PORT: 'nativeServerPort',
   NATIVE_AUTO_CONNECT_ENABLED: 'nativeAutoConnectEnabled',
+  OPENCLAW_GATEWAY_SETTINGS: 'openclawGatewaySettings',
+  OPENCLAW_GATEWAY_STATUS: 'openclawGatewayStatus',
+  OPENCLAW_GATEWAY_DEVICE_ID: 'openclawGatewayDeviceId',
+  EMOS_SETTINGS: 'emosSettings',
+  TOOL_GROUP_STATE: 'toolGroupState',
   SEMANTIC_MODEL: 'selectedModel',
   USER_PREFERENCES: 'userPreferences',
   VECTOR_INDEX: 'vectorIndex',
@@ -235,6 +240,10 @@ export const STORAGE_KEYS = {
   RR_TRIGGERS: 'rr_triggers',
   // Persistent recording state (guards resume across navigations/service worker restarts)
   RR_RECORDING_STATE: 'rr_recording_state',
+} as const;
+
+export const OPENCLAW_DEFAULTS = {
+  GATEWAY_WS_URL: 'ws://127.0.0.1:18789',
 } as const;
 
 // Notification Configuration

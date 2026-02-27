@@ -1,26 +1,18 @@
-# Chrome MCP Server 🚀
+# Ruminer Browser Agent 🚀
 
-[![Stars](https://img.shields.io/github/stars/hangwin/mcp-chrome)](https://img.shields.io/github/stars/hangwin/mcp-chrome)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-blue.svg)](https://www.typescriptlang.org/)
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://developer.chrome.com/docs/extensions/)
-[![Release](https://img.shields.io/github/v/release/hangwin/mcp-chrome.svg)](https://img.shields.io/github/v/release/hangwin/mcp-chrome.svg)
+> Ruminer is a sidepanel-first browser agent that connects to OpenClaw Gateway and routes browser automation through `browser.proxy`.
 
-> 🌟 **Turn your Chrome browser into your intelligent assistant** - Let AI take control of your browser, transforming it into a powerful AI-controlled automation tool.
-
-**📖 Documentation**: [English](README.md) | [中文](README_zh.md)
-
-> The project is still in its early stages and is under intensive development. More features, stability improvements, and other enhancements will follow.
+**Status**: This repository is now detached from the original `mcp-chrome` direction and is being refactored as a dedicated Ruminer codebase.
 
 ---
 
-## 🎯 What is Chrome MCP Server?
+## 🎯 What is Ruminer Browser Agent?
 
-Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) server** that exposes your Chrome browser functionality to AI assistants like Claude, enabling complex browser automation, content analysis, and semantic search. Unlike traditional browser automation tools (like Playwright), **Chrome MCP Server** directly uses your daily Chrome browser, leveraging existing user habits, configurations, and login states, allowing various large models or chatbots to take control of your browser and truly become your everyday assistant.
+Ruminer Browser Agent is a Chrome extension architecture for OpenClaw-based chat, memory, and workflows:
 
-## ✨ New Features(2025/12/30)
-
-- **A New Visual Editor for Claude Code & Codex**, for more detail here: [VisualEditor](docs/VisualEditor.md)
+- Gateway WebSocket transport (`chat.*`, `node.invoke`, `browser.proxy`)
+- Extension-side runtime tool-group gates
+- EMOS memory search and ingestion flows
 
 ## ✨ Core Features
 
@@ -46,6 +38,23 @@ Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) ser
 | **Response Speed**      | 50-200ms inter-process communication                                                                                      | ✅ Faster                                                                                              |
 
 ## 🚀 Quick Start
+
+### OpenClaw plugin modules in this repo
+
+Ruminer uses OpenClaw plugins from this repository:
+
+- `app/openclaw-extensions/evermemos` (memory search/add)
+- `app/openclaw-extensions/browser-ext` (browser request routing)
+
+Example installation (adjust absolute path to your local clone):
+
+```bash
+openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"
+openclaw plugins enable evermemos
+
+openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/browser-ext"
+openclaw plugins enable browser-ext
+```
 
 ### Prerequisites
 

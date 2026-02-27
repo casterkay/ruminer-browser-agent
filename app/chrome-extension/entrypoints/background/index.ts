@@ -1,16 +1,16 @@
-import { initNativeHostListener } from './native-host';
+import { cleanupModelCache } from '@/utils/semantic-similarity-engine';
+import { initElementMarkerListeners } from './element-marker';
+import { startOpenClawNodeClient } from './openclaw/node-client';
+import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
+import { initQuickPanelCommands } from './quick-panel/commands';
+import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
+import { initRecordReplayListeners } from './record-replay';
 import {
   initSemanticSimilarityListener,
   initializeSemanticEngineIfCached,
 } from './semantic-similarity';
 import { initStorageManagerListener } from './storage-manager';
-import { cleanupModelCache } from '@/utils/semantic-similarity-engine';
-import { initRecordReplayListeners } from './record-replay';
-import { initElementMarkerListeners } from './element-marker';
 import { initWebEditorListeners } from './web-editor';
-import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
-import { initQuickPanelCommands } from './quick-panel/commands';
-import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
@@ -37,7 +37,7 @@ export default defineBackground(() => {
   });
 
   // Initialize core services
-  initNativeHostListener();
+  void startOpenClawNodeClient();
   initSemanticSimilarityListener();
   initStorageManagerListener();
   // Record & Replay V1/V2 listeners
@@ -64,7 +64,6 @@ export default defineBackground(() => {
   initQuickPanelTabsHandler();
   // Quick Panel: keyboard shortcut handler
   initQuickPanelCommands();
-
   // Conditionally initialize semantic similarity engine if model cache exists
   initializeSemanticEngineIfCached()
     .then((initialized) => {

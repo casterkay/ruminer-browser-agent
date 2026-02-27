@@ -4,6 +4,10 @@
  */
 export { useAgentServer } from './useAgentServer';
 export { useAgentChat } from './useAgentChat';
+export { useOpenClawGateway } from './useOpenClawGateway';
+export { useOpenClawChat } from './useOpenClawChat';
+export { useEmosSuggestions } from './useEmosSuggestions';
+export { useEmosSearch } from './useEmosSearch';
 export { useAgentProjects } from './useAgentProjects';
 export { useAgentSessions } from './useAgentSessions';
 export { useAttachments, type AttachmentWithPreview } from './useAttachments';
@@ -14,6 +18,10 @@ export { useAgentChatViewRoute } from './useAgentChatViewRoute';
 
 export type { UseAgentServerOptions } from './useAgentServer';
 export type { UseAgentChatOptions } from './useAgentChat';
+export type { UseOpenClawGateway, GatewayEvent } from './useOpenClawGateway';
+export type { UseOpenClawChat, ChatMessage, ChatRole } from './useOpenClawChat';
+export type { UseEmosSuggestions, MemorySuggestion } from './useEmosSuggestions';
+export type { UseEmosSearch, MemoryItem, MemoryFilters } from './useEmosSearch';
 export type { UseAgentProjectsOptions } from './useAgentProjects';
 export type { UseAgentSessionsOptions } from './useAgentSessions';
 export type { AgentThemeId, UseAgentTheme } from './useAgentTheme';

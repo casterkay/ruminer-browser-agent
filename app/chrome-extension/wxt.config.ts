@@ -38,7 +38,6 @@ export default defineConfig({
     name: '__MSG_extensionName__',
     description: '__MSG_extensionDescription__',
     permissions: [
-      'nativeMessaging',
       'tabs',
       'activeTab',
       'scripting',
@@ -63,7 +62,7 @@ export default defineConfig({
     },
     action: {
       default_popup: 'popup.html',
-      default_title: 'Chrome MCP Server',
+      default_title: 'Ruminer',
     },
     // Chrome Side Panel entry for workflow management
     // Ref: https://developer.chrome.com/docs/extensions/reference/api/sidePanel

@@ -10,11 +10,14 @@ export default defineConfig([
   {
     ignores: [
       'dist/**',
+      'build/**',
       '.output/**',
       '.wxt/**',
       'node_modules/**',
+      'coverage/**',
       'logs/**',
       '*.log',
+      '*.min.js',
       '.cache/**',
       '.temp/**',
       '.vscode/**',

@@ -34,8 +34,8 @@ const statusColor = computed(() => {
 });
 
 const statusText = computed(() => {
-  if (props.isServerReady) return 'Agent server connected';
-  if (props.nativeConnected) return 'Connecting to agent server...';
-  return 'Native host not connected';
+  if (props.isServerReady) return 'Gateway connected';
+  if (props.nativeConnected) return 'Connecting to Gateway...';
+  return 'Gateway disconnected';
 });
 </script>

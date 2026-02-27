@@ -12,3 +12,31 @@ export {
   extractFlowCandidates,
   type FlowConversionResult,
 } from './rr-flow-convert';
+
+// OpenClaw settings and tool-group helpers
+export {
+  getGatewaySettings,
+  setGatewaySettings,
+  getGatewayStatus,
+  setGatewayStatus,
+  getOrCreateGatewayDeviceId,
+  isGatewayConfigured,
+  getEmosSettings,
+  setEmosSettings,
+  getDefaultGatewaySettings,
+  getDefaultEmosSettings,
+  type GatewayConnectionSettings,
+  type GatewayConnectionStatus,
+  type EmosConnectionSettings,
+} from './openclaw-settings';
+export {
+  getDefaultToolGroupState,
+  getToolGroupState,
+  setToolGroupState,
+  setToolGroupEnabled,
+  isToolGroupEnabled,
+  getDisabledToolGroups,
+  buildToolGroupRestrictionText,
+  type ToolGroupId,
+  type ToolGroupState,
+} from './tool-groups';

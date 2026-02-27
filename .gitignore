@@ -31,6 +31,14 @@ dist
 .env
 .env.local
 .env.*.local
+.env*
+
+# Build artifacts
+build/
+
+# Temp files
+*.tmp
+Thumbs.db
 
 # Prevent npm metadata pollution
 false/

@@ -1,0 +1,11 @@
+{
+  "id": "browser-ext",
+  "name": "Ruminer Browser Extension Plugin",
+  "version": "0.1.0",
+  "extensions": ["./index.ts"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

@@ -9,10 +9,13 @@ export default tseslint.config(
     ignores: [
       'node_modules/',
       'dist/',
+      'build/',
       '.output/',
       '.wxt/',
+      'coverage/',
       'logs/',
       '*.log',
+      '*.min.js',
       '.cache/',
       '.temp/',
       '.idea/',
