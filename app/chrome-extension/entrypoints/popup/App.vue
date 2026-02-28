@@ -2,7 +2,7 @@
   <div class="popup-root">
     <header>
       <h1>Ruminer</h1>
-      <p>Browser agent powered by OpenClaw Gateway</p>
+      <p>Browser agent for personal memory integration</p>
     </header>
 
     <section class="status-card" :class="gatewayConnected ? 'ok' : 'warn'">

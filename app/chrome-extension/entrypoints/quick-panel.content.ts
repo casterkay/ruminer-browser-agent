@@ -103,8 +103,8 @@ export default defineContentScript({
     // Register message listener
     chrome.runtime.onMessage.addListener(handleMessage);
 
-    // Cleanup on page unload
-    window.addEventListener('unload', () => {
+    // Cleanup when the document is being unloaded (policy-safe on modern pages)
+    window.addEventListener('pagehide', () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
       if (controller) {
         controller.dispose();

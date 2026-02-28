@@ -4,7 +4,7 @@
     "description": "扩展名称"
   },
   "extensionDescription": {
-    "message": "Ruminer 浏览器代理，通过 OpenClaw Gateway 连接",
+    "message": "Ruminer 浏览器智能体，用于个人记忆整合",
     "description": "扩展描述"
   },
   "nativeServerConfigLabel": {

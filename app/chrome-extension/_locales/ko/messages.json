@@ -4,7 +4,7 @@
     "description": "확장 프로그램 이름"
   },
   "extensionDescription": {
-    "message": "OpenClaw Gateway 기반 Ruminer 브라우저 에이전트",
+    "message": "개인 메모리 통합을 위한 Ruminer 브라우저 에이전트",
     "description": "확장 프로그램 설명"
   },
   "nativeServerConfigLabel": {

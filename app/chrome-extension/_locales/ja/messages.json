@@ -3,7 +3,7 @@
     "message": "Chrome MCPサーバー"
   },
   "extensionDescription": {
-    "message": "自身のChromeブラウザの機能を外部に公開します"
+    "message": "個人メモリ統合のためのRuminerブラウザエージェント"
   },
   "nativeServerConfigLabel": {
     "message": "ネイティブサーバー設定"

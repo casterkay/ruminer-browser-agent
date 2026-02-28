@@ -19,8 +19,20 @@ interface GatewayRpcMessage {
   timeoutMs?: number;
 }
 
+async function safeRuntimeBroadcast(message: unknown): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage(message);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    // Expected when no popup/sidepanel/content listener is active.
+    if (!text.includes('Receiving end does not exist')) {
+      console.debug('[OpenClaw] runtime broadcast failed:', error);
+    }
+  }
+}
+
 function broadcastGatewayEvent(event: { event: string; seq?: number; payload?: unknown }): void {
-  void chrome.runtime.sendMessage({
+  void safeRuntimeBroadcast({
     type: BACKGROUND_MESSAGE_TYPES.OPENCLAW_GATEWAY_EVENT,
     event,
   });
@@ -32,7 +44,7 @@ function broadcastGatewayStatus(status: {
   lastConnectionError: string | null;
   state: string;
 }) {
-  void chrome.runtime.sendMessage({
+  void safeRuntimeBroadcast({
     type: BACKGROUND_MESSAGE_TYPES.OPENCLAW_GATEWAY_STATUS_CHANGED,
     status,
   });

@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extensionDescription": {
-    "message": "Ruminer Browser Agent powered by OpenClaw Gateway",
+    "message": "Ruminer Browser Agent for personal memory integration",
     "description": "Extension description"
   },
   "nativeServerConfigLabel": {
