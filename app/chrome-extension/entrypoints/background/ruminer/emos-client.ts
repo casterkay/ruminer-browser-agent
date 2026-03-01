@@ -32,19 +32,10 @@ function ensureBaseUrl(baseUrl: string): string {
 
 async function buildHeaders(): Promise<Record<string, string>> {
   const settings = await getEmosSettings();
-  const headers: Record<string, string> = {
+  return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${settings.apiKey}`,
   };
-
-  if (settings.tenantId) {
-    headers['X-Tenant-Id'] = settings.tenantId;
-  }
-  if (settings.spaceId) {
-    headers['X-Space-Id'] = settings.spaceId;
-  }
-
-  return headers;
 }
 
 async function getBaseUrl(): Promise<string> {

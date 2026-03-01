@@ -18,8 +18,6 @@ export interface GatewayConnectionStatus {
 export interface EmosConnectionSettings {
   baseUrl: string;
   apiKey: string;
-  tenantId: string | null;
-  spaceId: string | null;
   lastTestOkAt: string | null;
   lastTestError: string | null;
 }
@@ -33,10 +31,8 @@ const DEFAULT_GATEWAY_SETTINGS: GatewayConnectionSettings = {
 };
 
 const DEFAULT_EMOS_SETTINGS: EmosConnectionSettings = {
-  baseUrl: 'http://127.0.0.1:1995',
+  baseUrl: 'https://api.evermind.ai',
   apiKey: '',
-  tenantId: null,
-  spaceId: null,
   lastTestOkAt: null,
   lastTestError: null,
 };
@@ -146,8 +142,6 @@ export async function getEmosSettings(): Promise<EmosConnectionSettings> {
   return {
     baseUrl: normalizeString(raw.baseUrl, DEFAULT_EMOS_SETTINGS.baseUrl),
     apiKey: normalizeString(raw.apiKey, ''),
-    tenantId: normalizeNullableString(raw.tenantId),
-    spaceId: normalizeNullableString(raw.spaceId),
     lastTestOkAt: normalizeNullableString(raw.lastTestOkAt),
     lastTestError: normalizeNullableString(raw.lastTestError),
   };

@@ -1,745 +1,550 @@
-This document provides a complete reference for EverMemOS's REST APIs. It covers both the V1 Memory Controller API (production-ready memory management) and the V3 Agentic API (advanced retrieval and orchestration).
+# Memory API Documentation
 
-For high-level architecture context, see Architecture. For implementation details of memory processing, see Memory Processing Deep Dive. For practical examples, see Demos and Client Examples.
-Overview
+## Overview
 
-EverMemOS exposes two primary API surfaces:
-API Version Purpose Base Path Status
-V1 Memory Controller Memory storage, retrieval, and metadata management /api/v1/memories Production
-V3 Agentic Advanced agentic retrieval with LLM-guided multi-round search /api/v3/agentic Production
+The Memory API provides RESTful endpoints for storing, retrieving, searching, and managing conversational memories.
 
-EverMemOS supports tenant context headers for multi-tenant isolation and supports both synchronous and background processing modes.
+**Base URL:** `http://localhost:1995/api/v1/memories`
 
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py1-979
-README.md456-547
-Common API Concepts
-Tenant Context Headers
+## API Endpoints
 
-EverMemOS supports tenant identification headers:
-Header Required Description Example
-X-Organization-Id Yes Organization identifier org_123
-X-Space-Id Yes Space identifier within organization space_456
-X-API-Key Optional API authentication key sk_test_abc123
+| Method | Endpoint                      | Description                |
+| ------ | ----------------------------- | -------------------------- |
+| POST   | `/memories`                   | Store a single message     |
+| GET    | `/memories`                   | Fetch memories by type     |
+| GET    | `/memories/search`            | Search memories            |
+| GET    | `/memories/conversation-meta` | Get conversation metadata  |
+| POST   | `/memories/conversation-meta` | Save conversation metadata |
+| PATCH  | `/memories/conversation-meta` | Partial update metadata    |
+| DELETE | `/memories`                   | Soft delete memories       |
 
-These headers enable resource isolation across tenants. See Multi-Tenant Architecture for details.
+---
 
-Ruminer MVP conventions (EverMemOS managed cloud)
+## POST `/memories` - Store Message
 
-- Use a single EverMemOS API key in a single organization/space for all Ruminer users/tenants (i.e., `X-Organization-Id` and `X-Space-Id` are constant values configured on the server).
-- Tenant isolation for Ruminer MVP is implemented by encoding `TENANT_ID` into EverMemOS identifiers:
-  - Sender / user ID: `TENANT_ID:AGENT_ID` (where `AGENT_ID` can be `me` or a model ID like `anthropic/claude-sonnet-4.6`)
-  - Group ID: `TENANT_ID:PLATFORM:THREAD_ID` (thread = conversation/social post thread)
+Store a single message into memory.
 
-Sources:
-tests/test_memory_controller.py84-97
-Response Format
+### Request
 
-All endpoints return a unified response structure:
-
+```json
 {
-"status": "ok|failed",
-"message": "Human-readable status message",
-"result": {
-// Endpoint-specific data
+  "message_id": "msg_001",
+  "create_time": "2025-01-15T10:00:00+00:00",
+  "sender": "user_001",
+  "content": "Let's discuss the technical solution for the new feature today",
+  "group_id": "group_123",
+  "group_name": "Project Discussion Group",
+  "sender_name": "John",
+  "role": "user",
+  "refer_list": ["msg_000"]
 }
-}
+```
 
-For errors, the response includes:
+### Request Fields
 
+| Field         | Type   | Required | Description                                |
+| ------------- | ------ | -------- | ------------------------------------------ |
+| `message_id`  | string | Yes      | Unique message identifier                  |
+| `create_time` | string | Yes      | ISO 8601 timestamp with timezone           |
+| `sender`      | string | Yes      | Sender user ID                             |
+| `content`     | string | Yes      | Message content                            |
+| `group_id`    | string | No       | Group identifier                           |
+| `group_name`  | string | No       | Group display name                         |
+| `sender_name` | string | No       | Sender display name (defaults to `sender`) |
+| `role`        | string | No       | `user` (human) or `assistant` (AI)         |
+| `refer_list`  | array  | No       | Referenced message IDs                     |
+
+### Group ID Behavior
+
+When `group_id` and `group_name` are not provided (null), the API automatically creates a default group based on the `sender` field. This enables simpler use cases where correlated memories between multiple senders are not needed.
+
+**When to omit `group_id`:**
+
+- **Knowledge base ingestion** - Single-source content where sender correlation is not needed
+- **Persona/profile building** - Building memories for a single user without multi-party context
+- **Simple chatbot interactions** - 1:1 conversations where grouping is not required
+
+**When to provide `group_id`:**
+
+- **Multi-user conversations** - Group chats where multiple participants interact
+- **User + AI assistant** - Conversations between a user and AI where context correlation matters
+- **Project/topic-based organization** - When you want to query memories by logical groupings
+
+Providing a `group_id` enables better episodic memory extraction by giving the system context about related messages across multiple senders. See the [Group Chat Guide](../advanced/GROUP_CHAT_GUIDE.md) for detailed guidance.
+
+### Example
+
+```bash
+curl -X POST "http://localhost:1995/api/v1/memories" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message_id": "msg_001",
+    "create_time": "2025-01-15T10:00:00+00:00",
+    "sender": "user_001",
+    "sender_name": "John",
+    "role": "user",
+    "content": "Let us discuss the technical solution for the new feature today",
+    "group_id": "group_123",
+    "group_name": "Project Discussion Group",
+    "refer_list": []
+  }'
+```
+
+### Response
+
+**Success (200)** - Memory extracted (boundary triggered):
+
+```json
 {
-"status": "failed",
-"code": "ERROR_CODE",
-"message": "Error description",
-"timestamp": "2025-01-15T10:30:00+00:00",
-"path": "/api/v1/memories"
+  "status": "ok",
+  "message": "Extracted 1 memories",
+  "result": {
+    "saved_memories": [],
+    "count": 1,
+    "status_info": "extracted"
+  }
 }
+```
 
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py237-245
-src/infra_layer/adapters/input/api/memory/memory_controller.py385-389
-Synchronous vs. Background Processing
+**Success (200)** - Message queued (boundary not triggered):
 
-Endpoints that trigger memory extraction support a sync_mode query parameter:
-
-    sync_mode=true (default): Block until memory extraction completes
-    sync_mode=false: Queue for background processing, return immediately
-
-Sources:
-tests/test_memory_controller.py148-157
-API Endpoint Hierarchy
-
-Diagram: API Endpoint Structure
-
-This diagram shows the relationship between API endpoints and their backing services. Both V1 and V3 APIs ultimately invoke the same MemoryManager orchestrator.
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py42-979
-V1 Memory Controller API
-
-The V1 API provides production-ready endpoints for memory lifecycle management.
-POST /api/v1/memories
-
-Store single message memory
-
-Accepts a single message in simplified format and processes it through the memory extraction pipeline. Messages accumulate until boundary detection triggers extraction.
-
-Endpoint: POST /api/v1/memories
-
-Request Body:
-
+```json
 {
-"message_id": "msg_001",
-"create_time": "2025-02-01T10:00:00+08:00",
-"sender": "tenant_123:me",
-"sender_name": "Me",
-"content": "We need to complete the product design this week",
-"group_id": "tenant_123:chatgpt:conv_001",
-"group_name": "chatgpt conversation conv_001",
-"scene": "group_chat",
-"refer_list": ["msg_000"]
+  "status": "ok",
+  "message": "Message queued, awaiting boundary detection",
+  "result": {
+    "saved_memories": [],
+    "count": 0,
+    "status_info": "accumulated"
+  }
 }
+```
 
-Request Fields:
-Field Type Required Description
-message_id string Yes Unique message identifier
-create_time string Yes ISO 8601 timestamp with timezone
-sender string Yes User ID of sender
-sender_name string No Display name of sender
-content string Yes Message text content
-group_id string No Group/conversation identifier
-group_name string No Group display name
-scene string Yes Must be assistant or group_chat
-refer_list array[string] No Referenced message IDs
+---
 
-Response (Extracted):
+## GET `/memories` - Fetch Memories
 
+Retrieve memories by type with optional filters.
+
+### Request Parameters (Query String)
+
+| Parameter       | Type    | Required | Default           | Description                  |
+| --------------- | ------- | -------- | ----------------- | ---------------------------- |
+| `user_id`       | string  | No\*     | -                 | User ID                      |
+| `group_id`      | string  | No\*     | -                 | Group ID                     |
+| `memory_type`   | string  | No       | `episodic_memory` | Memory type                  |
+| `limit`         | integer | No       | 40                | Max results (max: 500)       |
+| `offset`        | integer | No       | 0                 | Pagination offset            |
+| `start_time`    | string  | No       | -                 | Filter start time (ISO 8601) |
+| `end_time`      | string  | No       | -                 | Filter end time (ISO 8601)   |
+| `version_range` | array   | No       | -                 | Version range `[start, end]` |
+
+\*At least one of `user_id` or `group_id` must be provided (cannot both be `__all__`).
+
+### Memory Types
+
+| Type              | Description                     |
+| ----------------- | ------------------------------- |
+| `profile`         | User profile information        |
+| `episodic_memory` | Conversation episodes (default) |
+| `foresight`       | Prospective memory              |
+| `event_log`       | Atomic facts                    |
+
+### Example
+
+```bash
+curl "http://localhost:1995/api/v1/memories?user_id=user_123&memory_type=episodic_memory&limit=20"
+```
+
+### Response
+
+```json
 {
-"status": "ok",
-"message": "Extracted 2 memories",
-"result": {
-"saved_memories": [
+  "status": "ok",
+  "message": "Memory retrieval successful, retrieved 1 memories",
+  "result": {
+    "memories": [
+      {
+        "memory_type": "episodic_memory",
+        "user_id": "user_123",
+        "timestamp": "2024-01-15T10:30:00",
+        "content": "User discussed coffee during the project sync",
+        "summary": "Project sync coffee note"
+      }
+    ],
+    "total_count": 100,
+    "has_more": false,
+    "metadata": {
+      "source": "fetch_mem_service",
+      "user_id": "user_123",
+      "memory_type": "fetch"
+    }
+  }
+}
+```
+
+---
+
+## GET `/memories/search` - Search Memories
+
+Search memories using keyword, vector, or hybrid retrieval methods.
+
+### Request Body
+
+```json
 {
-"memory_type": "episodic_memory",
-"user_id": "tenant_123:me",
-"group_id": "tenant_123:chatgpt:conv_001",
-"timestamp": "2025-02-01T10:00:00",
-"summary": "Discussion about product design deadline"
+  "query": "coffee preference",
+  "user_id": "user_123",
+  "group_id": "group_456",
+  "retrieve_method": "keyword",
+  "memory_types": ["episodic_memory"],
+  "top_k": 10,
+  "start_time": "2024-01-01T00:00:00",
+  "end_time": "2024-12-31T23:59:59",
+  "radius": 0.6,
+  "include_metadata": true
 }
-],
-"count": 2,
-"status_info": "extracted"
-}
-}
+```
 
-Response (Accumulated):
+### Request Fields
 
+| Field              | Type    | Required | Default                              | Description                                                   |
+| ------------------ | ------- | -------- | ------------------------------------ | ------------------------------------------------------------- |
+| `query`            | string  | No       | -                                    | Search query text                                             |
+| `user_id`          | string  | No\*     | -                                    | User ID                                                       |
+| `group_id`         | string  | No\*     | -                                    | Group ID                                                      |
+| `retrieve_method`  | string  | No       | `keyword`                            | Retrieval method                                              |
+| `memory_types`     | array   | No       | `[]` (defaults to `episodic_memory`) | Memory types to search                                        |
+| `top_k`            | integer | No       | 40                                   | Max results (max: 100)                                        |
+| `start_time`       | string  | No       | -                                    | Filter start time (ISO 8601)                                  |
+| `end_time`         | string  | No       | -                                    | Filter end time (ISO 8601)                                    |
+| `radius`           | float   | No       | -                                    | Cosine similarity threshold (0.0-1.0, for vector/hybrid only) |
+| `include_metadata` | boolean | No       | true                                 | Include metadata in response                                  |
+| `current_time`     | string  | No       | -                                    | Current time for filtering foresight events                   |
+
+\*At least one of `user_id` or `group_id` must be provided (cannot both be `__all__`).
+
+**Note:** `profile` memory type is not supported in the search interface.
+
+### Retrieve Methods
+
+| Method    | Description                                  |
+| --------- | -------------------------------------------- |
+| `keyword` | BM25 keyword retrieval (default)             |
+| `vector`  | Vector semantic retrieval                    |
+| `hybrid`  | Keyword + vector + rerank                    |
+| `rrf`     | RRF fusion (keyword + vector + RRF ranking)  |
+| `agentic` | LLM-guided multi-round intelligent retrieval |
+
+### Example
+
+```bash
+curl -X GET "http://localhost:1995/api/v1/memories/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "coffee preference",
+    "user_id": "user_123",
+    "retrieve_method": "keyword",
+    "top_k": 10
+  }'
+```
+
+### Response
+
+```json
 {
-"status": "ok",
-"message": "Message queued, awaiting boundary detection",
-"result": {
-"saved_memories": [],
-"count": 0,
-"status_info": "accumulated"
+  "status": "ok",
+  "message": "Memory search successful, retrieved 1 groups",
+  "result": {
+    "memories": [
+      {
+        "episodic_memory": [
+          {
+            "memory_type": "episodic_memory",
+            "user_id": "user_123",
+            "timestamp": "2024-01-15T10:30:00",
+            "summary": "Discussed coffee choices",
+            "group_id": "group_456"
+          }
+        ]
+      }
+    ],
+    "scores": [{ "episodic_memory": [0.95] }],
+    "importance_scores": [0.85],
+    "original_data": [],
+    "total_count": 45,
+    "has_more": false,
+    "query_metadata": {
+      "source": "episodic_memory_es_repository",
+      "user_id": "user_123",
+      "memory_type": "retrieve"
+    },
+    "metadata": {
+      "source": "episodic_memory_es_repository",
+      "user_id": "user_123",
+      "memory_type": "retrieve"
+    },
+    "pending_messages": []
+  }
 }
-}
+```
 
-Processing Flow:
+### Response Fields
 
-Diagram: Memory Storage Request Flow
+| Field               | Description                                     |
+| ------------------- | ----------------------------------------------- |
+| `memories`          | List of memory groups, organized by memory type |
+| `scores`            | Relevance scores for each memory                |
+| `importance_scores` | Group importance scores for sorting             |
+| `original_data`     | Original data associated with memories          |
+| `total_count`       | Total number of memories found                  |
+| `has_more`          | Whether more results are available              |
+| `query_metadata`    | Metadata about the query execution              |
+| `metadata`          | Additional response metadata                    |
+| `pending_messages`  | Messages waiting for memory extraction          |
 
-This sequence shows how messages are either accumulated or extracted based on boundary detection.
+---
 
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py63-257
-tests/test_memory_controller.py311-461
-GET /api/v1/memories
+## GET `/memories/conversation-meta` - Get Metadata
 
-Fetch user memories (KV retrieval)
+Retrieve conversation metadata by group_id with fallback to default config.
 
-Directly retrieves stored memories by user ID without search ranking. Supports multiple memory types.
+### Request Parameters
 
-Endpoint: GET /api/v1/memories
+| Parameter  | Type   | Required | Description                        |
+| ---------- | ------ | -------- | ---------------------------------- |
+| `group_id` | string | No       | Group ID (omit for default config) |
 
-Request Body (JSON in GET request):
+### Example
 
+```bash
+curl "http://localhost:1995/api/v1/memories/conversation-meta?group_id=group_123"
+```
+
+### Response
+
+```json
 {
-"user_id": "tenant_123:me",
-"memory_type": "episodic_memory",
-"limit": 10,
-"offset": 0
+  "status": "ok",
+  "message": "Conversation metadata retrieved successfully",
+  "result": {
+    "id": "...",
+    "group_id": "group_123",
+    "scene": "group_chat",
+    "name": "Engineering Team",
+    "user_details": {...},
+    "is_default": false
+  }
 }
+```
 
-Request Fields:
-Field Type Required Description
-user_id string Yes User identifier
-memory_type string Yes episodic_memory, event_log, foresight, profile
-limit integer No Maximum results (default: 10)
-offset integer No Pagination offset (default: 0)
+---
 
-Response:
+## POST `/memories/conversation-meta` - Save Metadata
 
+Save or update conversation metadata (upsert behavior).
+
+### Request Body
+
+```json
 {
-"status": "ok",
-"message": "Memory retrieval successful, retrieved 5 memories",
-"result": {
-"memories": [
+  "version": "1.0.0",
+  "scene": "group_chat",
+  "scene_desc": {
+    "description": "Project discussion group chat",
+    "type": "project_discussion"
+  },
+  "name": "Engineering Team",
+  "description": "Backend team discussions",
+  "group_id": "group_123",
+  "created_at": "2025-01-15T10:00:00Z",
+  "default_timezone": "America/New_York",
+  "user_details": {
+    "alice": {
+      "full_name": "Alice Smith",
+      "role": "user",
+      "custom_role": "Tech Lead"
+    }
+  },
+  "tags": ["engineering", "backend"]
+}
+```
+
+### Request Fields
+
+| Field              | Type   | Required | Description                                    |
+| ------------------ | ------ | -------- | ---------------------------------------------- |
+| `version`          | string | Yes      | Metadata version                               |
+| `scene`            | string | Yes      | Scene identifier: `assistant` or `group_chat`  |
+| `scene_desc`       | object | Yes      | Scene description object                       |
+| `name`             | string | Yes      | Conversation name                              |
+| `description`      | string | No       | Conversation description                       |
+| `group_id`         | string | No       | Group identifier (omit for default config)     |
+| `created_at`       | string | Yes      | Conversation creation time (ISO 8601 format)   |
+| `default_timezone` | string | No       | Default timezone (defaults to system timezone) |
+| `user_details`     | object | No       | Participant details, key is user ID            |
+| `tags`             | array  | No       | Tag list                                       |
+
+### User Details Fields
+
+| Field         | Type   | Description           |
+| ------------- | ------ | --------------------- |
+| `full_name`   | string | Display name          |
+| `role`        | string | `user` or `assistant` |
+| `custom_role` | string | Job title/position    |
+| `extra`       | object | Additional metadata   |
+
+---
+
+## PATCH `/memories/conversation-meta` - Update Metadata
+
+Partially update conversation metadata.
+
+### Request Body
+
+```json
 {
-"memory_type": "episodic_memory",
-"user_id": "tenant_123:me",
-"timestamp": "2025-01-15T10:30:00",
-"summary": "Discussed coffee preference",
-"group_id": "tenant_123:chatgpt:conv_001"
+  "group_id": "group_123",
+  "name": "Updated Team Name",
+  "tags": ["engineering", "python"]
 }
-],
-"total_count": 15,
-"has_more": true,
-"metadata": {
-"source": "fetch_mem_service",
-"user_id": "tenant_123:me",
-"memory_type": "episodic_memory"
-}
-}
-}
+```
 
-Memory Types:
-Type Description Common Fields
-episodic_memory Conversation summaries summary, timestamp, group_id
-event_log Atomic facts atomic_fact, timestamp, user_id
-foresight Future predictions content, parent_episode_id, valid_until
-profile User characteristics full_name, traits, preferences
+### Updatable Fields
 
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py259-402
-tests/test_memory_controller.py463-518
-GET /api/v1/memories/search
+| Field              | Description                           |
+| ------------------ | ------------------------------------- |
+| `name`             | Conversation name                     |
+| `description`      | Conversation description              |
+| `scene_desc`       | Scene description                     |
+| `tags`             | Tag list                              |
+| `user_details`     | User details (replaces entire object) |
+| `default_timezone` | Default timezone                      |
 
-Search memories (keyword/vector/hybrid retrieval)
+### Response
 
-Performs ranked retrieval based on query text. Supports three retrieval strategies.
-
-Endpoint: GET /api/v1/memories/search
-
-Request Body:
-
+```json
 {
-"user_id": "tenant_123:me",
-"query": "coffee preferences",
-"data_source": "episode",
-"memory_scope": "personal",
-"retrieval_mode": "rrf",
-"top_k": 10,
-"start_time": "2024-12-01T00:00:00+08:00",
-"end_time": "2025-01-15T23:59:59+08:00"
+  "status": "ok",
+  "message": "Conversation metadata updated successfully, 2 fields updated",
+  "result": {
+    "id": "...",
+    "group_id": "group_123",
+    "scene": "group_chat",
+    "name": "Updated Team Name",
+    "updated_fields": ["name", "tags"],
+    "updated_at": "2025-01-15T12:00:00Z"
+  }
 }
+```
 
-Request Fields:
-Field Type Required Description
-query string Yes* Natural language query (*optional for profile source)
-user_id string No Filter by user ID
-group_id string No Filter by group ID
-data_source string Yes episode, event_log, foresight, profile
-memory_scope string Yes personal, group, all
-retrieval_mode string Yes bm25, embedding, rrf (recommended)
-top_k integer No Results per group (default: 5)
-start_time string No ISO 8601 timestamp for time filtering
-end_time string No ISO 8601 timestamp for time filtering
+---
 
-Retrieval Modes:
-Mode Method Use Case Speed
-bm25 Keyword (BM25) Exact term matching Fast
-embedding Vector similarity Semantic similarity Medium
-rrf Reciprocal Rank Fusion Balanced precision/recall Medium
+## DELETE `/memories` - Delete Memories
 
-Response:
+Soft delete memories based on filter criteria (AND logic).
 
+### Request Body
+
+```json
 {
-"status": "ok",
-"message": "Memory search successful, retrieved 3 groups",
-"result": {
-"memories": [
+  "event_id": "evt_001",
+  "user_id": "user_123",
+  "group_id": "group_456"
+}
+```
+
+### Request Fields
+
+| Field      | Type   | Required | Default   | Description        |
+| ---------- | ------ | -------- | --------- | ------------------ |
+| `event_id` | string | No       | `__all__` | Filter by event ID |
+| `user_id`  | string | No       | `__all__` | Filter by user ID  |
+| `group_id` | string | No       | `__all__` | Filter by group ID |
+
+At least one filter must be provided (not all `__all__`).
+
+### Example
+
+```bash
+# Delete all memories for a user in a group
+curl -X DELETE "http://localhost:1995/api/v1/memories" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user_123", "group_id": "group_456"}'
+```
+
+### Response
+
+```json
 {
-"group_456": [
+  "status": "ok",
+  "message": "Successfully deleted 10 memories",
+  "result": {
+    "filters": ["user_id", "group_id"],
+    "count": 10
+  }
+}
+```
+
+---
+
+## Batch Processing with run_memorize.py
+
+For batch processing GroupChatFormat JSON files:
+
+```bash
+# Process a group chat file
+uv run python src/bootstrap.py src/run_memorize.py \
+  --input data/group_chat.json \
+  --scene group_chat \
+  --api-url http://localhost:1995/api/v1/memories
+
+# Validate format only
+uv run python src/bootstrap.py src/run_memorize.py \
+  --input data/group_chat.json \
+  --scene group_chat \
+  --validate-only
+```
+
+### Parameters
+
+| Parameter         | Required | Description                           |
+| ----------------- | -------- | ------------------------------------- |
+| `--input`         | Yes      | Path to GroupChatFormat JSON file     |
+| `--scene`         | Yes      | `group_chat` or `assistant`           |
+| `--api-url`       | Yes\*    | Memory API endpoint                   |
+| `--validate-only` | No       | Only validate format, skip processing |
+
+\*Required unless using `--validate-only`.
+
+---
+
+## Error Responses
+
+All error responses follow this format:
+
+```json
 {
-"memory_type": "episodic_memory",
-"user_id": "tenant_123:me",
-"timestamp": "2025-01-15T10:30:00",
-"summary": "Discussed coffee preference",
-"group_id": "tenant_123:chatgpt:conv_001"
+  "status": "failed",
+  "code": "ERROR_CODE",
+  "message": "Human-readable error message",
+  "timestamp": "2025-01-15T10:30:00+00:00",
+  "path": "/api/v1/memories"
 }
-]
-}
-],
-"scores": [[0.95, 0.87]],
-"importance_scores": [0.85],
-"total_count": 3,
-"has_more": false,
-"metadata": {
-"source": "hybrid_retrieval",
-"user_id": "tenant_123:me",
-"memory_type": "retrieve"
-}
-}
-}
+```
 
-Response Structure:
+### Error Codes
 
-    memories: List of dictionaries, each containing {group_id: [memory_list]}
-    scores: List of score arrays, one per group, matching memory order
-    importance_scores: Overall importance per group (for vector/hybrid modes)
-    total_count: Number of groups returned
-    has_more: Pagination indicator
+| Code                 | HTTP Status | Description                           |
+| -------------------- | ----------- | ------------------------------------- |
+| `INVALID_PARAMETER`  | 400         | Invalid or missing request parameters |
+| `RESOURCE_NOT_FOUND` | 404         | Requested resource not found          |
+| `SYSTEM_ERROR`       | 500         | Internal server error                 |
 
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py404-563
-tests/test_memory_controller.py637-799
-POST /api/v1/memories/conversation-meta
+---
 
-Save conversation metadata
+## See Also
 
-Creates or updates complete conversation metadata including participants, scene, and tags.
-
-Endpoint: POST /api/v1/memories/conversation-meta
-
-Request Body:
-
-{
-"version": "1.0",
-"scene": "assistant",
-"scene_desc": {
-"description": "Project collaboration chat",
-"bot_ids": ["bot_001"],
-"extra": {"category": "work"}
-},
-"name": "Project Discussion Group",
-"description": "Technical design discussions",
-"group_id": "tenant_123:chatgpt:conv_001",
-"created_at": "2025-01-15T10:00:00+08:00",
-"default_timezone": "Asia/Shanghai",
-"user_details": {
-"tenant_123:me": {
-"full_name": "Alice Chen",
-"role": "developer",
-"extra": {"department": "Engineering"}
-}
-},
-"tags": ["project", "technical"]
-}
-
-Request Fields:
-Field Type Required Description
-version string Yes Metadata schema version
-scene string Yes assistant or group_chat
-scene_desc object Yes Scene-specific configuration
-name string Yes Conversation display name
-description string Yes Conversation description
-group_id string Yes Unique group identifier
-created_at string Yes ISO 8601 creation timestamp
-default_timezone string Yes IANA timezone (e.g., Asia/Shanghai)
-user_details object Yes Map of user_id → UserDetail
-tags array[string] No Classification tags
-
-UserDetail Schema:
-
-{
-"full_name": "string",
-"role": "string",
-"extra": {}
-}
-
-Response:
-
-{
-"status": "ok",
-"message": "Conversation metadata saved successfully",
-"result": {
-"id": "507f1f77bcf86cd799439011",
-"group_id": "tenant_123:chatgpt:conv_001",
-"scene": "assistant",
-"name": "Project Discussion Group",
-"version": "1.0",
-"created_at": "2025-01-15T02:00:00+00:00",
-"updated_at": "2025-01-15T02:00:00+00:00"
-}
-}
-
-Behavior:
-
-    If group_id exists: Replaces entire record (upsert)
-    If group_id does not exist: Creates new record
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py565-725
-tests/test_memory_controller.py801-854
-PATCH /api/v1/memories/conversation-meta
-
-Partially update conversation metadata
-
-Updates only specified fields of existing conversation metadata.
-
-Endpoint: PATCH /api/v1/memories/conversation-meta
-
-Request Body:
-
-{
-"group_id": "tenant_123:chatgpt:conv_001",
-"name": "Updated Project Group",
-"tags": ["project", "technical", "high-priority"]
-}
-
-Request Fields:
-Field Type Required Description
-group_id string Yes Group to update
-Other fields various No Only provide fields to update
-
-Updateable Fields:
-
-    name, description, scene_desc, tags
-    user_details (replaces entire map)
-    default_timezone
-
-Immutable Fields (cannot update):
-
-    version, scene, group_id, conversation_created_at
-
-Response:
-
-{
-"status": "ok",
-"message": "Conversation metadata updated successfully, updated 2 fields",
-"result": {
-"id": "507f1f77bcf86cd799439011",
-"group_id": "tenant_123:chatgpt:conv_001",
-"scene": "assistant",
-"name": "Updated Project Group",
-"updated_fields": ["name", "tags"],
-"updated_at": "2025-01-15T02:30:00+00:00"
-}
-}
-
-Error Codes:
-
-    404: Conversation metadata not found for group_id
-    400: Missing required group_id or invalid field
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py727-978
-tests/test_memory_controller.py856-903
-V3 Agentic API
-
-The V3 API provides advanced orchestration with LLM-guided retrieval and multi-round search.
-POST /api/v3/agentic/memorize
-
-Store memories with agentic processing
-
-Similar to V1 memorize but with enhanced orchestration through MemoryManager. Supports complex conversation formats with metadata.
-
-Endpoint: POST /api/v3/agentic/memorize
-
-Request Body:
-
-{
-"conversation_meta": {
-"group_id": "tenant_123:chatgpt:conv_001",
-"name": "Project Team",
-"scene": "group_chat",
-"user_details": {
-"tenant_123:me": {"full_name": "Alice", "role": "human"}
-}
-},
-"conversation_list": [
-{
-"message_id": "msg_001",
-"create_time": "2025-01-15T10:00:00+08:00",
-"sender": "tenant_123:me",
-"content": "Let's discuss the architecture"
-}
-]
-}
-
-Response:
-
-Similar to V1 memorize with saved_memories, count, and status_info.
-
-Sources:
-README.md456-477
-POST /api/v3/agentic/retrieve_lightweight
-
-Lightweight retrieval (no LLM calls)
-
-Fast retrieval using pre-configured strategies (BM25, embedding, or RRF) without LLM query refinement.
-
-Endpoint: POST /api/v3/agentic/retrieve_lightweight
-
-Request Body:
-
-{
-"query": "user's coffee preferences",
-"user_id": "tenant_123:me",
-"data_source": "episode",
-"retrieval_mode": "rrf",
-"top_k": 5
-}
-
-Retrieval Modes:
-
-    bm25: Pure keyword search via Elasticsearch
-    embedding: Pure vector search via Milvus
-    rrf: Reciprocal Rank Fusion of both methods
-
-Response:
-
-Returns grouped memories with scores and importance rankings, similar to V1 search endpoint.
-
-Sources:
-README.md488-547
-POST /api/v3/agentic/retrieve_agentic
-
-Agentic multi-round retrieval (LLM-guided)
-
-Intelligent retrieval with LLM-driven query expansion, multi-round search, and sufficiency checking.
-
-Endpoint: POST /api/v3/agentic/retrieve_agentic
-
-Request Body:
-
-{
-"query": "What food should I avoid after dental surgery?",
-"user_id": "tenant_123:me",
-"context": "User is asking for food recommendations",
-"max_rounds": 3,
-"data_source": "episode"
-}
-
-Request Fields:
-Field Type Required Description
-query string Yes User's natural language query
-user_id string No Filter by user
-context string No Additional context for query understanding
-max_rounds integer No Maximum retrieval rounds (default: 3)
-data_source string Yes Target memory type
-
-Processing Flow:
-
-Diagram: Agentic Retrieval Multi-Round Flow
-
-This shows how the agentic retriever iteratively expands queries and checks sufficiency.
-
-Key Features:
-
-    Query Expansion: LLM generates 2-3 complementary queries
-    Multi-Path Retrieval: Parallel RRF search across all queries
-    Sufficiency Checking: LLM evaluates if results answer the query
-    Iterative Refinement: Up to max_rounds attempts with query refinement
-
-Response:
-
-Similar structure to retrieve_lightweight but with additional metadata about rounds performed.
-
-Sources:
-README_zh.md189-194
-GET /api/v3/agentic/conversation-meta
-
-Retrieve conversation metadata
-
-Fetches stored conversation metadata by group_id.
-
-Endpoint: GET /api/v3/agentic/conversation-meta?group_id=group_001
-
-Response:
-
-Returns the ConversationMeta document with all fields from the POST/PATCH endpoints.
-Request/Response Data Models
-Common Data Structures
-Message Format
-
-{
-message_id: string; // Unique message ID
-create_time: string; // ISO 8601 with timezone
-sender: string; // User ID
-sender_name?: string; // Display name
-content: string; // Message text
-group_id?: string; // Optional group ID
-group_name?: string; // Optional group name
-scene: "assistant" | "group_chat";
-refer_list?: string[]; // Referenced message IDs
-}
-
-Memory Object
-
-{
-memory_type: string; // "episodic_memory", "event_log", etc.
-user_id: string; // Owner user ID
-timestamp: string; // ISO 8601 timestamp
-group_id?: string; // Optional group context
-
-// Type-specific fields
-summary?: string; // For episodic_memory
-atomic_fact?: string; // For event_log
-content?: string; // For foresight
-traits?: object; // For profile
-}
-
-ConversationMeta
-
-{
-version: string;
-scene: "assistant" | "group_chat";
-scene_desc: {
-description: string;
-bot_ids?: string[];
-extra?: object;
-};
-name: string;
-description: string;
-group_id: string;
-created_at: string; // ISO 8601
-default_timezone: string; // IANA timezone
-user_details: {
-[user_id: string]: {
-full_name: string;
-role: string;
-extra?: object;
-}
-};
-tags?: string[];
-}
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py76-108
-src/api_specs/dtos/memory_query.py (referenced)
-API Request Flow Through System Layers
-
-Diagram: API Request Processing Architecture
-
-This diagram traces request flow from HTTP entry through converters, orchestration, and storage layers.
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py182-257
-src/agentic_layer/memory_manager.py (referenced)
-Error Handling
-Error Response Format
-
-{
-"status": "failed",
-"code": "ERROR_CODE",
-"message": "Human-readable error description",
-"timestamp": "2025-01-15T10:30:00+00:00",
-"path": "/api/v1/memories/search"
-}
-
-Common Error Codes
-HTTP Status Error Code Description Common Causes
-400 INVALID_PARAMETER Request validation failed Missing required fields, invalid format
-404 RESOURCE_NOT_FOUND Requested resource not found Invalid group_id, user has no memories
-500 SYSTEM_ERROR Internal server error Database connection, LLM service failure
-Error Examples
-
-Missing Required Field:
-
-{
-"status": "failed",
-"code": "INVALID_PARAMETER",
-"message": "user_id cannot be empty",
-"timestamp": "2025-01-15T10:30:00+00:00",
-"path": "/api/v1/memories"
-}
-
-Conversation Not Found:
-
-{
-"status": "failed",
-"code": "RESOURCE_NOT_FOUND",
-"message": "Specified conversation metadata not found: group_123",
-"timestamp": "2025-01-15T10:30:00+00:00",
-"path": "/api/v1/memories/conversation-meta"
-}
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py154-178
-src/core/constants/errors.py (referenced)
-Query Parameter Reference
-Pagination Parameters
-
-Available on fetch and search endpoints:
-Parameter Type Default Description
-limit integer 10 Maximum results per request
-offset integer 0 Starting position for pagination
-top_k integer 5 Maximum results per group (search only)
-Time Filtering Parameters
-
-Available on search endpoints:
-Parameter Type Description Example
-start_time string ISO 8601 lower bound 2024-12-01T00:00:00+08:00
-end_time string ISO 8601 upper bound 2025-01-15T23:59:59+08:00
-current_time string For foresight validity filtering 2025-01-15
-Scope Parameters
-Parameter Values Description
-memory_scope personal, group, all Filter by user-only, group-only, or both
-data_source episode, event_log, foresight, profile Target memory type
-
-Sources:
-src/infra_layer/adapters/input/api/memory/memory_controller.py260-343
-tests/test_memory_controller.py467-477
-Testing the API
-Using curl
-
-Store a message:
-
-curl -X POST http://localhost:8001/api/v1/memories \
- -H "Content-Type: application/json" \
- -H "X-Organization-Id: ruminer" \
- -H "X-Space-Id: default" \
- -d '{
-"message_id": "msg_001",
-"create_time": "2025-01-15T10:00:00+08:00",
-"sender": "tenant_123:me",
-"content": "I love drinking coffee",
-"scene": "assistant"
-}'
-
-Search memories:
-
-curl -X GET http://localhost:8001/api/v1/memories/search \
- -H "Content-Type: application/json" \
- -H "X-Organization-Id: ruminer" \
- -H "X-Space-Id: default" \
- -d '{
-"query": "coffee preferences",
-"user_id": "tenant_123:me",
-"data_source": "episode",
-"memory_scope": "personal",
-"retrieval_mode": "rrf"
-}'
-
-Using Python Test Script
-
-Run the comprehensive test suite:
-
-# Test all endpoints
-
-python tests/test_memory_controller.py
-
-# Test specific endpoint
-
-python tests/test_memory_controller.py --test-method search_keyword
-
-# Exclude specific tests
-
-python tests/test_memory_controller.py --except-test-method memorize
-
-# Custom API endpoint
-
-python tests/test_memory_controller.py --base-url http://dev-server:8001
-
-Sources:
-tests/test_memory_controller.py1-1181
-README.md461-477
-Summary
-
-The EverMemOS API provides comprehensive memory lifecycle management through two complementary surfaces:
-
-    V1 Memory Controller: Production-ready CRUD operations with keyword/vector/hybrid search
-    V3 Agentic API: Advanced LLM-guided retrieval with multi-round query refinement
-
-Both APIs share common authentication, response formats, and tenant isolation mechanisms. Choose V1 for straightforward memory operations and V3 for intelligent, context-aware retrieval scenarios.
+- [Group Chat Guide](../advanced/GROUP_CHAT_GUIDE.md) - Multi-participant conversations
+- [Metadata Control Guide](../advanced/METADATA_CONTROL.md) - Conversation metadata management
+- [GroupChatFormat Specification](../../data_format/group_chat/group_chat_format.md) - Data format reference

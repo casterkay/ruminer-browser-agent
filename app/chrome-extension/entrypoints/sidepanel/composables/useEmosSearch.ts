@@ -56,10 +56,7 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
     Authorization: `Bearer ${settings.apiKey}`,
   };
 
-  if (settings.tenantId) headers['X-Tenant-Id'] = settings.tenantId;
-  if (settings.spaceId) headers['X-Space-Id'] = settings.spaceId;
-
-  const response = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/api/v1/memories/search`, {
+  const response = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -83,11 +80,8 @@ async function deleteMemory(messageId: string): Promise<void> {
     Authorization: `Bearer ${settings.apiKey}`,
   };
 
-  if (settings.tenantId) headers['X-Tenant-Id'] = settings.tenantId;
-  if (settings.spaceId) headers['X-Space-Id'] = settings.spaceId;
-
   const response = await fetch(
-    `${settings.baseUrl.replace(/\/$/, '')}/api/v1/memories/${encodeURIComponent(messageId)}`,
+    `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/${encodeURIComponent(messageId)}`,
     {
       method: 'DELETE',
       headers,

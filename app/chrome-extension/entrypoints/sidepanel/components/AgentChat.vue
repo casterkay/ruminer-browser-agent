@@ -33,21 +33,6 @@
         <button
           class="header-btn ac-btn ac-focus-ring"
           :style="btnStyle"
-          data-tooltip="Tool Groups"
-          @click="toolGroupsOpen = !toolGroupsOpen"
-        >
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-            />
-          </svg>
-        </button>
-        <button
-          class="header-btn ac-btn ac-focus-ring"
-          :style="btnStyle"
           data-tooltip="New Chat"
           @click="chat.newChat"
         >
@@ -62,35 +47,6 @@
         </button>
       </div>
     </header>
-
-    <!-- Tool Groups Tray -->
-    <div v-if="toolGroupsOpen" class="tool-tray" :style="trayStyle">
-      <div class="tool-chips">
-        <button
-          v-for="item in groupItems"
-          :key="item.id"
-          class="tool-chip ac-focus-ring"
-          :style="item.enabled ? chipActiveStyle : chipInactiveStyle"
-          @click="toggleGroup(item.id, !item.enabled)"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-      <button
-        class="tray-close ac-btn ac-focus-ring"
-        :style="btnStyle"
-        @click="toolGroupsOpen = false"
-      >
-        <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
-      </button>
-    </div>
 
     <!-- Scrollable Message Area -->
     <main ref="contentRef" class="message-area ac-scroll" @scroll="handleScroll">
@@ -123,7 +79,6 @@
             </svg>
           </div>
           <p class="empty-heading">Start a conversation</p>
-          <p class="empty-subtext">Ask Ruminer to help with browser tasks</p>
         </div>
 
         <!-- Messages -->
@@ -153,7 +108,7 @@
       </div>
     </main>
 
-    <!-- Footer: Suggestions + Composer + Label -->
+    <!-- Footer: Suggestions + Composer + Tool Panel -->
     <footer class="chat-footer" :style="footerGradientStyle">
       <!-- Memory Suggestions -->
       <div
@@ -224,33 +179,132 @@
           @input="handleTextareaInput"
           @keydown.enter.exact.prevent="handleSend"
         />
-        <button
-          v-if="chat.activeRunId.value"
-          class="send-btn"
-          :style="stopBtnStyle"
-          @click="chat.abort"
-        >
-          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-            <rect x="6" y="6" width="12" height="12" rx="2" />
-          </svg>
-        </button>
-        <button
-          v-else
-          class="send-btn"
-          :style="sendBtnStyle"
-          :disabled="!chat.canSend.value"
-          @click="handleSend"
-        >
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M5 10l7-7m0 0l7 7m-7-7v18"
-            />
-          </svg>
-        </button>
+        <div class="composer-bar">
+          <button
+            class="bar-btn ac-btn ac-focus-ring"
+            :style="btnStyle"
+            data-tooltip="Tools"
+            @click="toolGroupsOpen = !toolGroupsOpen"
+          >
+            <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              />
+            </svg>
+          </button>
+          <div class="bar-spacer" />
+          <button
+            v-if="chat.activeRunId.value"
+            class="send-btn"
+            :style="stopBtnStyle"
+            @click="chat.abort"
+          >
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          </button>
+          <button
+            v-else
+            class="send-btn"
+            :style="sendBtnStyle"
+            :disabled="!chat.canSend.value"
+            @click="handleSend"
+          >
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 10l7-7m0 0l7 7m-7-7v18"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      <!-- Tool Selection Panel (below composer) -->
+      <Transition name="tool-panel">
+        <div v-if="toolGroupsOpen" class="tool-panel" :style="toolPanelStyle">
+          <div class="tool-panel-header">
+            <span class="tool-panel-title">Tool Access</span>
+            <div class="tool-panel-actions">
+              <button class="tool-panel-btn" @click="enableAllGroups">Enable All</button>
+              <button class="tool-panel-btn" @click="disableAllGroups">Disable All</button>
+              <button
+                class="tray-close ac-btn ac-focus-ring"
+                :style="btnStyle"
+                @click="toolGroupsOpen = false"
+              >
+                <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tool-panel-content ac-scroll">
+            <div v-for="group in toolGroupDefinitions" :key="group.id" class="tool-group-section">
+              <div class="tool-group-header" @click="toggleGroupExpand(group.id)">
+                <label class="tool-group-toggle" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="toolGroups[group.id]"
+                    @change="toggleGroup(group.id, !toolGroups[group.id])"
+                  />
+                  <span class="toggle-track" />
+                </label>
+                <div class="tool-group-info">
+                  <span class="tool-group-label">{{ group.label }}</span>
+                  <span class="tool-group-desc">{{ group.description }}</span>
+                </div>
+                <svg
+                  class="expand-icon"
+                  :class="{ expanded: expandedGroups.has(group.id) }"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+
+              <Transition name="tool-list">
+                <div v-if="expandedGroups.has(group.id)" class="tool-list">
+                  <div v-for="tool in group.tools" :key="tool.id" class="tool-row">
+                    <label class="tool-toggle">
+                      <input
+                        type="checkbox"
+                        :checked="isToolEnabled(group.id, tool.id)"
+                        @change="
+                          toggleIndividualTool(group.id, tool.id, !isToolEnabled(group.id, tool.id))
+                        "
+                      />
+                      <span class="toggle-track-sm" />
+                    </label>
+                    <div class="tool-info">
+                      <span class="tool-name">{{ tool.name }}</span>
+                      <span class="tool-desc">{{ tool.description }}</span>
+                    </div>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </footer>
   </div>
 </template>
@@ -267,7 +321,9 @@ import { useEmosSuggestions } from '../composables/useEmosSuggestions';
 import {
   getToolGroupState,
   setToolGroupEnabled,
+  setToolGroupState,
   type ToolGroupId,
+  TOOL_GROUP_DEFINITIONS,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
 import type { TimelineItem, ToolPresentation, ToolSeverity } from '../composables/useAgentThreads';
@@ -292,6 +348,9 @@ const toolGroups = ref<ToolGroupState>({
   updatedAt: new Date().toISOString(),
 });
 
+const expandedGroups = ref<Set<ToolGroupId>>(new Set());
+const individualToolOverrides = ref<Record<string, boolean>>({});
+const toolGroupDefinitions = TOOL_GROUP_DEFINITIONS;
 // Auto-scroll state
 const isUserScrolledUp = ref(false);
 const SCROLL_THRESHOLD = 150;
@@ -357,7 +416,6 @@ const textareaStyle = computed(() => ({
   color: 'var(--ac-text)',
   minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
   maxHeight: `${MAX_TEXTAREA_HEIGHT}px`,
-  paddingRight: '36px',
 }));
 
 const sendBtnStyle = computed(() => ({
@@ -567,6 +625,59 @@ function handleSend(): void {
 async function toggleGroup(groupId: ToolGroupId, enabled: boolean): Promise<void> {
   toolGroups.value = await setToolGroupEnabled(groupId, enabled);
 }
+
+function toggleGroupExpand(groupId: ToolGroupId): void {
+  const newSet = new Set(expandedGroups.value);
+  if (newSet.has(groupId)) {
+    newSet.delete(groupId);
+  } else {
+    newSet.add(groupId);
+  }
+  expandedGroups.value = newSet;
+}
+
+function isToolEnabled(groupId: ToolGroupId, toolId: string): boolean {
+  const key = `${groupId}:${toolId}`;
+  if (key in individualToolOverrides.value) {
+    return individualToolOverrides.value[key];
+  }
+  return toolGroups.value[groupId];
+}
+
+function toggleIndividualTool(groupId: ToolGroupId, toolId: string, enabled: boolean): void {
+  const key = `${groupId}:${toolId}`;
+  individualToolOverrides.value = {
+    ...individualToolOverrides.value,
+    [key]: enabled,
+  };
+}
+
+async function enableAllGroups(): Promise<void> {
+  toolGroups.value = await setToolGroupState({
+    observe: true,
+    navigate: true,
+    interact: true,
+    execute: true,
+    workflow: true,
+  });
+}
+
+async function disableAllGroups(): Promise<void> {
+  toolGroups.value = await setToolGroupState({
+    observe: false,
+    navigate: false,
+    interact: false,
+    execute: false,
+    workflow: false,
+  });
+}
+
+const toolPanelStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-card)',
+  boxShadow: 'var(--ac-shadow-float)',
+}));
 
 function insertSuggestion(content: string): void {
   chat.input.value = `${chat.input.value.trim()}\n${content}`.trim();
@@ -874,7 +985,6 @@ onUnmounted(() => {
 
 /* Composer Card */
 .composer-card {
-  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -900,10 +1010,27 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
+.composer-bar {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 8px;
+  gap: 4px;
+}
+
+.bar-spacer {
+  flex: 1;
+}
+
+.bar-btn {
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .send-btn {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
   width: 28px;
   height: 28px;
   display: flex;
@@ -918,5 +1045,266 @@ onUnmounted(() => {
 
 .send-btn:disabled {
   cursor: not-allowed;
+}
+
+/* Tool Panel */
+.tool-panel {
+  flex-shrink: 0;
+  max-height: 50vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slide-up 0.2s ease-out;
+}
+
+.tool-panel-enter-from,
+.tool-panel-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: var(--ac-border-width) solid var(--ac-border);
+}
+
+.tool-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ac-text);
+}
+
+.tool-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-panel-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--ac-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--ac-radius-button);
+}
+
+.tool-panel-btn:hover {
+  color: var(--ac-accent);
+}
+
+.tool-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px;
+}
+
+.tool-group-section {
+  border-bottom: var(--ac-border-width) solid var(--ac-border);
+  padding: 8px 0;
+}
+
+.tool-group-section:last-child {
+  border-bottom: none;
+}
+
+.tool-group-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  cursor: pointer;
+  gap: 8px;
+  border-radius: var(--ac-radius-inner);
+}
+
+.tool-group-header:hover {
+  background-color: var(--ac-hover-bg);
+}
+
+.tool-group-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.tool-group-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background-color: var(--ac-surface-muted);
+  border-radius: 9px;
+  transition: background-color var(--ac-motion-fast);
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background-color: var(--ac-text-subtle);
+  border-radius: 50%;
+  transition:
+    transform var(--ac-motion-fast),
+    background-color var(--ac-motion-fast);
+}
+
+.tool-group-toggle input:checked + .toggle-track {
+  background-color: var(--ac-accent-subtle);
+}
+
+.tool-group-toggle input:checked + .toggle-track::after {
+  transform: translateX(14px);
+  background-color: var(--ac-accent);
+}
+
+.tool-group-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-group-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ac-text);
+}
+
+.tool-group-desc {
+  display: block;
+  font-size: 10px;
+  color: var(--ac-text-muted);
+}
+
+.expand-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--ac-text-muted);
+  transition: transform var(--ac-motion-fast);
+  flex-shrink: 0;
+}
+
+.expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.tool-list {
+  padding: 4px 0 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-list-enter-active,
+.tool-list-leave-active {
+  transition: all 0.2s ease;
+}
+
+.tool-list-enter-from,
+.tool-list-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 8px;
+  border-radius: var(--ac-radius-inner);
+}
+
+.tool-row:hover {
+  background-color: var(--ac-hover-bg);
+}
+
+.tool-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.tool-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track-sm {
+  position: relative;
+  width: 24px;
+  height: 14px;
+  background-color: var(--ac-surface-muted);
+  border-radius: 7px;
+  transition: background-color var(--ac-motion-fast);
+}
+
+.toggle-track-sm::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  background-color: var(--ac-text-subtle);
+  border-radius: 50%;
+  transition:
+    transform var(--ac-motion-fast),
+    background-color var(--ac-motion-fast);
+}
+
+.tool-toggle input:checked + .toggle-track-sm {
+  background-color: var(--ac-accent-subtle);
+}
+
+.tool-toggle input:checked + .toggle-track-sm::after {
+  transform: translateX(10px);
+  background-color: var(--ac-accent);
+}
+
+.tool-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-name {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ac-text);
+  font-family: var(--ac-font-mono);
+}
+
+.tool-desc {
+  display: block;
+  font-size: 10px;
+  color: var(--ac-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

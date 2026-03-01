@@ -71,7 +71,7 @@
         <input
           v-model="emos.baseUrl"
           type="text"
-          placeholder="http://127.0.0.1:1995"
+          placeholder="https://api.evermind.ai"
           class="field-input"
           :style="inputStyle"
         />
@@ -81,7 +81,7 @@
         <input
           v-model="emos.apiKey"
           type="password"
-          placeholder="emos api key"
+          placeholder="your EverMemOS API key"
           class="field-input"
           :style="inputStyle"
         />
@@ -150,10 +150,8 @@ const gateway = reactive({
 });
 
 const emos = reactive({
-  baseUrl: 'http://127.0.0.1:1995',
+  baseUrl: 'https://api.evermind.ai',
   apiKey: '',
-  tenantId: '',
-  spaceId: '',
 });
 
 const testingGateway = ref(false);
@@ -203,8 +201,6 @@ async function loadSettings(): Promise<void> {
   const emosSettings = await getEmosSettings();
   emos.baseUrl = emosSettings.baseUrl;
   emos.apiKey = emosSettings.apiKey;
-  emos.tenantId = emosSettings.tenantId || '';
-  emos.spaceId = emosSettings.spaceId || '';
 }
 
 async function saveGateway(): Promise<void> {
@@ -220,8 +216,6 @@ async function saveEmos(): Promise<void> {
   await setEmosSettings({
     baseUrl: emos.baseUrl.trim(),
     apiKey: emos.apiKey.trim(),
-    tenantId: emos.tenantId.trim() || null,
-    spaceId: emos.spaceId.trim() || null,
   });
   emosStatus.ok = true;
   emosStatus.message = 'EverMemOS settings saved.';
@@ -338,11 +332,9 @@ async function testEmos(): Promise<void> {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${emos.apiKey.trim()}`,
     };
-    if (emos.tenantId.trim()) headers['X-Tenant-Id'] = emos.tenantId.trim();
-    if (emos.spaceId.trim()) headers['X-Space-Id'] = emos.spaceId.trim();
 
     const response = await fetch(
-      `${emos.baseUrl.trim().replace(/\/$/, '')}/api/v1/memories/search`,
+      `${emos.baseUrl.trim().replace(/\/$/, '')}/api/v0/memories/search`,
       {
         method: 'POST',
         headers,
