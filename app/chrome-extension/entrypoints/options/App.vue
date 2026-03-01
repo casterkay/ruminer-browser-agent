@@ -1,8 +1,8 @@
 <template>
   <div class="options-page">
     <header class="options-header">
-      <h1>Ruminer Settings</h1>
-      <p>Configure OpenClaw Gateway, EMOS, and default tool groups.</p>
+      <h1>System Settings</h1>
+      <p>Configure OpenClaw Gateway and EverMemOS API.</p>
     </header>
 
     <section class="card">
@@ -27,7 +27,7 @@
     </section>
 
     <section class="card">
-      <h2>EverMemOS (EMOS)</h2>
+      <h2>EverMemOS</h2>
       <label>
         Base URL
         <input v-model="emos.baseUrl" type="text" placeholder="http://127.0.0.1:1995" />
@@ -55,21 +55,6 @@
       <p class="status" :class="emosStatus.ok ? 'ok' : 'error'" v-if="emosStatus.message">
         {{ emosStatus.message }}
       </p>
-    </section>
-
-    <section class="card">
-      <h2>Tool Groups</h2>
-      <p class="hint">Default runtime gates for browser.proxy and chat prompting.</p>
-      <div class="group-grid">
-        <label v-for="item in groupItems" :key="item.id" class="toggle">
-          <input
-            type="checkbox"
-            :checked="item.enabled"
-            @change="setGroup(item.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span>{{ item.label }}</span>
-        </label>
-      </div>
     </section>
   </div>
 </template>

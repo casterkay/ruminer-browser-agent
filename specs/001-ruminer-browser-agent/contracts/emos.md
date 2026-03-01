@@ -1,6 +1,6 @@
 # Contract — EverMemOS integration (Ruminer)
 
-Ruminer integrates with EverMemOS (EMOS) through two independent paths:
+Ruminer integrates with EverMemOS through two independent paths:
 
 1. **OpenClaw plugin (`app/openclaw-extensions/evermemos/`)**
    - Auto-ingests OpenClaw conversations via hook
