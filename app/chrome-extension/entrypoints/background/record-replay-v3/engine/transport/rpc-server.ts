@@ -25,6 +25,7 @@ import {
   createRpcResponseErr,
   createRpcEventMessage,
   type RpcRequest,
+  type RpcMethod,
 } from './rpc';
 
 /**
@@ -83,6 +84,26 @@ export class RpcServer {
     this.triggerManager = config.triggerManager;
     this.generateRunId = config.generateRunId ?? defaultGenerateRunId;
     this.now = config.now ?? Date.now;
+  }
+
+  /**
+   * Direct in-process RPC request helper for background-only callers.
+   * This bypasses chrome.runtime.Port framing but reuses the same method handlers.
+   */
+  async request(method: RpcMethod, params?: JsonObject): Promise<JsonValue> {
+    const fakeConn: PortConnection = {
+      port: {} as chrome.runtime.Port,
+      subscriptions: new Set(),
+    };
+    return this.handleRequest(
+      {
+        type: 'rr_v3.request',
+        requestId: `direct_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        method,
+        params,
+      },
+      fakeConn,
+    );
   }
 
   /**

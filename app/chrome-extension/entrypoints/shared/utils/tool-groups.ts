@@ -90,13 +90,13 @@ export function buildToolGroupRestrictionText(state: ToolGroupState): string {
   const lines = disabled.map((groupId) => {
     switch (groupId) {
       case 'interact':
-        return '- Interact: disabled (no click/type/scroll/element selection requests)';
+        return '- Interact: disabled (no DOM interaction, cookie-network/file tools, or bookmarks writes)';
       case 'execute':
-        return '- Execute: disabled (no JavaScript eval or network request tools)';
+        return '- Execute: disabled (no JavaScript eval/injection tools)';
       case 'navigate':
-        return '- Navigate: disabled (no open/switch/close tab actions)';
+        return '- Navigate: disabled (no navigation or tab switch/close actions)';
       case 'observe':
-        return '- Observe: disabled (no snapshots/history/bookmark reads)';
+        return '- Observe: disabled (no snapshot/screenshot/history/bookmark/console reads)';
       case 'workflow':
         return '- Workflow: disabled (no RR-V3 flow/trigger/run actions)';
     }

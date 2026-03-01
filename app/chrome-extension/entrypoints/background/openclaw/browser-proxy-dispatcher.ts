@@ -21,8 +21,8 @@ async function executeTool(name: string, args: unknown): Promise<BrowserProxyRes
 
   if (result.isError) {
     const message = result.content
-      .filter((item) => item.type === 'text')
-      .map((item) => item.text)
+      .filter((item: any) => item.type === 'text')
+      .map((item: any) => item.text)
       .join('\n')
       .trim();
 
@@ -35,7 +35,7 @@ async function executeTool(name: string, args: unknown): Promise<BrowserProxyRes
     };
   }
 
-  const firstText = result.content.find((item) => item.type === 'text');
+  const firstText = result.content.find((item: any) => item.type === 'text');
   return {
     ok: true,
     result: firstText ? parseToolTextResult(firstText.text) : null,

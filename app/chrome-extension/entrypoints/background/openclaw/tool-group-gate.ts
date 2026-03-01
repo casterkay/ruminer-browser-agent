@@ -3,14 +3,20 @@ import { getToolGroupState, type ToolGroupId } from '@/entrypoints/shared/utils/
 
 export function getToolGroupForRoute(path: string): ToolGroupId {
   if (path.startsWith('/rr_v3/')) return 'workflow';
-  if (
-    path.startsWith('/network/') ||
-    path.startsWith('/javascript/') ||
-    path.startsWith('/file/')
-  ) {
+  if (path.startsWith('/javascript/')) {
     return 'execute';
   }
+  if (
+    path.startsWith('/network/') ||
+    path.startsWith('/file/') ||
+    path.startsWith('/performance/')
+  ) {
+    return 'interact';
+  }
   if (path.startsWith('/element-selection/') || path === '/act') {
+    return 'interact';
+  }
+  if (path === '/bookmarks/add' || path === '/bookmarks/delete') {
     return 'interact';
   }
   if (path === '/navigate' || path === '/tabs/switch' || path === '/tabs/close') {
