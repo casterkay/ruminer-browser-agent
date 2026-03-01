@@ -15,7 +15,7 @@ export interface GatewayResponseFrame<TPayload = unknown> {
 }
 
 export interface GatewayEventFrame<TPayload = unknown> {
-  type: 'evt';
+  type: 'evt' | 'event';
   event: string;
   seq?: number;
   payload?: TPayload;
@@ -24,14 +24,30 @@ export interface GatewayEventFrame<TPayload = unknown> {
 export type GatewayInboundFrame = GatewayRequestFrame | GatewayResponseFrame | GatewayEventFrame;
 
 export interface GatewayConnectParams {
+  minProtocol: number;
+  maxProtocol: number;
+  client: {
+    id: string;
+    version: string;
+    platform: string;
+    mode: string;
+  };
   role: 'node' | 'operator';
+  scopes?: string[];
   caps?: string[];
+  commands?: string[];
+  permissions?: Record<string, unknown>;
   auth?: {
     token: string;
   };
+  locale?: string;
+  userAgent?: string;
   device?: {
     id: string;
-    name?: string;
+    publicKey: string;
+    signature: string;
+    signedAt: number;
+    nonce?: string;
   };
 }
 
@@ -82,7 +98,8 @@ export function isGatewayEventFrame(value: unknown): value is GatewayEventFrame 
   return (
     typeof value === 'object' &&
     value !== null &&
-    (value as GatewayEventFrame).type === 'evt' &&
+    ((value as GatewayEventFrame).type === 'evt' ||
+      (value as GatewayEventFrame).type === 'event') &&
     typeof (value as GatewayEventFrame).event === 'string'
   );
 }

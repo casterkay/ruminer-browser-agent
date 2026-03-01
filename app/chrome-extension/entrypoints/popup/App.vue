@@ -41,18 +41,52 @@ async function refreshStatus(): Promise<void> {
 }
 
 async function openSidepanel(): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
+  const sidePanel = chrome.sidePanel as any;
+  if (!sidePanel?.open) {
+    statusMessage.value = 'Sidepanel API is not available in this browser.';
     return;
   }
 
-  await chrome.sidePanel.setOptions({
-    tabId: tab.id,
-    path: 'sidepanel.html',
-    enabled: true,
-  });
+  const [tab, currentWindow] = await Promise.all([
+    chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]),
+    chrome.windows.getCurrent(),
+  ]);
+  const tabId = tab?.id;
+  const windowId = currentWindow?.id;
+  const path = 'sidepanel.html?tab=agent-chat';
 
-  await chrome.sidePanel.open({ tabId: tab.id });
+  try {
+    if (typeof tabId === 'number' && sidePanel?.setOptions) {
+      await sidePanel.setOptions({
+        tabId,
+        path,
+        enabled: true,
+      });
+    }
+
+    if (typeof tabId === 'number') {
+      await sidePanel.open({ tabId });
+    } else if (typeof windowId === 'number') {
+      await sidePanel.open({ windowId });
+    } else {
+      throw new Error('No active window available');
+    }
+
+    statusMessage.value = 'Sidepanel opened.';
+  } catch (error) {
+    if (typeof windowId === 'number') {
+      try {
+        await sidePanel.open({ windowId });
+        statusMessage.value = 'Sidepanel opened.';
+        return;
+      } catch {
+        // Fall through to primary error handling.
+      }
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    statusMessage.value = `Failed to open sidepanel: ${message}`;
+  }
 }
 
 function openOptions(): void {

@@ -1,8 +1,11 @@
 import { onUnmounted, ref, type Ref } from 'vue';
+import { getGatewaySettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
-  getGatewaySettings,
-  getOrCreateGatewayDeviceId,
-} from '@/entrypoints/shared/utils/openclaw-settings';
+  buildSignedConnectParams,
+  extractConnectChallengeNonce,
+  OPENCLAW_CLIENT_IDS,
+  OPENCLAW_CLIENT_MODES,
+} from '@/entrypoints/shared/utils/openclaw-device-auth';
 
 export interface GatewayEvent {
   event: string;
@@ -31,7 +34,7 @@ interface ResponseFrame {
 }
 
 interface EventFrame {
-  type: 'evt';
+  type: 'evt' | 'event';
   event: string;
   seq?: number;
   payload?: unknown;
@@ -50,6 +53,7 @@ export interface UseOpenClawGateway {
 }
 
 const REQUEST_TIMEOUT_MS = 12_000;
+const CONNECT_CHALLENGE_TIMEOUT_MS = 6_000;
 
 export function useOpenClawGateway(): UseOpenClawGateway {
   const connected = ref(false);
@@ -132,7 +136,7 @@ export function useOpenClawGateway(): UseOpenClawGateway {
     if (
       typeof frame === 'object' &&
       frame !== null &&
-      (frame as EventFrame).type === 'evt' &&
+      ((frame as EventFrame).type === 'evt' || (frame as EventFrame).type === 'event') &&
       typeof (frame as EventFrame).event === 'string'
     ) {
       emitEvent(frame as EventFrame);
@@ -155,55 +159,86 @@ export function useOpenClawGateway(): UseOpenClawGateway {
 
     const wsUrl = settings.gatewayWsUrl.trim();
 
-    await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(wsUrl);
-      ws = socket;
-
-      const timer = setTimeout(() => {
-        try {
-          socket.close();
-        } catch {
-          // Ignore close errors.
-        }
-        reject(new Error('Gateway connect timeout'));
-      }, REQUEST_TIMEOUT_MS);
-
-      socket.onopen = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-
-      socket.onmessage = (event) => {
-        handleMessage(event.data);
-      };
-
-      socket.onerror = () => {
-        lastError.value = 'Gateway socket error';
-      };
-
-      socket.onclose = () => {
-        connected.value = false;
-        rejectAllPending(new Error('Gateway connection closed'));
-        ws = null;
-
-        if (shouldReconnect) {
-          scheduleReconnect();
-        }
-      };
+    let resolveChallenge: ((nonce: string | null) => void) | null = null;
+    const challengePromise = new Promise<string | null>((resolve) => {
+      resolveChallenge = resolve;
     });
+    let challengeSettled = false;
+    const settleChallenge = (nonce: string | null): void => {
+      if (challengeSettled) {
+        return;
+      }
+      challengeSettled = true;
+      resolveChallenge?.(nonce);
+    };
+    const challengeTimer = setTimeout(() => settleChallenge(null), CONNECT_CHALLENGE_TIMEOUT_MS);
 
-    const deviceId = settings.deviceId || (await getOrCreateGatewayDeviceId());
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = new WebSocket(wsUrl);
+        ws = socket;
 
-    await request('connect', {
-      role: 'operator',
-      caps: ['chat'],
-      auth: { token: settings.gatewayAuthToken.trim() },
-      device: {
-        id: deviceId,
-        name: 'ruminer-sidepanel',
-      },
-      mode: 'operator',
-    });
+        const timer = setTimeout(() => {
+          try {
+            socket.close();
+          } catch {
+            // Ignore close errors.
+          }
+          reject(new Error('Gateway connect timeout'));
+        }, REQUEST_TIMEOUT_MS);
+
+        socket.onopen = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+
+        socket.onmessage = (event) => {
+          const nonce = extractConnectChallengeNonce(event.data);
+          if (nonce !== undefined) {
+            settleChallenge(nonce || null);
+          }
+          handleMessage(event.data);
+        };
+
+        socket.onerror = () => {
+          lastError.value = 'Gateway socket error';
+        };
+
+        socket.onclose = () => {
+          connected.value = false;
+          rejectAllPending(new Error('Gateway connection closed'));
+          ws = null;
+          settleChallenge(null);
+
+          if (shouldReconnect) {
+            scheduleReconnect();
+          }
+        };
+      });
+
+      const challengeNonce = await challengePromise;
+
+      const connectParams = await buildSignedConnectParams({
+        role: 'operator',
+        authToken: settings.gatewayAuthToken.trim(),
+        client: {
+          id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
+          version: chrome.runtime.getManifest().version || '0.1.0',
+          platform: typeof navigator !== 'undefined' ? navigator.platform || 'web' : 'web',
+          mode: OPENCLAW_CLIENT_MODES.WEBCHAT,
+        },
+        scopes: ['operator.read', 'operator.write'],
+        caps: [],
+        commands: [],
+        permissions: {},
+        locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-control-ui',
+        nonce: challengeNonce,
+      });
+      await request('connect', connectParams);
+    } finally {
+      clearTimeout(challengeTimer);
+    }
 
     reconnectAttempts = 0;
     connected.value = true;

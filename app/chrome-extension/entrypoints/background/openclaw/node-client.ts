@@ -1,10 +1,11 @@
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { STORAGE_KEYS } from '@/common/constants';
+import { getGatewaySettings, setGatewayStatus } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
-  getGatewaySettings,
-  getOrCreateGatewayDeviceId,
-  setGatewayStatus,
-} from '@/entrypoints/shared/utils/openclaw-settings';
+  buildSignedConnectParams,
+  OPENCLAW_CLIENT_IDS,
+  OPENCLAW_CLIENT_MODES,
+} from '@/entrypoints/shared/utils/openclaw-device-auth';
 import { OpenClawGatewayConnection } from './connection';
 import { handleNodeInvokeRequest } from './node-invoke-handler';
 
@@ -60,20 +61,27 @@ async function connectFromSettings(): Promise<void> {
     return;
   }
 
-  const deviceId = settings.deviceId || (await getOrCreateGatewayDeviceId());
-
   await connection.connect({
     wsUrl: settings.gatewayWsUrl,
     authToken: settings.gatewayAuthToken,
-    connectParams: {
-      role: 'node',
-      caps: ['browser'],
-      auth: { token: settings.gatewayAuthToken },
-      device: {
-        id: deviceId,
-        name: 'ruminer-browser-extension',
-      },
-    },
+    connectParamsFactory: async (nonce) =>
+      buildSignedConnectParams({
+        role: 'node',
+        authToken: settings.gatewayAuthToken.trim(),
+        client: {
+          id: OPENCLAW_CLIENT_IDS.NODE_HOST,
+          version: chrome.runtime.getManifest().version || '0.1.0',
+          platform: 'chrome-extension',
+          mode: OPENCLAW_CLIENT_MODES.NODE,
+        },
+        scopes: [],
+        caps: ['browser'],
+        commands: [],
+        permissions: {},
+        locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-node-host',
+        nonce,
+      }),
   });
 }
 

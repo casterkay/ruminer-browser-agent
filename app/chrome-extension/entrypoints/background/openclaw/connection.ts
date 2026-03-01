@@ -18,7 +18,10 @@ interface PendingRequest {
 export interface GatewayConnectionConfig {
   wsUrl: string;
   authToken: string;
-  connectParams: GatewayConnectParams;
+  connectParams?: GatewayConnectParams;
+  connectParamsFactory?: (
+    nonce: string | null,
+  ) => Promise<GatewayConnectParams> | GatewayConnectParams;
   handshakeTimeoutMs?: number;
   requestTimeoutMs?: number;
 }
@@ -43,6 +46,7 @@ type InboundRequestListener = (frame: GatewayRequestFrame) => Promise<InboundReq
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const CONNECT_CHALLENGE_TIMEOUT_MS = 6_000;
 const MAX_BACKOFF_MS = 30_000;
 
 export class OpenClawGatewayConnection {
@@ -59,6 +63,8 @@ export class OpenClawGatewayConnection {
   private pendingRequests = new Map<string, PendingRequest>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private explicitlyClosed = false;
+  private connectChallengeNonce: string | null = null;
+  private connectChallengeWaiters = new Set<(nonce: string | null) => void>();
 
   private readonly statusListeners = new Set<StatusListener>();
   private readonly eventListeners = new Set<EventListener>();
@@ -87,9 +93,11 @@ export class OpenClawGatewayConnection {
     this.config = config;
     this.explicitlyClosed = false;
     this.clearReconnectTimer();
+    this.connectChallengeNonce = null;
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const hello = await this.sendRequest<GatewayHelloOkPayload>('connect', config.connectParams);
+      const connectParams = await this.resolveConnectParams(config, this.connectChallengeNonce);
+      const hello = await this.sendRequest<GatewayHelloOkPayload>('connect', connectParams);
       this.updateStatus({
         state: 'connected',
         connected: true,
@@ -109,7 +117,9 @@ export class OpenClawGatewayConnection {
 
     await this.openSocket(config.wsUrl, config.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS);
 
-    const hello = await this.sendRequest<GatewayHelloOkPayload>('connect', config.connectParams);
+    const challengeNonce = await this.waitForConnectChallenge(CONNECT_CHALLENGE_TIMEOUT_MS);
+    const connectParams = await this.resolveConnectParams(config, challengeNonce);
+    const hello = await this.sendRequest<GatewayHelloOkPayload>('connect', connectParams);
 
     this.updateStatus({
       state: 'connected',
@@ -126,6 +136,7 @@ export class OpenClawGatewayConnection {
   async disconnect(): Promise<void> {
     this.explicitlyClosed = true;
     this.clearReconnectTimer();
+    this.resolveConnectChallengeWaiters(null);
     this.rejectPendingRequests(new Error('Gateway connection closed'));
 
     if (this.ws) {
@@ -223,9 +234,53 @@ export class OpenClawGatewayConnection {
       };
 
       ws.onclose = () => {
+        this.resolveConnectChallengeWaiters(null);
         this.onSocketClosed();
       };
     });
+  }
+
+  private async resolveConnectParams(
+    config: GatewayConnectionConfig,
+    challengeNonce: string | null,
+  ): Promise<GatewayConnectParams> {
+    if (config.connectParamsFactory) {
+      return await config.connectParamsFactory(challengeNonce);
+    }
+    if (config.connectParams) {
+      return config.connectParams;
+    }
+    throw new Error('Missing connect params for Gateway handshake');
+  }
+
+  private waitForConnectChallenge(timeoutMs: number): Promise<string | null> {
+    if (this.connectChallengeNonce !== null) {
+      return Promise.resolve(this.connectChallengeNonce);
+    }
+
+    return new Promise((resolve) => {
+      const waiter = (nonce: string | null) => {
+        clearTimeout(timeoutId);
+        this.connectChallengeWaiters.delete(waiter);
+        resolve(nonce);
+      };
+      const timeoutId = setTimeout(() => {
+        this.connectChallengeWaiters.delete(waiter);
+        resolve(null);
+      }, timeoutMs);
+
+      this.connectChallengeWaiters.add(waiter);
+    });
+  }
+
+  private resolveConnectChallengeWaiters(nonce: string | null): void {
+    if (this.connectChallengeWaiters.size === 0) {
+      return;
+    }
+
+    const waiters = Array.from(this.connectChallengeWaiters);
+    this.connectChallengeWaiters.clear();
+    waiters.forEach((waiter) => waiter(nonce));
   }
 
   private async handleMessage(raw: unknown): Promise<void> {
@@ -238,6 +293,18 @@ export class OpenClawGatewayConnection {
       frame = JSON.parse(raw);
     } catch (error) {
       this.updateStatus({ state: 'error', lastError: `Invalid JSON frame: ${String(error)}` });
+      return;
+    }
+
+    if (
+      isGatewayEventFrame(frame) &&
+      frame.event === 'connect.challenge' &&
+      typeof frame.payload === 'object' &&
+      frame.payload !== null
+    ) {
+      const nonce = (frame.payload as { nonce?: unknown }).nonce;
+      this.connectChallengeNonce = typeof nonce === 'string' ? nonce : '';
+      this.resolveConnectChallengeWaiters(this.connectChallengeNonce);
       return;
     }
 

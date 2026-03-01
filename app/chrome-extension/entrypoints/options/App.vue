@@ -83,6 +83,12 @@ import {
   setEmosSettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
+  buildSignedConnectParams,
+  extractConnectChallengeNonce,
+  OPENCLAW_CLIENT_IDS,
+  OPENCLAW_CLIENT_MODES,
+} from '@/entrypoints/shared/utils/openclaw-device-auth';
+import {
   getToolGroupState,
   setToolGroupEnabled,
   type ToolGroupId,
@@ -172,36 +178,74 @@ async function testGateway(): Promise<void> {
         ws.close();
         reject(new Error('Gateway test timeout'));
       }, 10_000);
+      const challengeTimer = setTimeout(() => {
+        if (!connectSent) {
+          void sendConnect(null).catch(reject);
+        }
+      }, 6_000);
+      let connectSent = false;
 
-      ws.onopen = () => {
+      async function sendConnect(challengeNonce: string | null): Promise<void> {
+        if (connectSent) {
+          return;
+        }
+        connectSent = true;
+        const params = await buildSignedConnectParams({
+          role: 'operator',
+          authToken: gateway.gatewayAuthToken.trim(),
+          client: {
+            id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
+            version: chrome.runtime.getManifest().version || '0.1.0',
+            platform: typeof navigator !== 'undefined' ? navigator.platform || 'web' : 'web',
+            mode: OPENCLAW_CLIENT_MODES.WEBCHAT,
+          },
+          scopes: ['operator.read', 'operator.write'],
+          caps: [],
+          commands: [],
+          permissions: {},
+          locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-options',
+          nonce: challengeNonce,
+        });
+
         ws.send(
           JSON.stringify({
             type: 'req',
             id: crypto.randomUUID(),
             method: 'connect',
-            params: {
-              role: 'operator',
-              auth: { token: gateway.gatewayAuthToken.trim() },
-              mode: 'operator',
-            },
+            params,
           }),
         );
+      }
+
+      ws.onopen = () => {
+        // Wait for connect.challenge; fallback timer sends connect if challenge is absent.
       };
 
       ws.onmessage = (event) => {
         try {
           const frame = JSON.parse(String(event.data));
+          const challengeNonce = extractConnectChallengeNonce(String(event.data));
+          if (challengeNonce !== undefined) {
+            clearTimeout(challengeTimer);
+            void sendConnect(challengeNonce || null).catch(reject);
+            return;
+          }
+
           if (frame?.type === 'res' && frame?.ok === true) {
             clearTimeout(timer);
+            clearTimeout(challengeTimer);
             ws.close();
             resolve();
           } else if (frame?.type === 'res' && frame?.ok === false) {
             clearTimeout(timer);
+            clearTimeout(challengeTimer);
             ws.close();
             reject(new Error(String(frame?.payload || 'Gateway rejected connection')));
           }
         } catch (error) {
           clearTimeout(timer);
+          clearTimeout(challengeTimer);
           ws.close();
           reject(error);
         }
@@ -209,6 +253,7 @@ async function testGateway(): Promise<void> {
 
       ws.onerror = () => {
         clearTimeout(timer);
+        clearTimeout(challengeTimer);
         ws.close();
         reject(new Error('Gateway socket error'));
       };
