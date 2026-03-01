@@ -1,20 +1,46 @@
 <template>
-  <aside class="details-panel">
-    <h3>Memory Details</h3>
-    <p v-if="!item" class="muted">Select an item to inspect details.</p>
+  <aside class="details-panel" :style="panelStyle">
+    <h3 class="panel-title">Memory Details</h3>
+
+    <p v-if="!item" class="panel-empty">Select an item to inspect details.</p>
 
     <template v-else>
-      <div class="detail-row"><strong>ID:</strong> {{ item.message_id || item.id }}</div>
-      <div class="detail-row"><strong>Sender:</strong> {{ item.sender || '-' }}</div>
-      <div class="detail-row"
-        ><strong>Group:</strong> {{ item.group_name || item.group_id || '-' }}</div
-      >
-      <div class="detail-row"><strong>Created:</strong> {{ item.create_time || '-' }}</div>
+      <div class="detail-row">
+        <span class="detail-label">ID</span>
+        <span class="detail-value">{{ item.message_id || item.id }}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Sender</span>
+        <span class="detail-value">{{ item.sender || '-' }}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Group</span>
+        <span class="detail-value">{{ item.group_name || item.group_id || '-' }}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Created</span>
+        <span class="detail-value">{{ item.create_time || '-' }}</span>
+      </div>
 
-      <pre class="content-block">{{ item.content }}</pre>
+      <div class="content-block ac-scroll" :style="contentBlockStyle">
+        {{ item.content }}
+      </div>
 
       <div class="actions">
-        <button class="secondary" @click="$emit('open', item)" :disabled="!item.canonical_url">
+        <button
+          class="open-btn ac-btn ac-focus-ring"
+          :style="openBtnStyle"
+          :disabled="!item.canonical_url"
+          @click="$emit('open', item)"
+        >
+          <svg class="open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
           Open URL
         </button>
       </div>
@@ -23,6 +49,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { MemoryItem } from '../../composables/useEmosSearch';
 
 defineProps<{
@@ -32,48 +59,83 @@ defineProps<{
 defineEmits<{
   (e: 'open', item: MemoryItem): void;
 }>();
+
+const panelStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-card)',
+}));
+
+const contentBlockStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-inner)',
+  fontFamily: 'var(--ac-font-mono)',
+  color: 'var(--ac-text)',
+}));
+
+const openBtnStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  color: 'var(--ac-text)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-button)',
+}));
 </script>
 
 <style scoped>
 .details-panel {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #f8fafc;
-  padding: 12px;
+  padding: 14px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  align-content: start;
 }
 
-h3 {
+.panel-title {
   margin: 0;
   font-size: 14px;
-  color: #0f172a;
+  font-weight: 600;
+  color: var(--ac-text);
+  font-family: var(--ac-font-heading);
 }
 
-.muted {
+.panel-empty {
   margin: 0;
-  color: #64748b;
+  color: var(--ac-text-subtle);
   font-size: 12px;
+  font-family: var(--ac-font-body);
 }
 
 .detail-row {
-  font-size: 12px;
-  color: #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ac-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.detail-value {
+  font-size: 13px;
+  color: var(--ac-text);
+  word-break: break-all;
+  font-family: var(--ac-font-body);
 }
 
 .content-block {
   margin: 0;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 8px;
+  padding: 10px;
   min-height: 120px;
   max-height: 240px;
-  overflow: auto;
+  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 12px;
-  color: #0f172a;
+  line-height: 1.5;
 }
 
 .actions {
@@ -81,22 +143,30 @@ h3 {
   gap: 8px;
 }
 
-.secondary {
-  border-radius: 8px;
-  padding: 8px 10px;
+.open-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
   font-size: 12px;
   cursor: pointer;
-  border: 1px solid;
+  font-family: var(--ac-font-body);
+  transition:
+    background-color var(--ac-motion-fast),
+    transform var(--ac-motion-fast);
 }
 
-.secondary {
-  border-color: #94a3b8;
-  background: #ffffff;
-  color: #334155;
+.open-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
-.secondary:disabled {
+.open-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.open-icon {
+  width: 14px;
+  height: 14px;
 }
 </style>

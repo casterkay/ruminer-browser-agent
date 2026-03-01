@@ -1,100 +1,262 @@
 <template>
-  <div class="ruminer-chat">
-    <header class="chat-header">
-      <div>
-        <h2>Chat</h2>
-        <p>OpenClaw Gateway session: <code>main</code></p>
+  <div class="chat-shell">
+    <!-- Action Bar -->
+    <header class="chat-header" :style="headerStyle">
+      <div class="header-left">
+        <span
+          class="status-dot"
+          :class="gateway.connected.value ? 'connected' : 'disconnected'"
+          :data-tooltip="gateway.connected.value ? 'Connected' : 'Disconnected'"
+        />
+        <span class="status-label">{{
+          gateway.connected.value ? 'Connected' : 'Disconnected'
+        }}</span>
       </div>
-      <div class="header-actions">
-        <button class="secondary" @click="chat.newChat">New chat</button>
-        <button class="secondary" @click="gateway.reconnect" :disabled="gateway.connecting.value">
-          {{ gateway.connecting.value ? 'Connecting...' : 'Reconnect' }}
+      <div class="header-right">
+        <button
+          v-if="!gateway.connected.value"
+          class="header-btn ac-btn ac-focus-ring"
+          :style="btnStyle"
+          :disabled="gateway.connecting.value"
+          data-tooltip="Reconnect"
+          @click="gateway.reconnect"
+        >
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        </button>
+        <button
+          class="header-btn ac-btn ac-focus-ring"
+          :style="btnStyle"
+          data-tooltip="Tool Groups"
+          @click="toolGroupsOpen = !toolGroupsOpen"
+        >
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+            />
+          </svg>
+        </button>
+        <button
+          class="header-btn ac-btn ac-focus-ring"
+          :style="btnStyle"
+          data-tooltip="New Chat"
+          @click="chat.newChat"
+        >
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
         </button>
       </div>
     </header>
 
-    <div class="connection-banner" :class="gateway.connected.value ? 'ok' : 'warn'">
-      <span v-if="gateway.connected.value">Gateway connected</span>
-      <span v-else>
-        Gateway disconnected{{ gateway.lastError.value ? `: ${gateway.lastError.value}` : '' }}
-      </span>
+    <!-- Tool Groups Tray -->
+    <div v-if="toolGroupsOpen" class="tool-tray" :style="trayStyle">
+      <div class="tool-chips">
+        <button
+          v-for="item in groupItems"
+          :key="item.id"
+          class="tool-chip ac-focus-ring"
+          :style="item.enabled ? chipActiveStyle : chipInactiveStyle"
+          @click="toggleGroup(item.id, !item.enabled)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <button
+        class="tray-close ac-btn ac-focus-ring"
+        :style="btnStyle"
+        @click="toolGroupsOpen = false"
+      >
+        <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
     </div>
 
-    <section class="tool-groups">
-      <h3>Tool Groups</h3>
-      <label v-for="item in groupItems" :key="item.id" class="group-toggle">
-        <input
-          type="checkbox"
-          :checked="item.enabled"
-          @change="toggleGroup(item.id, ($event.target as HTMLInputElement).checked)"
-        />
-        <span>{{ item.label }}</span>
-      </label>
-    </section>
+    <!-- Scrollable Message Area -->
+    <main ref="contentRef" class="message-area ac-scroll" @scroll="handleScroll">
+      <div ref="contentSlotRef" class="message-content-wrap">
+        <!-- Loading -->
+        <div v-if="chat.loadingHistory.value" class="empty-state">
+          <div class="empty-icon ac-pulse" :style="{ color: 'var(--ac-text-subtle)' }">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              />
+            </svg>
+          </div>
+          <p class="empty-heading">Loading chat history...</p>
+        </div>
 
-    <section class="message-list" ref="messageListRef">
-      <div v-if="chat.loadingHistory.value" class="placeholder">Loading chat history...</div>
-      <div v-else-if="chat.messages.value.length === 0" class="placeholder">
-        Start a conversation with Ruminer.
+        <!-- Empty State -->
+        <div v-else-if="chat.messages.value.length === 0" class="empty-state">
+          <div class="empty-icon" :style="{ color: 'var(--ac-text-subtle)' }">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.2"
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              />
+            </svg>
+          </div>
+          <p class="empty-heading">Start a conversation</p>
+          <p class="empty-subtext">Ask Ruminer to help with browser tasks</p>
+        </div>
+
+        <!-- Messages -->
+        <template v-else>
+          <article
+            v-for="message in chat.messages.value"
+            :key="message.id"
+            class="message"
+            :class="`role-${message.role}`"
+            :style="messageStyle(message.role)"
+          >
+            <header class="message-meta">
+              <span class="message-role">{{ roleLabel(message.role) }}</span>
+              <span class="message-time">{{ formatRelativeTime(message.createdAt) }}</span>
+            </header>
+            <TimelineToolCallStep
+              v-if="isToolUseMessage(message)"
+              :item="toToolUseTimelineItem(message)"
+            />
+            <TimelineToolResultCardStep
+              v-else-if="isToolResultMessage(message)"
+              :item="toToolResultTimelineItem(message)"
+            />
+            <div v-else class="message-body">{{ message.content }}</div>
+          </article>
+        </template>
+      </div>
+    </main>
+
+    <!-- Footer: Suggestions + Composer + Label -->
+    <footer class="chat-footer" :style="footerGradientStyle">
+      <!-- Memory Suggestions -->
+      <div
+        v-if="suggestions.hasSuggestions.value"
+        class="suggestions-card"
+        :style="suggestionsStyle"
+      >
+        <div class="suggestions-header">
+          <span class="suggestions-title">Memory Suggestions</span>
+          <button
+            class="tray-close ac-btn ac-focus-ring"
+            :style="btnStyle"
+            @click="suggestions.clear()"
+          >
+            <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="suggestions-list ac-scroll">
+          <button
+            v-for="suggestion in suggestions.suggestions.value"
+            :key="suggestion.id"
+            class="suggestion-item ac-btn"
+            :style="suggestionItemStyle"
+            @click="insertSuggestion(suggestion.content)"
+          >
+            <span class="suggestion-text">{{ suggestion.content }}</span>
+            <span class="suggestion-meta">{{ suggestion.sender || 'memory' }}</span>
+          </button>
+        </div>
       </div>
 
-      <article
-        v-for="message in chat.messages.value"
-        :key="message.id"
-        class="message"
-        :class="`role-${message.role}`"
-      >
-        <header class="message-meta">
-          <strong>{{ message.role }}</strong>
-          <span>{{ formatTime(message.createdAt) }}</span>
-        </header>
-        <TimelineToolCallStep
-          v-if="isToolUseMessage(message)"
-          :item="toToolUseTimelineItem(message)"
-        />
-        <TimelineToolResultCardStep
-          v-else-if="isToolResultMessage(message)"
-          :item="toToolResultTimelineItem(message)"
-        />
-        <pre v-else class="message-content">{{ message.content }}</pre>
-      </article>
-    </section>
-
-    <section v-if="suggestions.hasSuggestions.value" class="suggestions">
-      <h4>Memory Suggestions</h4>
-      <button
-        v-for="suggestion in suggestions.suggestions.value"
-        :key="suggestion.id"
-        class="suggestion-item"
-        @click="insertSuggestion(suggestion.content)"
-      >
-        <span class="suggestion-text">{{ suggestion.content }}</span>
-        <span class="suggestion-meta">{{ suggestion.sender || 'memory' }}</span>
-      </button>
-    </section>
-
-    <footer class="composer">
-      <textarea
-        v-model="chat.input.value"
-        class="composer-input"
-        :disabled="!gateway.connected.value"
-        placeholder="Ask Ruminer to help with browser tasks..."
-        @input="onInput"
-        @keydown.enter.exact.prevent="chat.send"
-      />
-      <div class="composer-actions">
-        <button class="secondary" @click="chat.abort" :disabled="!chat.activeRunId.value"
-          >Stop</button
+      <!-- Error Banner -->
+      <div v-if="chat.error.value" class="error-banner" :style="errorBannerStyle">
+        <span>{{ chat.error.value }}</span>
+        <button
+          class="tray-close ac-btn ac-focus-ring"
+          :style="btnStyle"
+          @click="chat.error.value = null"
         >
-        <button class="primary" @click="chat.send" :disabled="!chat.canSend.value">Send</button>
+          <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
       </div>
-      <p v-if="chat.error.value" class="error">{{ chat.error.value }}</p>
+
+      <!-- Floating Composer Card -->
+      <div class="composer-card" :style="composerCardStyle">
+        <textarea
+          ref="textareaRef"
+          v-model="chat.input.value"
+          class="composer-textarea"
+          :style="textareaStyle"
+          :disabled="!gateway.connected.value"
+          placeholder="Ask Ruminer to help with browser tasks..."
+          rows="1"
+          @input="handleTextareaInput"
+          @keydown.enter.exact.prevent="handleSend"
+        />
+        <button
+          v-if="chat.activeRunId.value"
+          class="send-btn"
+          :style="stopBtnStyle"
+          @click="chat.abort"
+        >
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
+        </button>
+        <button
+          v-else
+          class="send-btn"
+          :style="sendBtnStyle"
+          :disabled="!chat.canSend.value"
+          @click="handleSend"
+        >
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 10l7-7m0 0l7 7m-7-7v18"
+            />
+          </svg>
+        </button>
+      </div>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useOpenClawGateway } from '../composables/useOpenClawGateway';
 import {
   useOpenClawChat,
@@ -115,8 +277,12 @@ import TimelineToolResultCardStep from './agent-chat/timeline/TimelineToolResult
 const gateway = useOpenClawGateway();
 const chat = useOpenClawChat(gateway);
 const suggestions = useEmosSuggestions(gateway);
-const messageListRef = ref<HTMLElement | null>(null);
 
+const contentRef = ref<HTMLElement | null>(null);
+const contentSlotRef = ref<HTMLElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+
+const toolGroupsOpen = ref(false);
 const toolGroups = ref<ToolGroupState>({
   observe: true,
   navigate: true,
@@ -126,6 +292,16 @@ const toolGroups = ref<ToolGroupState>({
   updatedAt: new Date().toISOString(),
 });
 
+// Auto-scroll state
+const isUserScrolledUp = ref(false);
+const SCROLL_THRESHOLD = 150;
+let contentResizeObserver: ResizeObserver | null = null;
+let scrollScheduled = false;
+
+// Textarea auto-resize
+const MIN_TEXTAREA_HEIGHT = 40;
+const MAX_TEXTAREA_HEIGHT = 160;
+
 const groupItems = computed(() => [
   { id: 'observe' as const, label: 'Observe', enabled: toolGroups.value.observe },
   { id: 'navigate' as const, label: 'Navigate', enabled: toolGroups.value.navigate },
@@ -134,13 +310,139 @@ const groupItems = computed(() => [
   { id: 'workflow' as const, label: 'Workflow', enabled: toolGroups.value.workflow },
 ]);
 
+// ---- Styles ----
+
+const headerStyle = computed(() => ({
+  backgroundColor: 'var(--ac-header-bg)',
+  borderBottom: 'var(--ac-border-width) solid var(--ac-header-border)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
+}));
+
+const btnStyle = computed(() => ({
+  color: 'var(--ac-text-muted)',
+  borderRadius: 'var(--ac-radius-button)',
+  border: 'none',
+  background: 'none',
+}));
+
+const trayStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  borderBottom: 'var(--ac-border-width) solid var(--ac-border)',
+}));
+
+const chipActiveStyle = computed(() => ({
+  backgroundColor: 'var(--ac-accent-subtle)',
+  color: 'var(--ac-accent)',
+  border: 'var(--ac-border-width) solid var(--ac-accent)',
+  borderRadius: '999px',
+}));
+
+const chipInactiveStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  color: 'var(--ac-text-subtle)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: '999px',
+}));
+
+const composerCardStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  borderRadius: 'var(--ac-radius-card)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  boxShadow: 'var(--ac-shadow-float)',
+}));
+
+const textareaStyle = computed(() => ({
+  fontFamily: 'var(--ac-font-body)',
+  color: 'var(--ac-text)',
+  minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
+  maxHeight: `${MAX_TEXTAREA_HEIGHT}px`,
+  paddingRight: '36px',
+}));
+
+const sendBtnStyle = computed(() => ({
+  backgroundColor: chat.canSend.value ? 'var(--ac-accent)' : 'var(--ac-surface-muted)',
+  color: chat.canSend.value ? 'var(--ac-accent-contrast)' : 'var(--ac-text-subtle)',
+  borderRadius: 'var(--ac-radius-button)',
+  cursor: chat.canSend.value ? 'pointer' : 'not-allowed',
+}));
+
+const stopBtnStyle = computed(() => ({
+  backgroundColor: 'var(--ac-diff-del-bg)',
+  color: 'var(--ac-danger)',
+  border: 'var(--ac-border-width) solid var(--ac-diff-del-border)',
+  borderRadius: 'var(--ac-radius-button)',
+}));
+
+const suggestionsStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-card)',
+  boxShadow: 'var(--ac-shadow-float)',
+}));
+
+const suggestionItemStyle = computed(() => ({
+  borderRadius: 'var(--ac-radius-inner)',
+}));
+
+const errorBannerStyle = computed(() => ({
+  backgroundColor: 'var(--ac-diff-del-bg)',
+  color: 'var(--ac-danger)',
+  border: 'var(--ac-border-width) solid var(--ac-diff-del-border)',
+  borderRadius: 'var(--ac-radius-inner)',
+}));
+
+const footerGradientStyle = computed(() => ({
+  background: 'linear-gradient(to top, var(--ac-bg), var(--ac-bg), transparent)',
+}));
+
+// ---- Message helpers ----
+
+function messageStyle(role: string) {
+  if (role === 'user') {
+    return {
+      backgroundColor: 'var(--ac-accent-subtle)',
+      borderRadius: 'var(--ac-radius-card)',
+    };
+  }
+  if (role === 'assistant') {
+    return {
+      backgroundColor: 'var(--ac-surface)',
+      border: 'var(--ac-border-width) solid var(--ac-border)',
+      borderRadius: 'var(--ac-radius-card)',
+    };
+  }
+  return {};
+}
+
+function roleLabel(role: string): string {
+  if (role === 'user') return 'You';
+  if (role === 'assistant') return 'Ruminer';
+  return role;
+}
+
+function formatRelativeTime(value: string): string {
+  try {
+    const date = new Date(value);
+    const now = Date.now();
+    const diffMs = now - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return date.toLocaleDateString();
+  } catch {
+    return value;
+  }
+}
+
+// ---- Tool message helpers ----
+
 function toolSeverity(card: ToolCardData): ToolSeverity {
-  if (card.isError) {
-    return 'error';
-  }
-  if (card.phase === 'result') {
-    return 'success';
-  }
+  if (card.isError) return 'error';
+  if (card.phase === 'result') return 'success';
   return 'info';
 }
 
@@ -206,264 +508,415 @@ function toToolResultTimelineItem(
   };
 }
 
-function formatTime(value: string): string {
-  try {
-    return new Date(value).toLocaleTimeString();
-  } catch {
-    return value;
+// ---- Auto-scroll ----
+
+function isNearBottom(el: HTMLElement): boolean {
+  const { scrollTop, scrollHeight, clientHeight } = el;
+  return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
+}
+
+function handleScroll(): void {
+  if (!contentRef.value) return;
+  isUserScrolledUp.value = !isNearBottom(contentRef.value);
+}
+
+function scrollToBottom(behavior: ScrollBehavior = 'auto'): void {
+  if (!contentRef.value) return;
+  contentRef.value.scrollTo({
+    top: contentRef.value.scrollHeight,
+    behavior,
+  });
+}
+
+function maybeAutoScroll(): void {
+  if (scrollScheduled || isUserScrolledUp.value || !contentRef.value) return;
+  scrollScheduled = true;
+  requestAnimationFrame(() => {
+    scrollScheduled = false;
+    if (!isUserScrolledUp.value) {
+      scrollToBottom('auto');
+    }
+  });
+}
+
+// ---- Textarea auto-resize ----
+
+function resizeTextarea(): void {
+  const el = textareaRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  const scrollH = el.scrollHeight;
+  el.style.height = `${Math.min(scrollH, MAX_TEXTAREA_HEIGHT)}px`;
+  el.style.overflowY = scrollH > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
+}
+
+function handleTextareaInput(): void {
+  resizeTextarea();
+  suggestions.updateQuery(chat.input.value);
+}
+
+function handleSend(): void {
+  if (chat.canSend.value) {
+    chat.send();
+    nextTick(resizeTextarea);
   }
 }
+
+// ---- Tool groups ----
 
 async function toggleGroup(groupId: ToolGroupId, enabled: boolean): Promise<void> {
   toolGroups.value = await setToolGroupEnabled(groupId, enabled);
 }
 
-function onInput(): void {
-  suggestions.updateQuery(chat.input.value);
-}
-
 function insertSuggestion(content: string): void {
   chat.input.value = `${chat.input.value.trim()}\n${content}`.trim();
   suggestions.clear();
+  nextTick(resizeTextarea);
 }
+
+// ---- Lifecycle ----
+
+watch(
+  () => chat.messages.value.length,
+  () => {
+    maybeAutoScroll();
+  },
+);
 
 onMounted(async () => {
   toolGroups.value = await getToolGroupState();
+
+  // Setup content ResizeObserver for auto-scroll
+  if (contentSlotRef.value) {
+    contentResizeObserver = new ResizeObserver(() => {
+      maybeAutoScroll();
+    });
+    contentResizeObserver.observe(contentSlotRef.value);
+  }
 
   const ok = await gateway.connect();
   if (ok) {
     await chat.hydrateHistory();
   }
+
+  nextTick(resizeTextarea);
+});
+
+onUnmounted(() => {
+  contentResizeObserver?.disconnect();
 });
 </script>
 
 <style scoped>
-.ruminer-chat {
+.chat-shell {
   height: 100%;
-  display: grid;
-  grid-template-rows: auto auto auto 1fr auto auto;
-  gap: 10px;
-  padding: 12px;
-  background: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
+/* Header */
 .chat-header {
+  flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  padding: 10px 16px;
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.chat-header h2 {
-  margin: 0;
-  font-size: 18px;
-  color: #0f172a;
-}
-
-.chat-header p {
-  margin: 2px 0 0;
-  color: #64748b;
+.status-label {
   font-size: 12px;
+  color: var(--ac-text-muted);
 }
 
-.header-actions {
-  display: flex;
-  gap: 8px;
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.connection-banner {
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12px;
+.status-dot.connected {
+  background-color: var(--ac-success);
+  box-shadow: 0 0 6px var(--ac-success);
+  animation: pulse-dot 2s infinite;
 }
 
-.connection-banner.ok {
-  border: 1px solid #86efac;
-  background: #dcfce7;
-  color: #166534;
+.status-dot.disconnected {
+  background-color: var(--ac-warning);
 }
 
-.connection-banner.warn {
-  border: 1px solid #fdba74;
-  background: #fff7ed;
-  color: #9a3412;
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
-.tool-groups {
+.header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
+}
+
+.header-btn {
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.btn-icon-sm {
+  width: 14px;
+  height: 14px;
+}
+
+/* Tool Groups Tray */
+.tool-tray {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  transition: all var(--ac-motion-fast);
+}
+
+.tool-chips {
+  display: flex;
   flex-wrap: wrap;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: #ffffff;
+  gap: 6px;
+  flex: 1;
 }
 
-.tool-groups h3 {
-  margin: 0;
+.tool-chip {
+  padding: 4px 12px;
   font-size: 12px;
-  color: #334155;
+  font-family: var(--ac-font-body);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast);
 }
 
-.group-toggle {
-  font-size: 12px;
-  color: #0f172a;
+.tray-close {
+  flex-shrink: 0;
+  padding: 4px;
+  cursor: pointer;
   display: flex;
-  gap: 5px;
   align-items: center;
+  justify-content: center;
 }
 
-.message-list {
+/* Scrollable Message Area */
+.message-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
   min-height: 0;
-  overflow: auto;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
-  padding: 10px;
-  display: grid;
+}
+
+.message-content-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
   gap: 8px;
 }
 
-.placeholder {
-  font-size: 12px;
-  color: #64748b;
-  padding: 8px;
+.empty-icon {
+  margin-bottom: 4px;
 }
 
+.empty-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ac-text-subtle);
+  font-family: var(--ac-font-heading);
+}
+
+.empty-subtext {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ac-text-muted);
+}
+
+/* Messages */
 .message {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px;
-  display: grid;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-.message.role-user {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-}
-
-.message.role-assistant {
-  border-color: #d1d5db;
-  background: #f8fafc;
-}
-
 .message.role-tool {
-  border-color: #fde68a;
-  background: #fffbeb;
+  padding: 0;
 }
 
 .message-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
-  color: #475569;
 }
 
-.message-content {
-  margin: 0;
-  font-size: 12px;
+.message-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ac-text-muted);
+  text-transform: capitalize;
+}
+
+.message-time {
+  font-size: 10px;
+  color: var(--ac-text-subtle);
+}
+
+.message-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ac-text);
   white-space: pre-wrap;
   word-break: break-word;
-  color: #0f172a;
+  font-family: var(--ac-font-body);
 }
 
-.suggestions {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
+/* Footer */
+.chat-footer {
+  flex-shrink: 0;
+  padding: 8px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+
+/* Suggestions Card */
+.suggestions-card {
   padding: 8px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  max-height: 180px;
-  overflow: auto;
 }
 
-.suggestions h4 {
-  margin: 0;
-  font-size: 12px;
-  color: #334155;
+.suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.suggestions-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ac-text-muted);
+}
+
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 .suggestion-item {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 6px;
   text-align: left;
-  display: grid;
-  gap: 4px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   cursor: pointer;
 }
 
 .suggestion-text {
   font-size: 12px;
-  color: #0f172a;
+  color: var(--ac-text);
 }
 
 .suggestion-meta {
-  font-size: 11px;
-  color: #64748b;
+  font-size: 10px;
+  color: var(--ac-text-subtle);
 }
 
-.composer {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
-  padding: 8px;
-  display: grid;
-  gap: 8px;
-}
-
-.composer-input {
-  width: 100%;
-  min-height: 80px;
-  resize: vertical;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 8px;
-  font-size: 12px;
-  color: #0f172a;
-}
-
-.composer-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.primary,
-.secondary {
-  border-radius: 8px;
+/* Error Banner */
+.error-banner {
   padding: 8px 12px;
   font-size: 12px;
-  cursor: pointer;
-  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.secondary {
-  border-color: #94a3b8;
-  background: #ffffff;
-  color: #334155;
+/* Composer Card */
+.composer-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
+.composer-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  resize: none;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  overflow-y: hidden;
 }
 
-.primary:disabled,
-.secondary:disabled {
+.composer-textarea::placeholder {
+  color: var(--ac-text-placeholder);
+}
+
+.composer-textarea:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
 }
 
-.error {
-  margin: 0;
-  font-size: 12px;
-  color: #b91c1c;
+.send-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition:
+    background-color var(--ac-motion-fast),
+    color var(--ac-motion-fast);
+}
+
+.send-btn:disabled {
+  cursor: not-allowed;
 }
 </style>

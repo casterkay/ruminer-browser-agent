@@ -1,60 +1,127 @@
 <template>
-  <div class="options-page">
+  <div class="agent-theme options-page" :data-agent-theme="theme.theme.value">
     <header class="options-header">
-      <h1>System Settings</h1>
-      <p>Configure OpenClaw Gateway and EverMemOS API.</p>
+      <h1 class="options-title">System Settings</h1>
     </header>
 
-    <section class="card">
-      <h2>OpenClaw Gateway</h2>
-      <label>
-        Gateway WS URL
-        <input v-model="gateway.gatewayWsUrl" type="text" placeholder="ws://127.0.0.1:18789" />
+    <section class="card" :style="cardStyle">
+      <h2 class="card-title">OpenClaw Gateway</h2>
+      <label class="field">
+        <span class="field-label">Gateway WS URL</span>
+        <input
+          v-model="gateway.gatewayWsUrl"
+          type="text"
+          placeholder="ws://127.0.0.1:18789"
+          class="field-input"
+          :style="inputStyle"
+        />
       </label>
-      <label>
-        Auth Token
-        <input v-model="gateway.gatewayAuthToken" type="password" placeholder="gateway token" />
+      <label class="field">
+        <span class="field-label">Auth Token</span>
+        <input
+          v-model="gateway.gatewayAuthToken"
+          type="password"
+          placeholder="gateway token"
+          class="field-input"
+          :style="inputStyle"
+        />
       </label>
       <div class="row">
-        <button class="primary" @click="saveGateway">Save</button>
-        <button class="secondary" @click="testGateway" :disabled="testingGateway">
+        <button class="btn-primary ac-focus-ring" :style="primaryBtnStyle" @click="saveGateway">
+          Save
+        </button>
+        <button
+          class="btn-secondary ac-focus-ring"
+          :style="secondaryBtnStyle"
+          :disabled="testingGateway"
+          @click="testGateway"
+        >
           {{ testingGateway ? 'Testing...' : 'Test Connection' }}
         </button>
       </div>
-      <p class="status" :class="gatewayStatus.ok ? 'ok' : 'error'" v-if="gatewayStatus.message">
+      <div
+        v-if="gatewayStatus.message"
+        class="status-banner"
+        :class="gatewayStatus.ok ? 'status-ok' : 'status-error'"
+      >
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path
+            v-if="gatewayStatus.ok"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 13l4 4L19 7"
+          />
+          <path
+            v-else
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
         {{ gatewayStatus.message }}
-      </p>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>EverMemOS</h2>
-      <label>
-        Base URL
-        <input v-model="emos.baseUrl" type="text" placeholder="http://127.0.0.1:1995" />
+    <section class="card" :style="cardStyle">
+      <h2 class="card-title">EverMemOS</h2>
+      <label class="field">
+        <span class="field-label">Base URL</span>
+        <input
+          v-model="emos.baseUrl"
+          type="text"
+          placeholder="http://127.0.0.1:1995"
+          class="field-input"
+          :style="inputStyle"
+        />
       </label>
-      <label>
-        API Key
-        <input v-model="emos.apiKey" type="password" placeholder="emos api key" />
+      <label class="field">
+        <span class="field-label">API Key</span>
+        <input
+          v-model="emos.apiKey"
+          type="password"
+          placeholder="emos api key"
+          class="field-input"
+          :style="inputStyle"
+        />
       </label>
-      <div class="grid-two">
-        <label>
-          Tenant ID (optional)
-          <input v-model="emos.tenantId" type="text" placeholder="tenant" />
-        </label>
-        <label>
-          Space ID (optional)
-          <input v-model="emos.spaceId" type="text" placeholder="space" />
-        </label>
-      </div>
       <div class="row">
-        <button class="primary" @click="saveEmos">Save</button>
-        <button class="secondary" @click="testEmos" :disabled="testingEmos">
+        <button class="btn-primary ac-focus-ring" :style="primaryBtnStyle" @click="saveEmos">
+          Save
+        </button>
+        <button
+          class="btn-secondary ac-focus-ring"
+          :style="secondaryBtnStyle"
+          :disabled="testingEmos"
+          @click="testEmos"
+        >
           {{ testingEmos ? 'Testing...' : 'Test Connection' }}
         </button>
       </div>
-      <p class="status" :class="emosStatus.ok ? 'ok' : 'error'" v-if="emosStatus.message">
+      <div
+        v-if="emosStatus.message"
+        class="status-banner"
+        :class="emosStatus.ok ? 'status-ok' : 'status-error'"
+      >
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path
+            v-if="emosStatus.ok"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 13l4 4L19 7"
+          />
+          <path
+            v-else
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
         {{ emosStatus.message }}
-      </p>
+      </div>
     </section>
   </div>
 </template>
@@ -73,11 +140,9 @@ import {
   OPENCLAW_CLIENT_IDS,
   OPENCLAW_CLIENT_MODES,
 } from '@/entrypoints/shared/utils/openclaw-device-auth';
-import {
-  getToolGroupState,
-  setToolGroupEnabled,
-  type ToolGroupId,
-} from '@/entrypoints/shared/utils/tool-groups';
+import { useAgentTheme } from '../sidepanel/composables/useAgentTheme';
+
+const theme = useAgentTheme();
 
 const gateway = reactive({
   gatewayWsUrl: 'ws://127.0.0.1:18789',
@@ -91,27 +156,44 @@ const emos = reactive({
   spaceId: '',
 });
 
-const toolGroups = reactive({
-  observe: true,
-  navigate: true,
-  interact: false,
-  execute: false,
-  workflow: true,
-});
-
 const testingGateway = ref(false);
 const testingEmos = ref(false);
 
 const gatewayStatus = reactive({ ok: true, message: '' });
 const emosStatus = reactive({ ok: true, message: '' });
 
-const groupItems = computed(() => [
-  { id: 'observe' as ToolGroupId, label: 'Observe', enabled: toolGroups.observe },
-  { id: 'navigate' as ToolGroupId, label: 'Navigate', enabled: toolGroups.navigate },
-  { id: 'interact' as ToolGroupId, label: 'Interact', enabled: toolGroups.interact },
-  { id: 'execute' as ToolGroupId, label: 'Execute', enabled: toolGroups.execute },
-  { id: 'workflow' as ToolGroupId, label: 'Workflow', enabled: toolGroups.workflow },
-]);
+// ---- Styles ----
+
+const cardStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-card)',
+  boxShadow: 'var(--ac-shadow-card)',
+}));
+
+const inputStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  borderRadius: 'var(--ac-radius-inner)',
+  color: 'var(--ac-text)',
+  fontFamily: 'var(--ac-font-body)',
+  border: 'none',
+}));
+
+const primaryBtnStyle = computed(() => ({
+  backgroundColor: 'var(--ac-accent)',
+  color: 'var(--ac-accent-contrast)',
+  borderRadius: 'var(--ac-radius-button)',
+  border: 'none',
+}));
+
+const secondaryBtnStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  color: 'var(--ac-text)',
+  borderRadius: 'var(--ac-radius-button)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+}));
+
+// ---- Settings Logic ----
 
 async function loadSettings(): Promise<void> {
   const gatewaySettings = await getGatewaySettings();
@@ -123,13 +205,6 @@ async function loadSettings(): Promise<void> {
   emos.apiKey = emosSettings.apiKey;
   emos.tenantId = emosSettings.tenantId || '';
   emos.spaceId = emosSettings.spaceId || '';
-
-  const groups = await getToolGroupState();
-  toolGroups.observe = groups.observe;
-  toolGroups.navigate = groups.navigate;
-  toolGroups.interact = groups.interact;
-  toolGroups.execute = groups.execute;
-  toolGroups.workflow = groups.workflow;
 }
 
 async function saveGateway(): Promise<void> {
@@ -149,7 +224,7 @@ async function saveEmos(): Promise<void> {
     spaceId: emos.spaceId.trim() || null,
   });
   emosStatus.ok = true;
-  emosStatus.message = 'EMOS settings saved.';
+  emosStatus.message = 'EverMemOS settings saved.';
 }
 
 async function testGateway(): Promise<void> {
@@ -277,11 +352,11 @@ async function testEmos(): Promise<void> {
 
     if (!response.ok) {
       const payload = await response.text();
-      throw new Error(`EMOS test failed (${response.status}): ${payload}`);
+      throw new Error(`EverMemOS test failed (${response.status}): ${payload}`);
     }
 
     emosStatus.ok = true;
-    emosStatus.message = 'EMOS connection test passed.';
+    emosStatus.message = 'EverMemOS connection test passed.';
   } catch (reason) {
     emosStatus.ok = false;
     emosStatus.message = reason instanceof Error ? reason.message : String(reason);
@@ -290,17 +365,9 @@ async function testEmos(): Promise<void> {
   }
 }
 
-async function setGroup(groupId: ToolGroupId, enabled: boolean): Promise<void> {
-  const next = await setToolGroupEnabled(groupId, enabled);
-  toolGroups.observe = next.observe;
-  toolGroups.navigate = next.navigate;
-  toolGroups.interact = next.interact;
-  toolGroups.execute = next.execute;
-  toolGroups.workflow = next.workflow;
-}
-
-onMounted(() => {
-  void loadSettings();
+onMounted(async () => {
+  await theme.initTheme();
+  await loadSettings();
 });
 </script>
 
@@ -308,56 +375,81 @@ onMounted(() => {
 .options-page {
   max-width: 920px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 24px 20px;
   display: grid;
-  gap: 14px;
-  color: #0f172a;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  gap: 16px;
+  min-height: 100vh;
+  background-color: var(--ac-bg);
+  background-image: var(--ac-bg-pattern);
+  background-size: var(--ac-bg-pattern-size);
+  color: var(--ac-text);
+  font-family: var(--ac-font-body);
 }
 
-.options-header h1 {
+.options-header {
+  padding: 0 2px;
+}
+
+.options-title {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ac-text);
+  font-family: var(--ac-font-heading);
 }
 
-.options-header p {
+.options-subtitle {
   margin: 4px 0 0;
-  color: #475569;
+  color: var(--ac-text-muted);
+  font-size: 14px;
 }
 
+/* Cards */
 .card {
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  background: #ffffff;
-  padding: 14px;
+  padding: 16px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.card h2 {
+.card-title {
   margin: 0;
   font-size: 16px;
+  font-weight: 600;
+  color: var(--ac-text);
+  font-family: var(--ac-font-heading);
 }
 
-label {
+/* Fields */
+.field {
   display: grid;
   gap: 4px;
   font-size: 12px;
-  color: #334155;
 }
 
-input {
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 8px;
+.field-label {
+  color: var(--ac-text-muted);
+  font-weight: 500;
+}
+
+.field-input {
+  padding: 9px 12px;
   font-size: 13px;
-  color: #0f172a;
+  outline: none;
+  transition: background-color var(--ac-motion-fast);
+}
+
+.field-input::placeholder {
+  color: var(--ac-text-placeholder);
+}
+
+.field-input:focus {
+  background-color: var(--ac-hover-bg);
 }
 
 .grid-two {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 12px;
 }
 
 .row {
@@ -365,63 +457,63 @@ input {
   gap: 8px;
 }
 
-.primary,
-.secondary {
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid;
-}
-
-.primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.secondary {
-  border-color: #94a3b8;
-  background: #ffffff;
-  color: #334155;
-}
-
-.status {
-  margin: 0;
-  font-size: 12px;
-  padding: 8px;
-  border-radius: 8px;
-}
-
-.status.ok {
-  background: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
-}
-
-.status.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
-}
-
-.hint {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.group-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.toggle {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+/* Buttons */
+.btn-primary,
+.btn-secondary {
+  padding: 9px 16px;
   font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--ac-font-body);
+  transition:
+    background-color var(--ac-motion-fast),
+    transform var(--ac-motion-fast),
+    box-shadow var(--ac-motion-fast);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--ac-shadow-float);
+}
+
+.btn-secondary:hover {
+  background-color: var(--ac-hover-bg);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Status Banners */
+.status-banner {
+  margin: 0;
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: var(--ac-radius-inner);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.status-ok {
+  background-color: var(--ac-diff-add-bg);
+  color: var(--ac-success);
+  border: var(--ac-border-width) solid var(--ac-diff-add-border);
+}
+
+.status-error {
+  background-color: var(--ac-diff-del-bg);
+  color: var(--ac-danger);
+  border: var(--ac-border-width) solid var(--ac-diff-del-border);
 }
 
 @media (max-width: 760px) {

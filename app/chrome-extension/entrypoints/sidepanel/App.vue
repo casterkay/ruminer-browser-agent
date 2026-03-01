@@ -1,33 +1,42 @@
 <template>
-  <div class="sidepanel-root">
+  <div class="agent-theme sidepanel-root" :data-agent-theme="theme.theme.value">
     <SidepanelNavigator :active-tab="activeTab" @change="setActiveTab" />
 
     <div class="sidepanel-content">
-      <AgentChat v-if="activeTab === 'chat'" />
-      <MemoryView v-else-if="activeTab === 'memory'" />
+      <AgentChat v-show="activeTab === 'chat'" />
+      <MemoryView v-show="activeTab === 'memory'" />
 
-      <WorkflowsView
-        v-else
-        :flows="displayFlows"
-        :runs="workflows.runs.value"
-        :triggers="workflows.triggers.value"
-        :only-bound="onlyBound"
-        :open-run-id="openRunId"
-        @refresh="handleWorkflowRefresh"
-        @create="createFlow"
-        @run="runFlow"
-        @edit="editFlow"
-        @delete="deleteFlow"
-        @export="exportFlow"
-        @update:only-bound="onlyBound = $event"
-        @toggle-run="toggleRun"
-        @create-trigger="openBuilder('trigger')"
-        @edit-trigger="openBuilder('trigger', $event)"
-        @remove-trigger="deleteTrigger"
-      />
-      <p v-if="activeTab === 'workflows' && !emosConfigured" class="workflow-warning">
-        Configure EMOS in Options before running ingestion workflows.
-      </p>
+      <div v-show="activeTab === 'workflows'" class="workflows-wrapper">
+        <WorkflowsView
+          :flows="displayFlows"
+          :runs="workflows.runs.value"
+          :triggers="workflows.triggers.value"
+          :only-bound="onlyBound"
+          :open-run-id="openRunId"
+          @refresh="handleWorkflowRefresh"
+          @create="createFlow"
+          @run="runFlow"
+          @edit="editFlow"
+          @delete="deleteFlow"
+          @export="exportFlow"
+          @update:only-bound="onlyBound = $event"
+          @toggle-run="toggleRun"
+          @create-trigger="openBuilder('trigger')"
+          @edit-trigger="openBuilder('trigger', $event)"
+          @remove-trigger="deleteTrigger"
+        />
+        <div v-if="!emosConfigured" class="workflow-warning">
+          <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+            />
+          </svg>
+          Configure EverMemOS in Options before running ingestion workflows.
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -35,6 +44,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { useAgentTheme } from './composables/useAgentTheme';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
@@ -45,6 +55,7 @@ const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 
 type TabId = 'chat' | 'memory' | 'workflows';
 
+const theme = useAgentTheme();
 const activeTab = ref<TabId>('chat');
 const onlyBound = ref(false);
 const openRunId = ref<string | null>(null);
@@ -85,7 +96,7 @@ async function handleWorkflowRefresh(): Promise<void> {
 
 async function runFlow(flowId: string): Promise<void> {
   if (!emosConfigured.value) {
-    alert('EMOS is not configured. Open Options and set EMOS settings first.');
+    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
     return;
   }
   await workflows.runFlow(flowId);
@@ -102,7 +113,7 @@ function openBuilder(mode: 'flow' | 'trigger', id?: string): void {
 
 function createFlow(): void {
   if (!emosConfigured.value) {
-    alert('EMOS is not configured. Open Options and set EMOS settings first.');
+    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
     return;
   }
   openBuilder('flow');
@@ -110,7 +121,7 @@ function createFlow(): void {
 
 function editFlow(flowId: string): void {
   if (!emosConfigured.value) {
-    alert('EMOS is not configured. Open Options and set EMOS settings first.');
+    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
     return;
   }
   openBuilder('flow', flowId);
@@ -151,6 +162,8 @@ async function deleteTrigger(triggerId: string): Promise<void> {
 }
 
 onMounted(async () => {
+  await theme.initTheme();
+
   const stored = await chrome.storage.local.get(ACTIVE_TAB_KEY);
   const tab = stored[ACTIVE_TAB_KEY] as TabId | undefined;
   if (tab === 'chat' || tab === 'memory' || tab === 'workflows') {
@@ -175,12 +188,19 @@ onMounted(async () => {
   height: 100%;
   display: grid;
   grid-template-rows: auto 1fr;
-  background: #e2e8f0;
+  background-color: var(--ac-bg);
+  background-image: var(--ac-bg-pattern);
+  background-size: var(--ac-bg-pattern-size);
 }
 
 .sidepanel-content {
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.workflows-wrapper {
+  height: 100%;
   position: relative;
 }
 
@@ -190,11 +210,23 @@ onMounted(async () => {
   right: 12px;
   bottom: 12px;
   margin: 0;
-  border: 1px solid #fdba74;
-  background: #fff7ed;
-  color: #9a3412;
-  padding: 8px;
-  border-radius: 8px;
+  border: var(--ac-border-width) solid var(--ac-warning);
+  background-color: var(--ac-surface);
+  color: var(--ac-text);
+  padding: 10px 12px;
+  border-radius: var(--ac-radius-inner);
   font-size: 12px;
+  font-family: var(--ac-font-body);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--ac-shadow-card);
+}
+
+.warning-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--ac-warning);
 }
 </style>
