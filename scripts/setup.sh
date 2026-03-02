@@ -3,8 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-RUMINER_EXTENSION_IDS="${RUMINER_EXTENSION_IDS:-}"
-RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID:-chbienkbakdikbkehibcoolnafdjdkln}"
 RUMINER_MCP_URL="${RUMINER_MCP_URL:-http://127.0.0.1:12306/mcp}"
 RUMINER_BROWSER_LIST="${RUMINER_BROWSER_LIST:-}"
 
@@ -19,11 +17,9 @@ log() {
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/setup-local.sh [--help] [--skip-native-host] [--skip-openclaw] [--no-doctor]
+  bash scripts/setup.sh [--help] [--skip-native-host] [--skip-openclaw] [--no-doctor]
 
 Environment:
-  RUMINER_EXTENSION_ID       Single extension ID (default: chbienkbakdikbkehibcoolnafdjdkln)
-  RUMINER_EXTENSION_IDS      Comma-separated extension IDs (overrides RUMINER_EXTENSION_ID)
   RUMINER_MCP_URL            MCP endpoint (default: http://127.0.0.1:12306/mcp)
   RUMINER_BROWSER_LIST       Optional comma list of browsers for registration doctor (e.g. chrome,chromium,brave)
   SKIP_NATIVE_HOST           Set to 1 to skip building/registering native host
@@ -32,7 +28,6 @@ Environment:
 
 Notes:
   - Native host registration MUST whitelist your actual extension ID(s).
-    If you load an unpacked extension and its ID differs, set RUMINER_EXTENSION_ID(S) and rerun.
   - OpenClaw plugin config (EverMemOS API key / MCP URL) is not auto-written by this script.
 USAGE
 }
@@ -52,17 +47,6 @@ check_node_version() {
     log "Node.js >= 20 required (found $(node -v))"
     exit 1
   fi
-}
-
-resolve_extension_env() {
-  if [[ -n "${RUMINER_EXTENSION_IDS}" ]]; then
-    export RUMINER_EXTENSION_IDS
-    unset RUMINER_EXTENSION_ID || true
-    return 0
-  fi
-
-  export RUMINER_EXTENSION_ID
-  unset RUMINER_EXTENSION_IDS || true
 }
 
 install_openclaw_plugins() {
@@ -102,13 +86,11 @@ register_native_host() {
   pnpm -C "${ROOT_DIR}" --filter mcp-chrome-bridge build
 
   log "Registering Native Messaging host (user-level)..."
-  resolve_extension_env
   node "${ROOT_DIR}/app/native-server/dist/scripts/register-dev.js"
 
   if [[ "${RUN_DOCTOR}" == "1" ]]; then
     if [[ -f "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" ]]; then
       log "Running native-host doctor (best-effort)..."
-      resolve_extension_env
       if [[ -n "${RUMINER_BROWSER_LIST}" ]]; then
         node "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" --browser "${RUMINER_BROWSER_LIST}" || true
       else

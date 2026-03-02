@@ -57,7 +57,7 @@ openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-e
 openclaw plugins enable mcp-client
 ```
 
-If you want a one-shot local setup, see `scripts/setup-local.sh`.
+If you want a one-shot local setup, see `scripts/setup.sh`.
 
 ### Prerequisites
 
