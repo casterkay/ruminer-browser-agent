@@ -2,8 +2,6 @@
  * Agent Chat Composables
  * Export all composables for agent chat functionality.
  */
-export { useAgentServer } from './useAgentServer';
-export { useAgentChat } from './useAgentChat';
 export { useOpenClawGateway } from './useOpenClawGateway';
 export { useOpenClawChat } from './useOpenClawChat';
 export { useEmosSuggestions } from './useEmosSuggestions';
@@ -16,8 +14,6 @@ export { useAgentThreads, AGENT_SERVER_PORT_KEY } from './useAgentThreads';
 export { useWebEditorTxState, WEB_EDITOR_TX_STATE_INJECTION_KEY } from './useWebEditorTxState';
 export { useAgentChatViewRoute } from './useAgentChatViewRoute';
 
-export type { UseAgentServerOptions } from './useAgentServer';
-export type { UseAgentChatOptions } from './useAgentChat';
 export type { UseOpenClawGateway, GatewayEvent } from './useOpenClawGateway';
 export type { UseOpenClawChat, ChatMessage, ChatRole } from './useOpenClawChat';
 export type { UseEmosSuggestions, MemorySuggestion } from './useEmosSuggestions';

@@ -1,6 +1,6 @@
 # Ruminer Browser Agent 🚀
 
-> Ruminer is a sidepanel-first browser agent that connects to OpenClaw Gateway and routes browser automation through `browser.proxy`.
+> Ruminer is a sidepanel-first browser agent that connects to OpenClaw Gateway for chat/memory and exposes browser automation through a local MCP server.
 
 **Status**: This repository is now detached from the original `mcp-chrome` direction and is being refactored as a dedicated Ruminer codebase.
 
@@ -10,7 +10,8 @@
 
 Ruminer Browser Agent is a Chrome extension architecture for OpenClaw-based chat, memory, and workflows:
 
-- Gateway WebSocket transport (`chat.*`, `node.invoke`, `browser.proxy`)
+- Gateway WebSocket transport (`chat.*`, memory plugins)
+- Local MCP server (`/mcp`) for browser tools (Claude Code, Codex, OpenClaw via mcporter)
 - Extension-side runtime tool-group gates
 - EMOS memory search and ingestion flows
 
@@ -44,7 +45,7 @@ Ruminer Browser Agent is a Chrome extension architecture for OpenClaw-based chat
 Ruminer uses OpenClaw plugins from this repository:
 
 - `app/openclaw-extensions/evermemos` (memory search/add)
-- `app/openclaw-extensions/browser-ext` (browser request routing)
+- `app/openclaw-extensions/browser-ext` (OpenClaw → mcporter → MCP tool bridge)
 
 Example installation (adjust absolute path to your local clone):
 
@@ -55,6 +56,8 @@ openclaw plugins enable evermemos
 openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/browser-ext"
 openclaw plugins enable browser-ext
 ```
+
+If you want a one-shot local setup, see `scripts/setup-local.sh`.
 
 ### Prerequisites
 

@@ -11,7 +11,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { EXTENSION_ID, HOST_NAME, COMMAND_NAME } from './constant';
+import { HOST_NAME, COMMAND_NAME, getAllowedOrigins } from './constant';
 import {
   BrowserType,
   detectInstalledBrowsers,
@@ -801,7 +801,7 @@ export async function collectDoctorReport(options: DoctorOptions): Promise<Docto
   });
 
   // Check 5: Manifest checks per browser
-  const expectedOrigin = `chrome-extension://${EXTENSION_ID}/`;
+  const expectedOrigins = getAllowedOrigins();
   for (const browser of browsersToCheck) {
     const config = getBrowserConfig(browser);
     const candidates = [config.userManifestPath, config.systemManifestPath];
@@ -850,8 +850,11 @@ export async function collectDoctorReport(options: DoctorOptions): Promise<Docto
       if (!fs.existsSync(manifest.path)) issues.push('path target does not exist');
     }
     const allowedOrigins = manifest.allowed_origins;
-    if (!Array.isArray(allowedOrigins) || !allowedOrigins.includes(expectedOrigin)) {
-      issues.push(`allowed_origins missing ${expectedOrigin}`);
+    const missingOrigins = Array.isArray(allowedOrigins)
+      ? expectedOrigins.filter((origin) => !allowedOrigins.includes(origin))
+      : expectedOrigins;
+    if (missingOrigins.length > 0) {
+      issues.push(`allowed_origins missing ${missingOrigins.join(', ')}`);
     }
 
     checks.push({
@@ -862,7 +865,7 @@ export async function collectDoctorReport(options: DoctorOptions): Promise<Docto
       details: {
         path: found,
         expectedWrapperPath: wrapperPath,
-        expectedOrigin,
+        expectedOrigins,
         fix: issues.length === 0 ? undefined : [`${COMMAND_NAME} register --browser ${browser}`],
       },
     });

@@ -5,10 +5,10 @@
       <p>Browser agent for personal memory integration</p>
     </header>
 
-    <section class="status-card" :class="gatewayConnected ? 'ok' : 'warn'">
+    <section class="status-card" :class="serverReady ? 'ok' : 'warn'">
       <div class="status-row">
-        <strong>Gateway Node</strong>
-        <span>{{ gatewayConnected ? 'Connected' : 'Disconnected' }}</span>
+        <strong>MCP Server</strong>
+        <span>{{ serverReady ? 'Running' : 'Stopped' }}</span>
       </div>
       <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
       <button class="secondary" @click="refreshStatus">Refresh</button>
@@ -26,18 +26,27 @@
 import { onMounted, ref } from 'vue';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 
-const gatewayConnected = ref(false);
+const serverReady = ref(false);
 const statusMessage = ref('');
 
 async function refreshStatus(): Promise<void> {
   const response = await chrome.runtime.sendMessage({
-    type: BACKGROUND_MESSAGE_TYPES.OPENCLAW_GATEWAY_STATUS_QUERY,
+    type: BACKGROUND_MESSAGE_TYPES.GET_SERVER_STATUS,
   });
 
-  const status = response?.status;
-  gatewayConnected.value = !!status?.connected;
-  statusMessage.value =
-    status?.lastError || (gatewayConnected.value ? 'Gateway ready' : 'Gateway not connected');
+  if (!response?.success) {
+    serverReady.value = false;
+    statusMessage.value = response?.error || 'Unable to query MCP server status';
+    return;
+  }
+
+  const isRunning = response?.serverStatus?.isRunning === true;
+  const port = response?.serverStatus?.port;
+
+  serverReady.value = isRunning;
+  statusMessage.value = isRunning
+    ? `MCP server running${typeof port === 'number' ? ` on port ${port}` : ''}`
+    : 'MCP server not running (open the extension sidepanel and connect native host)';
 }
 
 async function openSidepanel(): Promise<void> {

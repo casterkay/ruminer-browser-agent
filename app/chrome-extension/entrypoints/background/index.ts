@@ -1,6 +1,6 @@
 import { cleanupModelCache } from '@/utils/semantic-similarity-engine';
 import { initElementMarkerListeners } from './element-marker';
-import { startOpenClawNodeClient } from './openclaw/node-client';
+import { initNativeHostListener } from './native-host';
 import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
 import { initQuickPanelCommands } from './quick-panel/commands';
 import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
@@ -37,7 +37,7 @@ export default defineBackground(() => {
   });
 
   // Initialize core services
-  void startOpenClawNodeClient();
+  initNativeHostListener();
   initSemanticSimilarityListener();
   initStorageManagerListener();
   // Record & Replay V1/V2 listeners
