@@ -8,9 +8,9 @@ const COMMANDS = {
   installEvermemos:
     'openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"',
   enableEvermemos: 'openclaw plugins enable evermemos',
-  installBrowserExt:
-    'openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/browser-ext"',
-  enableBrowserExt: 'openclaw plugins enable browser-ext',
+  installMcpClient:
+    'openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/mcp-client"',
+  enableMcpClient: 'openclaw plugins enable mcp-client',
 } as const;
 
 type CommandKey = keyof typeof COMMANDS;
@@ -68,18 +68,18 @@ async function openDocs(): Promise<void> {
       </section>
 
       <section class="welcome-card">
-        <h2>Install browser-ext plugin</h2>
-        <p>Provides the browser request tool for extension-side browser proxy routes.</p>
+        <h2>Install mcp-client plugin</h2>
+        <p>Lets OpenClaw call Ruminer browser tools via the local MCP server.</p>
         <div class="command-row">
-          <code>{{ COMMANDS.installBrowserExt }}</code>
-          <button @click="copyCommand('installBrowserExt')">{{
-            copyLabel('installBrowserExt')
+          <code>{{ COMMANDS.installMcpClient }}</code>
+          <button @click="copyCommand('installMcpClient')">{{
+            copyLabel('installMcpClient')
           }}</button>
         </div>
         <div class="command-row">
-          <code>{{ COMMANDS.enableBrowserExt }}</code>
-          <button @click="copyCommand('enableBrowserExt')">{{
-            copyLabel('enableBrowserExt')
+          <code>{{ COMMANDS.enableMcpClient }}</code>
+          <button @click="copyCommand('enableMcpClient')">{{
+            copyLabel('enableMcpClient')
           }}</button>
         </div>
       </section>
@@ -88,7 +88,7 @@ async function openDocs(): Promise<void> {
         <h2>Plugin paths in this repo</h2>
         <ul>
           <li><code>app/openclaw-extensions/evermemos</code></li>
-          <li><code>app/openclaw-extensions/browser-ext</code></li>
+          <li><code>app/openclaw-extensions/mcp-client</code></li>
         </ul>
       </section>
     </main>

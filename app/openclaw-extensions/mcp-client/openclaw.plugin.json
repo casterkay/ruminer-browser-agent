@@ -1,0 +1,32 @@
+{
+  "id": "mcp-client",
+  "name": "Ruminer MCP Client Plugin",
+  "version": "0.1.0",
+  "extensions": ["./index.ts"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mcpUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:12306/mcp",
+        "description": "MCP server endpoint for Ruminer's native-host bridge."
+      },
+      "transport": {
+        "type": "string",
+        "default": "auto",
+        "enum": ["auto", "streamable-http", "sse"],
+        "description": "Transport preference. 'auto' tries Streamable HTTP first, then falls back to deprecated SSE."
+      },
+      "clientName": {
+        "type": "string",
+        "description": "Optional MCP client name shown to the MCP server."
+      }
+    }
+  },
+  "uiHints": {
+    "mcpUrl": { "label": "Ruminer MCP URL", "placeholder": "http://127.0.0.1:12306/mcp" },
+    "transport": { "label": "Transport", "placeholder": "auto" },
+    "clientName": { "label": "Client Name", "placeholder": "ruminer-mcp-client" }
+  }
+}
