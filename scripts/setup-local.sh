@@ -3,11 +3,38 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+RUMINER_EXTENSION_IDS="${RUMINER_EXTENSION_IDS:-}"
 RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID:-chbienkbakdikbkehibcoolnafdjdkln}"
 RUMINER_MCP_URL="${RUMINER_MCP_URL:-http://127.0.0.1:12306/mcp}"
+RUMINER_BROWSER_LIST="${RUMINER_BROWSER_LIST:-}"
+
+SKIP_NATIVE_HOST="${SKIP_NATIVE_HOST:-0}"
+SKIP_OPENCLAW="${SKIP_OPENCLAW:-0}"
+RUN_DOCTOR="${RUN_DOCTOR:-1}"
 
 log() {
   printf '%s\n' "$*"
+}
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  bash scripts/setup-local.sh [--help] [--skip-native-host] [--skip-openclaw] [--no-doctor]
+
+Environment:
+  RUMINER_EXTENSION_ID       Single extension ID (default: chbienkbakdikbkehibcoolnafdjdkln)
+  RUMINER_EXTENSION_IDS      Comma-separated extension IDs (overrides RUMINER_EXTENSION_ID)
+  RUMINER_MCP_URL            MCP endpoint (default: http://127.0.0.1:12306/mcp)
+  RUMINER_BROWSER_LIST       Optional comma list of browsers for registration doctor (e.g. chrome,chromium,brave)
+  SKIP_NATIVE_HOST           Set to 1 to skip building/registering native host
+  SKIP_OPENCLAW              Set to 1 to skip OpenClaw plugin install/enable
+  RUN_DOCTOR                 Set to 0 to skip native-host doctor checks (default: 1)
+
+Notes:
+  - Native host registration MUST whitelist your actual extension ID(s).
+    If you load an unpacked extension and its ID differs, set RUMINER_EXTENSION_ID(S) and rerun.
+  - OpenClaw plugin config (EverMemOS API key / MCP URL) is not auto-written by this script.
+USAGE
 }
 
 require_cmd() {
@@ -27,6 +54,17 @@ check_node_version() {
   fi
 }
 
+resolve_extension_env() {
+  if [[ -n "${RUMINER_EXTENSION_IDS}" ]]; then
+    export RUMINER_EXTENSION_IDS
+    unset RUMINER_EXTENSION_ID || true
+    return 0
+  fi
+
+  export RUMINER_EXTENSION_ID
+  unset RUMINER_EXTENSION_IDS || true
+}
+
 install_openclaw_plugins() {
   if ! command -v openclaw >/dev/null 2>&1; then
     log "openclaw CLI not found; skipping plugin install."
@@ -43,7 +81,15 @@ install_openclaw_plugins() {
   openclaw plugins install "${mcp_client_path}" || true
   openclaw plugins enable mcp-client || true
 
+  # Best-effort cleanup if you previously used the old bridge plugin.
+  # These commands may not exist in all OpenClaw versions.
+  openclaw plugins disable browser-ext >/dev/null 2>&1 || true
+
   log "OpenClaw plugins installed/enabled (best-effort)."
+  log ""
+  log "OpenClaw plugin config reminders:"
+  log "- evermemos: set EverMemOS baseUrl + apiKey"
+  log "- mcp-client: set mcpUrl=${RUMINER_MCP_URL}"
 }
 
 register_native_host() {
@@ -56,22 +102,67 @@ register_native_host() {
   pnpm -C "${ROOT_DIR}" --filter mcp-chrome-bridge build
 
   log "Registering Native Messaging host (user-level)..."
-  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" node \
-    "${ROOT_DIR}/app/native-server/dist/scripts/register-dev.js"
+  resolve_extension_env
+  node "${ROOT_DIR}/app/native-server/dist/scripts/register-dev.js"
+
+  if [[ "${RUN_DOCTOR}" == "1" ]]; then
+    if [[ -f "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" ]]; then
+      log "Running native-host doctor (best-effort)..."
+      resolve_extension_env
+      if [[ -n "${RUMINER_BROWSER_LIST}" ]]; then
+        node "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" --browser "${RUMINER_BROWSER_LIST}" || true
+      else
+        node "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" || true
+      fi
+    fi
+  fi
 }
 
 main() {
+  case "${1:-}" in
+    --help|-h)
+      usage
+      return 0
+      ;;
+  esac
+
+  for arg in "$@"; do
+    case "${arg}" in
+      --skip-native-host)
+        SKIP_NATIVE_HOST="1"
+        ;;
+      --skip-openclaw)
+        SKIP_OPENCLAW="1"
+        ;;
+      --no-doctor)
+        RUN_DOCTOR="0"
+        ;;
+      --help|-h)
+        ;;
+      *)
+        log "Unknown arg: ${arg}"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
   check_node_version
-  register_native_host
-  install_openclaw_plugins
+  if [[ "${SKIP_NATIVE_HOST}" != "1" ]]; then
+    register_native_host
+  fi
+  if [[ "${SKIP_OPENCLAW}" != "1" ]]; then
+    install_openclaw_plugins
+  fi
 
   log ""
   log "Next steps:"
-  log "1) Load the extension from ${ROOT_DIR}/app/chrome-extension (wxt build/dev output) in chrome://extensions."
+  log "1) Load the extension in chrome://extensions (Developer mode → Load unpacked)."
   log "2) Open the Ruminer sidepanel to start the native host + MCP server."
-  log "3) In OpenClaw, configure evermemos + enable mcp-client."
-  log "4) Test:"
-  log "   openclaw tool call get_windows_and_tabs"
+  log "3) In OpenClaw, enable/configure evermemos + mcp-client."
+  log "4) Sanity test:"
+  log "   - From OpenClaw: call tool get_windows_and_tabs"
+  log "   - From an MCP client: connect to ${RUMINER_MCP_URL} and call get_windows_and_tabs"
   log ""
   log "MCP endpoint:"
   log "  ${RUMINER_MCP_URL}"
