@@ -5,12 +5,10 @@
       <div class="header-left">
         <span
           class="status-dot"
-          :class="gateway.connected.value ? 'connected' : 'disconnected'"
-          :data-tooltip="gateway.connected.value ? 'Connected' : 'Disconnected'"
+          :class="gatewayStatusDotClass"
+          :data-tooltip="gatewayStatusTooltip"
         />
-        <span class="status-label">{{
-          gateway.connected.value ? 'Connected' : 'Disconnected'
-        }}</span>
+        <span class="status-label">{{ gatewayStatusLabel }}</span>
       </div>
       <div class="header-right">
         <button
@@ -333,6 +331,25 @@ import TimelineToolResultCardStep from './agent-chat/timeline/TimelineToolResult
 const gateway = useOpenClawGateway();
 const chat = useOpenClawChat(gateway);
 const suggestions = useEmosSuggestions(gateway);
+
+const gatewayStatusLabel = computed(() => {
+  if (gateway.connected.value) return 'Connected';
+  if (gateway.connecting.value) return 'Connecting...';
+  return 'Disconnected';
+});
+
+const gatewayStatusTooltip = computed(() => {
+  if (gateway.connected.value) return 'Connected';
+  if (gateway.lastError.value) return gateway.lastError.value;
+  if (gateway.connecting.value) return 'Connecting...';
+  return 'Disconnected';
+});
+
+const gatewayStatusDotClass = computed(() => {
+  if (gateway.connected.value) return 'connected';
+  if (gateway.connecting.value) return 'connecting';
+  return 'disconnected';
+});
 
 const contentRef = ref<HTMLElement | null>(null);
 const contentSlotRef = ref<HTMLElement | null>(null);
@@ -757,6 +774,12 @@ onUnmounted(() => {
 .status-dot.connected {
   background-color: var(--ac-success);
   box-shadow: 0 0 6px var(--ac-success);
+  animation: pulse-dot 2s infinite;
+}
+
+.status-dot.connecting {
+  background-color: var(--ac-warning);
+  box-shadow: 0 0 6px var(--ac-warning);
   animation: pulse-dot 2s infinite;
 }
 

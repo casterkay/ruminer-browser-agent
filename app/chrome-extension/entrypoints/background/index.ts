@@ -11,9 +11,12 @@ import {
 } from './semantic-similarity';
 import { initStorageManagerListener } from './storage-manager';
 import { initWebEditorListeners } from './web-editor';
+import { openAgentChatSidepanel } from './utils/sidepanel';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
+
+const SIDEPANEL_CONTEXT_MENU_ID = 'ruminer_open_sidepanel';
 
 /**
  * Feature flag for RR-V3
@@ -81,6 +84,83 @@ export default defineBackground(() => {
 
   // Initial cleanup on startup
   cleanupModelCache().catch((error) => {
-    console.warn('Background: Initial cache cleanup failed:', error);
+    console.warn('Background: Initial context cleanup failed:', error);
   });
+
+  // Single context menu entry to open sidepanel
+  initSidepanelContextMenu();
 });
+
+/**
+ * Initialize a single context menu entry for opening the sidepanel
+ * Replaces the previous element-marker and web-editor context menus
+ */
+function initSidepanelContextMenu(): void {
+  if (!chrome.contextMenus?.create) return;
+
+  // Create the context menu immediately on startup
+  createSidepanelContextMenu();
+
+  // Also recreate on install/update to ensure it's always there
+  chrome.runtime.onInstalled.addListener(() => {
+    createSidepanelContextMenu();
+  });
+
+  // Handle click
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    console.log('[Sidepanel] Context menu clicked:', info.menuItemId, 'tab:', tab?.id);
+    if (info.menuItemId === SIDEPANEL_CONTEXT_MENU_ID && tab?.id) {
+      // Open must happen synchronously - pass tab info and let the function handle both sync and async parts
+      const sidePanel = chrome.sidePanel as any;
+      if (sidePanel?.open) {
+        // Try immediate synchronous open first
+        try {
+          sidePanel.open({ tabId: tab.id });
+          console.log('[Sidepanel] open({ tabId }) called synchronously');
+        } catch (e) {
+          console.warn('[Sidepanel] Synchronous open failed:', e);
+          // Fallback to windowId if available
+          if (typeof tab.windowId === 'number') {
+            try {
+              sidePanel.open({ windowId: tab.windowId });
+              console.log('[Sidepanel] open({ windowId }) called synchronously');
+            } catch (e2) {
+              console.error('[Sidepanel] Window open also failed:', e2);
+            }
+          }
+        }
+      }
+      // Also run the async setup (setOptions) which doesn't require user gesture
+      openAgentChatSidepanel(tab.id, tab.windowId);
+    }
+  });
+}
+
+/**
+ * Create/recreate the sidepanel context menu
+ */
+function createSidepanelContextMenu(): void {
+  // Remove any existing menu with our ID first, then create
+  chrome.contextMenus.remove(SIDEPANEL_CONTEXT_MENU_ID, () => {
+    // Clear the error (menu may not exist)
+    const _ = chrome.runtime.lastError;
+    // Create the menu
+    chrome.contextMenus.create(
+      {
+        id: SIDEPANEL_CONTEXT_MENU_ID,
+        title: 'Open Sidepanel',
+        contexts: ['all'],
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.error(
+            '[Sidepanel] Failed to create context menu:',
+            chrome.runtime.lastError.message,
+          );
+        } else {
+          console.log('[Sidepanel] Context menu created successfully');
+        }
+      },
+    );
+  });
+}

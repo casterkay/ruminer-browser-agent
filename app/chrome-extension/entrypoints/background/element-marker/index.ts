@@ -16,7 +16,8 @@ import { computerTool } from '@/entrypoints/background/tools/browser/computer';
 import { clickTool } from '@/entrypoints/background/tools/browser/interaction';
 import { keyboardTool } from '@/entrypoints/background/tools/browser/keyboard';
 
-const CONTEXT_MENU_ID = 'element_marker_mark';
+// Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+// const CONTEXT_MENU_ID = 'element_marker_mark';
 
 /**
  * Extract error message from MCP tool result
@@ -44,23 +45,24 @@ function extractToolError(result: any): string | undefined {
   return result.error || (result.isError ? 'unknown tool error' : undefined);
 }
 
-async function ensureContextMenu() {
-  try {
-    // Guard: contextMenus permission may be missing
-    if (!(chrome as any).contextMenus?.create) return;
-    // Remove and re-create our single menu to avoid duplication
-    try {
-      await chrome.contextMenus.remove(CONTEXT_MENU_ID);
-    } catch {}
-    await chrome.contextMenus.create({
-      id: CONTEXT_MENU_ID,
-      title: '标注元素',
-      contexts: ['all'],
-    });
-  } catch (e) {
-    console.warn('ElementMarker: ensureContextMenu failed:', e);
-  }
-}
+// Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+// async function ensureContextMenu() {
+//   try {
+//     // Guard: contextMenus permission may be missing
+//     if (!(chrome as any).contextMenus?.create) return;
+//     // Remove and re-create our single menu to avoid duplication
+//     try {
+//       await chrome.contextMenus.remove(CONTEXT_MENU_ID);
+//     } catch {}
+//     await chrome.contextMenus.create({
+//       id: CONTEXT_MENU_ID,
+//       title: '标注元素',
+//       contexts: ['all'],
+//     });
+//   } catch (e) {
+//     console.warn('ElementMarker: ensureContextMenu failed:', e);
+//   }
+// }
 
 /**
  * Check if element-marker.js is already injected in the tab
@@ -106,8 +108,8 @@ async function injectMarkerHelper(tabId: number) {
 }
 
 export function initElementMarkerListeners() {
-  // Ensure context menu on startup
-  ensureContextMenu().catch(() => {});
+  // Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+  // ensureContextMenu().catch(() => {});
 
   // Respond to RR triggers refresh by re-ensuring our menu a bit later
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -380,13 +382,13 @@ export function initElementMarkerListeners() {
           })();
           return true;
         }
-        // When RR refresh (or similar) happens, re-add our menu
-        case BACKGROUND_MESSAGE_TYPES.RR_REFRESH_TRIGGERS:
-        case BACKGROUND_MESSAGE_TYPES.RR_SAVE_TRIGGER:
-        case BACKGROUND_MESSAGE_TYPES.RR_DELETE_TRIGGER: {
-          setTimeout(() => ensureContextMenu().catch(() => {}), 300);
-          break;
-        }
+        // Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+        // case BACKGROUND_MESSAGE_TYPES.RR_REFRESH_TRIGGERS:
+        // case BACKGROUND_MESSAGE_TYPES.RR_SAVE_TRIGGER:
+        // case BACKGROUND_MESSAGE_TYPES.RR_DELETE_TRIGGER: {
+        //   setTimeout(() => ensureContextMenu().catch(() => {}), 300);
+        //   break;
+        // }
       }
     } catch (e) {
       sendResponse({ success: false, error: (e as any)?.message || String(e) });
@@ -394,16 +396,16 @@ export function initElementMarkerListeners() {
     return false;
   });
 
-  // Context menu click routing
-  if ((chrome as any).contextMenus?.onClicked?.addListener) {
-    chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-      try {
-        if (info.menuItemId === CONTEXT_MENU_ID && tab?.id) {
-          await injectMarkerHelper(tab.id);
-        }
-      } catch (e) {
-        console.warn('ElementMarker: context menu click failed:', e);
-      }
-    });
-  }
+  // Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+  // if ((chrome as any).contextMenus?.onClicked?.addListener) {
+  //   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  //     try {
+  //       if (info.menuItemId === CONTEXT_MENU_ID && tab?.id) {
+  //         await injectMarkerHelper(tab.id);
+  //       }
+  //     } catch (e) {
+  //       console.warn('ElementMarker: context menu click failed:', e);
+  //     }
+  //   });
+  // }
 }

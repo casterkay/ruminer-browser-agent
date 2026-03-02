@@ -12,7 +12,8 @@ import {
 } from '@/common/web-editor-types';
 import { openAgentChatSidepanel } from '../utils/sidepanel';
 
-const CONTEXT_MENU_ID = 'web_editor_toggle';
+// Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+// const CONTEXT_MENU_ID = 'web_editor_toggle';
 const COMMAND_KEY = 'toggle_web_editor';
 const DEFAULT_NATIVE_SERVER_PORT = 12306;
 
@@ -669,21 +670,22 @@ function buildAgentPrompt(payload: WebEditorApplyPayload): string {
   return lines.join('\n');
 }
 
-async function ensureContextMenu(): Promise<void> {
-  try {
-    if (!(chrome as any).contextMenus?.create) return;
-    try {
-      await chrome.contextMenus.remove(CONTEXT_MENU_ID);
-    } catch {}
-    await chrome.contextMenus.create({
-      id: CONTEXT_MENU_ID,
-      title: '切换网页编辑模式',
-      contexts: ['all'],
-    });
-  } catch (error) {
-    console.warn('[WebEditor] Failed to ensure context menu:', error);
-  }
-}
+// Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+// async function ensureContextMenu(): Promise<void> {
+//   try {
+//     if (!(chrome as any).contextMenus?.create) return;
+//     try {
+//       await chrome.contextMenus.remove(CONTEXT_MENU_ID);
+//     } catch {}
+//     await chrome.contextMenus.create({
+//       id: CONTEXT_MENU_ID,
+//       title: '切换网页编辑模式',
+//       contexts: ['all'],
+//     });
+//   } catch (error) {
+//     console.warn('[WebEditor] Failed to ensure context menu:', error);
+//   }
+// }
 
 /**
  * Get the appropriate action constants based on version
@@ -912,7 +914,8 @@ async function getActiveTabId(): Promise<number | null> {
 }
 
 export function initWebEditorListeners(): void {
-  ensureContextMenu().catch(() => {});
+  // Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+  // ensureContextMenu().catch(() => {});
 
   // Clean up session storage when tab is closed to avoid stale data
   chrome.tabs.onRemoved.addListener((tabId) => {
@@ -926,16 +929,17 @@ export function initWebEditorListeners(): void {
     } catch {}
   });
 
-  if ((chrome as any).contextMenus?.onClicked?.addListener) {
-    chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-      try {
-        if (info.menuItemId !== CONTEXT_MENU_ID) return;
-        const tabId = tab?.id;
-        if (typeof tabId !== 'number') return;
-        await toggleEditorInTab(tabId);
-      } catch {}
-    });
-  }
+  // Context menu removed - consolidated into single "Open Sidepanel" entry in background/index.ts
+  // if ((chrome as any).contextMenus?.onClicked?.addListener) {
+  //   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  //     try {
+  //       if (info.menuItemId !== CONTEXT_MENU_ID) return;
+  //       const tabId = tab?.id;
+  //       if (typeof tabId !== 'number') return;
+  //       await toggleEditorInTab(tabId);
+  //     } catch {}
+  //   });
+  // }
 
   chrome.commands.onCommand.addListener(async (command) => {
     try {

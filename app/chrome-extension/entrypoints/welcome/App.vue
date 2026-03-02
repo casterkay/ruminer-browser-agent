@@ -44,7 +44,7 @@ async function openDocs(): Promise<void> {
 <template>
   <div class="welcome-page">
     <header class="welcome-header">
-      <h1>Ruminer</h1>
+      <h1>Ruminer Browser Agent</h1>
       <p>Install OpenClaw plugins to enable chat memory and browser routes.</p>
       <button class="welcome-button" @click="openDocs">Troubleshooting Docs</button>
     </header>

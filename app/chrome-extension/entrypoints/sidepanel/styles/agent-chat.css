@@ -833,4 +833,20 @@
     opacity: 1;
     visibility: visible;
   }
+
+  /*
+    Header tooltips: flip below the trigger to avoid getting clipped/covered by the
+    sidepanel top edge and other header stacking contexts.
+  */
+  .agent-theme .chat-header [data-tooltip]::after {
+    bottom: auto;
+    top: calc(100% + 6px);
+  }
+
+  .agent-theme .chat-header [data-tooltip]::before {
+    bottom: auto;
+    top: calc(100% + 2px);
+    border-top-color: transparent;
+    border-bottom-color: var(--ac-text);
+  }
 }
