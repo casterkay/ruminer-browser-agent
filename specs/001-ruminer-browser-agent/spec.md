@@ -660,9 +660,10 @@ a flow, run the flow, and verify it executes the recorded actions.
   with a WS auth token. Tool group enforcement MUST happen at two
   layers in the extension: (1) prompt layer — the extension injects
   disabled tool instructions into the system prompt when sending
-  `chat.send` to OpenClaw, and (2) runtime layer — the extension's
-  `browser.proxy` route dispatcher rejects requests for routes in
-  disabled groups. The `browser-ext` plugin has no knowledge of tool
+  `chat.send` to OpenClaw, and (2) runtime layer — the background
+  script's tool executor rejects MCP tool calls for tools in disabled
+  groups. All browser tools including RR‑V3 are exposed via MCP on the
+  native server; the `browser-ext` plugin has no knowledge of tool
   groups.
 - **FR-031**: Host permissions MUST use `<all_urls>` in the manifest,
   granted at install time with no per-site prompts. The extension MUST

@@ -146,15 +146,15 @@
 
 ## Phase 7: User Story 5 — Author and Maintain Workflows (Priority: P5)
 
-**Goal**: Expose RR‑V3 flow/trigger/run management over `browser.proxy` so OpenClaw can author/repair workflows; add drift repair artifacts (screenshot + bounded HTML snippet) and "open failing run".
+**Goal**: Expose RR‑V3 flow/trigger/run management via MCP tools on the native server so OpenClaw can author/repair workflows; add drift repair artifacts (screenshot + bounded HTML snippet) and "open failing run".
 
 **Independent Test**: From an OpenClaw client, call flow CRUD methods via `browser-ext`; create/update a flow; run it; force an extraction failure; confirm "needs repair" appears with artifacts and can open the failing run context.
 
 ### Implementation (US5)
 
-- [ ] T073 [US5] [FR-028] Implement `browser.proxy` routes for RR‑V3 flow CRUD in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts` (`/rr_v3/flow/*`)
-- [ ] T074 [US5] [FR-028] Implement `browser.proxy` routes for RR‑V3 trigger CRUD in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts` (`/rr_v3/trigger/*`)
-- [ ] T075 [US5] [FR-028] Implement `browser.proxy` routes for RR‑V3 run ops + events in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts` (`/rr_v3/run/*`)
+- [ ] T073 [US5] [FR-028] Implement MCP tools for RR‑V3 flow CRUD in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tools/rr-v3/flow.ts`
+- [ ] T074 [US5] [FR-028] Implement MCP tools for RR‑V3 trigger CRUD in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tools/rr-v3/trigger.ts`
+- [ ] T075 [US5] [FR-028] Implement MCP tools for RR‑V3 run ops + events in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tools/rr-v3/run.ts`
 - [ ] T076 [US5] [FR-028] Implement `browser-ext` plugin action → `browser.request` mapping table in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/openclaw-extensions/browser-ext/index.ts`
 - [ ] T077 [US5] [FR-029] Implement drift detection counter (repeated extraction failures) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/drift.ts`
 - [ ] T078 [US5] [FR-029] Capture bounded screenshot on failure using existing browser screenshot tools from `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tools/browser/screenshot.ts`
@@ -197,7 +197,7 @@
 - **US2 (P2)**: can start after Phase 2; depends on EMOS client + ledger + RR‑V3 nodes.
 - **US3 (P3)**: can start after Phase 2; depends on EMOS client (search).
 - **US4 (P4)**: builds on US2 runtime artifacts (runs/events) and UI scaffolding.
-- **US5 (P5)**: depends on `browser.proxy` RR‑V3 routes + `browser-ext` plugin mappings.
+- **US5 (P5)**: depends on RR‑V3 MCP tools + `browser-ext` plugin mappings.
 
 ### Parallel Opportunities
 

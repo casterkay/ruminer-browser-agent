@@ -4,9 +4,10 @@ Tool groups define permission boundaries for browser actions. Ruminer enforces t
 layers**, both inside the extension:
 
 1. **Prompt layer** (soft): sidepanel chat prepends instructions to `chat.send`
-2. **Runtime layer** (hard): `browser.proxy` dispatcher rejects disabled routes
+2. **Runtime layer** (hard): background script tool executor rejects MCP tool calls for disabled groups
 
-The `browser-ext` OpenClaw plugin must remain unaware of tool groups.
+All browser tools including RR‑V3 are exposed via MCP on the native server. The `browser-ext`
+OpenClaw plugin must remain unaware of tool groups.
 
 ## 1) Groups and defaults
 

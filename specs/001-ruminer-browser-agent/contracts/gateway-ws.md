@@ -4,8 +4,7 @@ This contract documents the subset of the OpenClaw Gateway WebSocket protocol th
 extension must implement as an **Operator/UI client** (sidepanel): uses `chat.*` methods and
 subscribes to push events.
 
-Tool calls are not routed via `node.invoke` in Ruminer’s current architecture. Instead, OpenClaw
-calls Ruminer’s browser tools through the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP
+OpenClaw calls Ruminer’s browser tools through the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP
 server at `http://127.0.0.1:12306/mcp`). The MCP server then bridges execution to the extension via
 Native Messaging.
 

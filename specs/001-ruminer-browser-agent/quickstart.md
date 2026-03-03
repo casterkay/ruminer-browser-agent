@@ -64,12 +64,12 @@ openclaw plugins enable browser-ext
   - Message should send via `chat.send`
   - Tool call results should stream inline
 
-### Tool group enforcement
+### Tool restriction enforcement
 
 - Disable `Interact`
 - Ask the agent to click/type on the page
   - Prompt-layer: the model should avoid calling blocked tools
-  - Runtime-layer: `browser.proxy` calls mapped to Interact must fail with “disabled by tool group”
+  - Runtime-layer: MCP tool calls mapped to Interact must fail with "disabled by tool group"
 
 ### Workflows tab (ChatGPT pack)
 

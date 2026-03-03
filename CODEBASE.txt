@@ -252,6 +252,11 @@ app/
 │   ├── LICENSE
 │   ├── package.json
 │   ├── public
+│   │   ├── engine-icons
+│   │   │   ├── claude.png
+│   │   │   ├── codex.svg
+│   │   │   ├── openclaw.png
+│   │   │   └── openclaw.svg
 │   │   ├── icon
 │   │   │   ├── 128.png
 │   │   │   ├── 16.png
@@ -417,4 +422,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-95 directories, 298 files
+96 directories, 302 files
