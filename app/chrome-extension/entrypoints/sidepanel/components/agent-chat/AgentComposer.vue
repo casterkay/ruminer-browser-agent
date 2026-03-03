@@ -158,7 +158,7 @@
             v-if="supportsImages"
             class="p-1.5 ac-btn"
             :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Attach image (drag, paste, or click)"
+            data-tooltip="Attach image"
             @click="$emit('attachment:add')"
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

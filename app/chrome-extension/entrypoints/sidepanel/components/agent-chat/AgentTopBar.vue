@@ -1,7 +1,7 @@
 <template>
   <div class="flex items-center justify-between w-full">
     <!-- Brand / Context -->
-    <div class="flex items-center gap-2 overflow-hidden -ml-1">
+    <div class="flex items-center -ml-3">
       <!-- Back Button (when in chat view) -->
       <button
         v-if="showBackButton"
@@ -10,7 +10,7 @@
           color: 'var(--ac-text-muted)',
           borderRadius: 'var(--ac-radius-button)',
         }"
-        title="Back to sessions"
+        data-tooltip="Back to sessions"
         @click="$emit('back')"
       >
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -23,36 +23,38 @@
         </svg>
       </button>
 
-      <!-- Brand -->
-      <h1
-        class="text-lg font-medium tracking-tight flex-shrink-0"
-        :style="{
-          fontFamily: 'var(--ac-font-heading)',
-          color: 'var(--ac-text)',
-        }"
-      >
-        {{ brandLabel || 'Agent' }}
-      </h1>
+      <!-- Brand + Connection Indicator -->
+      <div class="flex items-center gap-3 ml-1">
+        <h1
+          class="text-lg font-medium tracking-tight flex-shrink-0"
+          :style="{
+            fontFamily: 'var(--ac-font-heading)',
+            color: 'var(--ac-text)',
+          }"
+        >
+          {{ brandLabel || 'Agent' }}
+        </h1>
+
+        <!-- Connection Indicator (left, after engine name) -->
+        <div class="flex items-center" :data-tooltip="connectionText">
+          <span
+            class="w-2 h-2 rounded-full"
+            :style="{
+              backgroundColor: connectionColor,
+              boxShadow: connectionState === 'ready' ? `0 0 8px ${connectionColor}` : 'none',
+            }"
+          />
+        </div>
+      </div>
     </div>
 
-    <!-- Connection / Status / Settings -->
+    <!-- Settings -->
     <div class="flex items-center gap-3">
-      <!-- Connection Indicator -->
-      <div class="flex items-center gap-1.5" :title="connectionText">
-        <span
-          class="w-2 h-2 rounded-full"
-          :style="{
-            backgroundColor: connectionColor,
-            boxShadow: connectionState === 'ready' ? `0 0 8px ${connectionColor}` : 'none',
-          }"
-        />
-      </div>
-
       <!-- Open Project Button -->
       <button
         class="p-1 ac-btn ac-hover-text"
         :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-        title="Open project in VS Code or Terminal"
+        data-tooltip="Open project workspace"
         @click="$emit('toggle:openProjectMenu')"
       >
         <svg
@@ -74,6 +76,7 @@
       <button
         class="p-1 ac-btn ac-hover-text"
         :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+        data-tooltip="Settings"
         @click="$emit('toggle:settingsMenu')"
       >
         <svg

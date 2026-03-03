@@ -198,7 +198,8 @@ onMounted(() => {
   if (composerRef.value) {
     composerResizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        composerHeight.value = entry.contentRect.height + 24; // Add padding
+        // Add bottom padding equal to horizontal page padding (px-5 => 20px)
+        composerHeight.value = entry.contentRect.height + 20;
       }
       // Also auto-scroll when composer height changes (e.g., error banner appears)
       maybeAutoScroll();

@@ -222,6 +222,7 @@ export const STORAGE_KEYS = {
   SERVER_STATUS: 'serverStatus',
   NATIVE_SERVER_PORT: 'nativeServerPort',
   NATIVE_AUTO_CONNECT_ENABLED: 'nativeAutoConnectEnabled',
+  AGENT_BACKEND: 'sidepanelChatBackend',
   OPENCLAW_GATEWAY_SETTINGS: 'openclawGatewaySettings',
   OPENCLAW_GATEWAY_STATUS: 'openclawGatewayStatus',
   OPENCLAW_GATEWAY_DEVICE_ID: 'openclawGatewayDeviceId',

@@ -1,6 +1,10 @@
 <template>
   <div class="agent-theme sidepanel-root" :data-agent-theme="theme.theme.value">
-    <SidepanelNavigator :active-tab="activeTab" @change="setActiveTab" />
+    <SidepanelNavigator
+      :active-tab="activeTab"
+      @change="setActiveTab"
+      @settings="settingsOpen = true"
+    />
 
     <div class="sidepanel-content">
       <AgentChat v-show="activeTab === 'chat'" />
@@ -38,17 +42,20 @@
         </div>
       </div>
     </div>
+
+    <SidepanelSettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
-import { useAgentTheme } from './composables/useAgentTheme';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
+import SidepanelSettingsPanel from './components/SidepanelSettingsPanel.vue';
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
+import { useAgentTheme } from './composables/useAgentTheme';
+import { useChatBackendPreference } from './composables/useChatBackendPreference';
 import { useWorkflowsV3 } from './composables/useWorkflowsV3';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
@@ -56,11 +63,12 @@ const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 type TabId = 'chat' | 'memory' | 'workflows';
 
 const theme = useAgentTheme();
+const chatBackend = useChatBackendPreference();
 const activeTab = ref<TabId>('chat');
 const onlyBound = ref(false);
 const openRunId = ref<string | null>(null);
 const activeHostname = ref<string>('');
-const emosConfigured = ref(false);
+const settingsOpen = ref(false);
 
 const workflows = useWorkflowsV3({
   autoConnect: true,
@@ -95,10 +103,6 @@ async function handleWorkflowRefresh(): Promise<void> {
 }
 
 async function runFlow(flowId: string): Promise<void> {
-  if (!emosConfigured.value) {
-    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
-    return;
-  }
   await workflows.runFlow(flowId);
 }
 
@@ -112,18 +116,10 @@ function openBuilder(mode: 'flow' | 'trigger', id?: string): void {
 }
 
 function createFlow(): void {
-  if (!emosConfigured.value) {
-    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
-    return;
-  }
   openBuilder('flow');
 }
 
 function editFlow(flowId: string): void {
-  if (!emosConfigured.value) {
-    alert('EverMemOS is not configured. Open Options and set EverMemOS settings first.');
-    return;
-  }
   openBuilder('flow', flowId);
 }
 
@@ -177,9 +173,6 @@ onMounted(async () => {
   } catch {
     activeHostname.value = '';
   }
-
-  const emos = await getEmosSettings();
-  emosConfigured.value = !!emos.baseUrl.trim() && !!emos.apiKey.trim();
 });
 </script>
 
