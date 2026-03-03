@@ -189,7 +189,7 @@
                   :checked="!localUseCustomPrompt"
                   @change="localUseCustomPrompt = false"
                 />
-                <span :style="{ color: 'var(--ac-text, #1a1a1a)' }">Use preset (claude_code)</span>
+                <span :style="{ color: 'var(--ac-text, #1a1a1a)' }">Use system preset</span>
               </label>
               <div v-if="!localUseCustomPrompt" class="pl-5">
                 <label class="flex items-center gap-2 text-[10px]">
@@ -522,8 +522,8 @@ function handleSave(): void {
     };
   }
 
-  // Build optionsConfig for Codex engine
   let optionsConfig: AgentSessionOptionsConfig | undefined;
+
   if (isCodexEngine.value) {
     const existingOptions = props.session?.optionsConfig ?? {};
     const existingCodexConfig = existingOptions.codexConfig ?? {};

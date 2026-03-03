@@ -38,7 +38,7 @@ export interface UseAgentInputPreferences {
  * - Graceful fallback when storage is unavailable
  */
 export function useAgentInputPreferences(): UseAgentInputPreferences {
-  const fakeCaretEnabled = ref(false);
+  const fakeCaretEnabled = ref(true);
   const ready = ref(false);
 
   /**

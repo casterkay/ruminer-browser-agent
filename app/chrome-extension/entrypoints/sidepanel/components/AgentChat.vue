@@ -34,6 +34,7 @@
             :connection-state="connectionState"
             :show-back-button="true"
             :brand-label="engineDisplayName"
+            @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
             @toggle:session-menu="toggleSessionMenu"
             @toggle:settings-menu="toggleSettingsMenu"
@@ -81,7 +82,7 @@
             @attachment:dragleave="attachments.handleDragLeave"
             @model:change="handleComposerModelChange"
             @reasoning-effort:change="handleComposerReasoningEffortChange"
-            @session:settings="handleComposerOpenSettings"
+            @tools:open="handleComposerOpenTools"
             @session:reset="handleComposerReset"
           />
         </template>
@@ -162,6 +163,16 @@
       @save="handleSaveSessionSettings"
     />
 
+    <AgentToolSelectionPanel
+      :open="toolSelectionOpen"
+      :session="sessions.selectedSession.value"
+      :management-info="currentManagementInfo"
+      :is-loading="toolSelectionLoading"
+      :is-saving="toolSelectionSaving"
+      @close="handleCloseToolSelection"
+      @save="handleSaveToolSelection"
+    />
+
     <!-- Attachment Cache Panel -->
     <AttachmentCachePanel :open="attachmentCacheOpen" @close="handleCloseAttachmentCache" />
   </div>
@@ -169,7 +180,13 @@
 
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted, watch, provide } from 'vue';
-import type { AgentStoredMessage, AgentMessage, CodexReasoningEffort } from 'chrome-mcp-shared';
+import type {
+  AgentStoredMessage,
+  AgentMessage,
+  CodexReasoningEffort,
+  AgentManagementInfo,
+  AgentSessionOptionsConfig,
+} from 'chrome-mcp-shared';
 
 // Composables
 import {
@@ -202,6 +219,7 @@ import {
   AgentSessionMenu,
   AgentSettingsMenu,
   AgentSessionSettingsPanel,
+  AgentToolSelectionPanel,
   AgentSessionsView,
   AgentOpenProjectMenu,
 } from './agent-chat';
@@ -267,7 +285,10 @@ const openProjectContext = ref<{ type: 'session' | 'project'; id: string } | nul
 const sessionSettingsOpen = ref(false);
 const sessionSettingsLoading = ref(false);
 const sessionSettingsSaving = ref(false);
-const currentManagementInfo = ref<import('chrome-mcp-shared').AgentManagementInfo | null>(null);
+const toolSelectionOpen = ref(false);
+const toolSelectionLoading = ref(false);
+const toolSelectionSaving = ref(false);
+const currentManagementInfo = ref<AgentManagementInfo | null>(null);
 
 // Attachment cache panel state
 const attachmentCacheOpen = ref(false);
@@ -671,7 +692,7 @@ async function handleNewSession(): Promise<void> {
   const engineName =
     (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
 
-  // Include codex config if using codex engine
+  // Include engine-specific defaults
   const optionsConfig =
     engineName === 'codex'
       ? {
@@ -679,7 +700,11 @@ async function handleNewSession(): Promise<void> {
             reasoningEffort: getNormalizedReasoningEffort(),
           },
         }
-      : undefined;
+      : engineName === 'claude'
+        ? {
+            tools: { type: 'preset', preset: 'claude_code' },
+          }
+        : undefined;
 
   const session = await sessions.createSession(projectId, {
     engineName,
@@ -741,6 +766,28 @@ async function handleOpenSessionSettings(sessionId: string): Promise<void> {
   }
 }
 
+async function handleOpenToolSelection(): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (!sessionId) return;
+
+  closeMenus();
+  toolSelectionOpen.value = true;
+  toolSelectionLoading.value = true;
+  currentManagementInfo.value = null;
+
+  try {
+    const session = sessions.sessions.value.find((s) => s.id === sessionId);
+    if (session?.engineName === 'claude') {
+      const info = await sessions.fetchClaudeInfo(sessionId);
+      if (info) {
+        currentManagementInfo.value = info.managementInfo;
+      }
+    }
+  } finally {
+    toolSelectionLoading.value = false;
+  }
+}
+
 async function handleResetSession(sessionId: string): Promise<void> {
   closeMenus();
   const result = await sessions.resetConversation(sessionId);
@@ -785,6 +832,14 @@ function handleComposerOpenSettings(): void {
   }
 }
 
+function handleTopBarOpenSettings(): void {
+  handleComposerOpenSettings();
+}
+
+function handleComposerOpenTools(): void {
+  void handleOpenToolSelection();
+}
+
 async function handleComposerReset(): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
   if (sessionId) {
@@ -794,6 +849,11 @@ async function handleComposerReset(): Promise<void> {
 
 function handleCloseSessionSettings(): void {
   sessionSettingsOpen.value = false;
+  currentManagementInfo.value = null;
+}
+
+function handleCloseToolSelection(): void {
+  toolSelectionOpen.value = false;
   currentManagementInfo.value = null;
 }
 
@@ -813,6 +873,20 @@ async function handleSaveSessionSettings(settings: SessionSettings): Promise<voi
     currentManagementInfo.value = null;
   } finally {
     sessionSettingsSaving.value = false;
+  }
+}
+
+async function handleSaveToolSelection(optionsConfig: AgentSessionOptionsConfig): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (!sessionId) return;
+
+  toolSelectionSaving.value = true;
+  try {
+    await sessions.updateSession(sessionId, { optionsConfig });
+    toolSelectionOpen.value = false;
+    currentManagementInfo.value = null;
+  } finally {
+    toolSelectionSaving.value = false;
   }
 }
 
@@ -840,19 +914,24 @@ async function handleProjectSelect(projectId: string): Promise<void> {
     enableChromeMcp.value = project.enableChromeMcp !== false;
   }
   // Load sessions for the new project
-  await sessions.ensureDefaultSession(
-    projectId,
-    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
-  );
+  await sessions.fetchSessions(projectId);
 
-  // Guard again after ensureDefaultSession
+  // Guard again after fetchSessions
   if (projects.selectedProjectId.value !== projectId) {
     closeMenus();
     return;
   }
 
-  // Ensure URL is synced after project switch (fallback for edge cases)
-  // This handles rare cases where ensureDefaultSession doesn't trigger onSessionChanged
+  // Select first session if nothing is selected (or selection is stale)
+  if (
+    sessions.sessions.value.length > 0 &&
+    (!sessions.selectedSessionId.value ||
+      !sessions.sessions.value.find((s) => s.id === sessions.selectedSessionId.value))
+  ) {
+    await sessions.selectSession(sessions.sessions.value[0].id);
+  }
+
+  // Sync URL with current selection
   viewRoute.setSessionId(sessions.selectedSessionId.value || null);
 
   closeMenus();
@@ -872,11 +951,6 @@ async function handleNewProject(): Promise<void> {
         model.value = project.selectedModel ?? '';
         useCcr.value = project.useCcr ?? false;
         enableChromeMcp.value = project.enableChromeMcp !== false;
-
-        // Ensure a default session exists for the new project
-        const engineName =
-          (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
-        await sessions.ensureDefaultSession(project.id, engineName);
 
         // Reconnect SSE and load session history
         if (sessions.selectedSessionId.value) {
@@ -1337,12 +1411,12 @@ onMounted(async () => {
       await sessions.loadSelectedSessionId();
       await sessions.fetchSessions(projects.selectedProjectId.value);
 
-      // Parse URL parameters to determine initial view
-      // Note: This is called after fetchSessions so we can verify the session exists
-      const initialRoute = viewRoute.initFromUrl();
+      // Resolve initial view: URL params (deep link) > persisted storage > default
+      // Called after fetchSessions so we can verify the sessionId still exists
+      const initialRoute = await viewRoute.initFromUrl();
 
-      // Handle deep link: URL specifies session to open directly (e.g., from Apply)
-      // Support cross-project sessions by checking allSessions first
+      // Restore chat view: handles both deep links (URL params) and persisted state
+      // (storage). Support cross-project sessions by checking allSessions first.
       if (initialRoute.view === 'chat' && initialRoute.sessionId) {
         const targetSession =
           sessions.allSessions.value.find((s) => s.id === initialRoute.sessionId) ??
@@ -1352,17 +1426,10 @@ onMounted(async () => {
           // Use handleSessionSelectAndNavigate to handle cross-project switching
           await handleSessionSelectAndNavigate(targetSession.id);
         } else {
-          // Session doesn't exist in any project, fall back to sessions list
+          // Session no longer exists — fall back to sessions list
           viewRoute.goToSessions();
         }
       }
-
-      // Ensure a default session exists (for new users)
-      // Note: This won't fetch sessions again since we already did above
-      await sessions.ensureDefaultSession(
-        projects.selectedProjectId.value,
-        (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
-      );
 
       // Only open SSE and load history if we're in chat view with a valid session
       if (viewRoute.isChatView.value && sessions.selectedSessionId.value) {

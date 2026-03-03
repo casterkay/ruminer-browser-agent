@@ -343,31 +343,6 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     options.onSessionChanged?.(sessionId);
   }
 
-  // Create a default session for a project if none exist
-  async function ensureDefaultSession(
-    projectId: string,
-    engineName: AgentCliPreference = 'claude',
-  ): Promise<AgentSession | null> {
-    await fetchSessions(projectId);
-
-    // If sessions exist, select the first one if none selected
-    if (sessions.value.length > 0) {
-      if (
-        !selectedSessionId.value ||
-        !sessions.value.find((s) => s.id === selectedSessionId.value)
-      ) {
-        await selectSession(sessions.value[0].id);
-      }
-      return selectedSession.value;
-    }
-
-    // Create default session
-    return createSession(projectId, {
-      engineName,
-      name: 'Default Session',
-    });
-  }
-
   // Rename a session
   async function renameSession(sessionId: string, name: string): Promise<boolean> {
     const result = await updateSession(sessionId, { name });
@@ -527,7 +502,6 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     updateSession,
     deleteSession,
     selectSession,
-    ensureDefaultSession,
     renameSession,
     resetConversation,
     fetchClaudeInfo,

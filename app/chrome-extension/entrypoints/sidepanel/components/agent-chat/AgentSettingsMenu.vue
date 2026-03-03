@@ -9,43 +9,6 @@
       boxShadow: 'var(--ac-shadow-float, 0 4px 20px -2px rgba(0,0,0,0.1))',
     }"
   >
-    <!-- Theme Section -->
-    <div
-      class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
-    >
-      Theme
-    </div>
-
-    <button
-      v-for="t in themes"
-      :key="t.id"
-      class="w-full px-3 py-2 text-left text-sm flex items-center justify-between ac-menu-item"
-      :style="{
-        color: theme === t.id ? 'var(--ac-accent, #c87941)' : 'var(--ac-text, #1a1a1a)',
-      }"
-      @click="$emit('theme:set', t.id)"
-    >
-      <span>{{ t.label }}</span>
-      <svg
-        v-if="theme === t.id"
-        class="w-4 h-4"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-      </svg>
-    </button>
-
-    <!-- Divider -->
-    <div
-      class="my-2"
-      :style="{
-        borderTop: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-      }"
-    />
-
     <!-- Input Section -->
     <div
       class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider"

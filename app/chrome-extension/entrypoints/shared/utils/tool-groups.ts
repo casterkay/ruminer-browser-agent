@@ -115,7 +115,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
   {
     id: 'workflow',
     label: 'Workflow',
-    description: 'RR-V3 workflow actions',
+    description: 'Browser workflow actions',
     defaultEnabled: true,
     tools: [
       { id: 'flow_record_start', name: 'Record Start', description: 'Start recording' },

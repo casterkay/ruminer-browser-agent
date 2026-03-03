@@ -9,7 +9,7 @@
           color: 'var(--ac-text-subtle)',
         }"
       >
-        How can I help you code today?
+        How can I help you today?
       </p>
     </div>
 

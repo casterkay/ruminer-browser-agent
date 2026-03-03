@@ -97,19 +97,6 @@
           :style="{ color: 'var(--ac-text-subtle)', fontFamily: 'var(--ac-font-mono)' }"
           :title="projectPath"
         >
-          <svg
-            class="w-3 h-3 flex-shrink-0"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-            />
-          </svg>
           <span class="truncate">{{ displayProjectPath }}</span>
         </div>
       </div>
@@ -140,10 +127,8 @@
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
               />
-              <line x1="12" y1="11" x2="12" y2="17" />
-              <line x1="9" y1="14" x2="15" y2="14" />
             </svg>
           </button>
           <!-- Rename Button -->
@@ -187,8 +172,8 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, nextTick, watch } from 'vue';
 import type { AgentSession } from 'chrome-mcp-shared';
+import { computed, nextTick, ref, watch } from 'vue';
 
 // =============================================================================
 // Props & Emits

@@ -4,6 +4,9 @@
  * Handles navigation between 'sessions' (list) and 'chat' (conversation) views
  * without requiring vue-router. Supports URL parameters for deep linking.
  *
+ * View state is persisted to chrome.storage.local so it survives side-panel
+ * close/reopen. URL parameters take priority over stored state (deep links).
+ *
  * URL Parameters:
  * - `view`: 'sessions' | 'chat' (default: 'sessions')
  * - `sessionId`: Session ID to open directly in chat view
@@ -43,6 +46,7 @@ export interface UseAgentChatViewRouteOptions {
 const DEFAULT_VIEW: AgentChatView = 'sessions';
 const URL_PARAM_VIEW = 'view';
 const URL_PARAM_SESSION_ID = 'sessionId';
+const STORAGE_KEY_VIEW_STATE = 'agent-chat-view-state';
 
 // =============================================================================
 // Helpers
@@ -57,6 +61,36 @@ function parseView(value: string | null): AgentChatView {
     return value;
   }
   return DEFAULT_VIEW;
+}
+
+/**
+ * Persist view state to chrome.storage.local so it survives panel close/reopen.
+ */
+async function saveViewState(view: AgentChatView, sessionId: string | null): Promise<void> {
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_KEY_VIEW_STATE]: { view, sessionId },
+    });
+  } catch {
+    // Non-fatal — storage unavailable in some environments
+  }
+}
+
+/**
+ * Load persisted view state from chrome.storage.local.
+ * Returns null if nothing was saved.
+ */
+async function loadViewState(): Promise<AgentChatRouteState | null> {
+  try {
+    const result = await chrome.storage.local.get(STORAGE_KEY_VIEW_STATE);
+    const stored = result[STORAGE_KEY_VIEW_STATE];
+    if (stored && (stored.view === 'sessions' || stored.view === 'chat')) {
+      return { view: stored.view, sessionId: stored.sessionId ?? null };
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
 }
 
 /**
@@ -128,6 +162,7 @@ export function useAgentChatViewRoute(options: UseAgentChatViewRouteOptions = {}
     currentView.value = 'sessions';
     // Don't clear sessionId internally - it's used to highlight selected session
     updateUrlParams('sessions', null);
+    saveViewState('sessions', currentSessionId.value);
     options.onRouteChange?.(routeState.value);
   }
 
@@ -144,37 +179,58 @@ export function useAgentChatViewRoute(options: UseAgentChatViewRouteOptions = {}
     currentView.value = 'chat';
     currentSessionId.value = sessionId;
     updateUrlParams('chat', sessionId);
+    saveViewState('chat', sessionId);
     options.onRouteChange?.(routeState.value);
   }
 
   /**
-   * Initialize route from URL parameters.
-   * Should be called on mount.
+   * Initialize route state.
+   *
+   * Priority:
+   * 1. URL parameters — explicit deep link (e.g. from Apply button)
+   * 2. chrome.storage.local — restore view from last session
+   * 3. Default ('sessions')
+   *
+   * Should be called on mount after sessions are loaded.
    * @returns Initial route state
    */
-  function initFromUrl(): AgentChatRouteState {
+  async function initFromUrl(): Promise<AgentChatRouteState> {
     try {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get(URL_PARAM_VIEW);
       const sessionIdParam = params.get(URL_PARAM_SESSION_ID);
 
-      const view = parseView(viewParam);
-      const sessionId = sessionIdParam?.trim() || null;
+      // URL params present → deep link takes full priority
+      if (viewParam !== null || sessionIdParam !== null) {
+        const view = parseView(viewParam);
+        const sessionId = sessionIdParam?.trim() || null;
 
-      // If view=chat but no sessionId, fall back to sessions
-      if (view === 'chat' && !sessionId) {
-        currentView.value = 'sessions';
-        currentSessionId.value = null;
-      } else {
-        currentView.value = view;
-        currentSessionId.value = sessionId;
+        // chat view requires a sessionId
+        if (view === 'chat' && !sessionId) {
+          currentView.value = 'sessions';
+          currentSessionId.value = null;
+        } else {
+          currentView.value = view;
+          currentSessionId.value = sessionId;
+        }
+        return routeState.value;
+      }
+
+      // No URL params → restore from storage
+      const stored = await loadViewState();
+      if (stored) {
+        currentView.value = stored.view;
+        currentSessionId.value = stored.sessionId;
+        // Sync URL to match restored state so deep links stay coherent
+        updateUrlParams(stored.view, stored.view === 'chat' ? stored.sessionId : null);
+        return routeState.value;
       }
     } catch {
-      // Use defaults on error
-      currentView.value = DEFAULT_VIEW;
-      currentSessionId.value = null;
+      // Fall through to default
     }
 
+    currentView.value = DEFAULT_VIEW;
+    currentSessionId.value = null;
     return routeState.value;
   }
 

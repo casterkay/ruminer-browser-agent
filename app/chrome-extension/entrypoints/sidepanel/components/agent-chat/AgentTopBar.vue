@@ -50,6 +50,16 @@
 
     <!-- Settings -->
     <div class="flex items-center gap-3">
+      <!-- Session Settings Button -->
+      <button
+        class="p-1 ac-btn ac-hover-text"
+        :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+        data-tooltip="Session settings"
+        @click="$emit('session:settings')"
+      >
+        <ILucideSlidersHorizontal class="w-5 h-5" />
+      </button>
+
       <!-- Open Project Button -->
       <button
         class="p-1 ac-btn ac-hover-text"
@@ -66,9 +76,9 @@
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          <line x1="12" y1="11" x2="12" y2="17" />
-          <line x1="9" y1="14" x2="15" y2="14" />
+          <path
+            d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
+          />
         </svg>
       </button>
 
@@ -103,6 +113,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue';
+import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
 
@@ -121,6 +132,7 @@ defineEmits<{
   'toggle:sessionMenu': [];
   'toggle:settingsMenu': [];
   'toggle:openProjectMenu': [];
+  'session:settings': [];
   /** Emitted when back button is clicked */
   back: [];
 }>();

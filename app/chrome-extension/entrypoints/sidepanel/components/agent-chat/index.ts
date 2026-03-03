@@ -16,6 +16,7 @@ export { default as AgentSettingsMenu } from './AgentSettingsMenu.vue';
 export { default as AgentProjectMenu } from './AgentProjectMenu.vue';
 export { default as AgentSessionMenu } from './AgentSessionMenu.vue';
 export { default as AgentSessionSettingsPanel } from './AgentSessionSettingsPanel.vue';
+export { default as AgentToolSelectionPanel } from './AgentToolSelectionPanel.vue';
 export { default as AgentSessionsView } from './AgentSessionsView.vue';
 export { default as AgentSessionListItem } from './AgentSessionListItem.vue';
 export { default as AgentOpenProjectMenu } from './AgentOpenProjectMenu.vue';

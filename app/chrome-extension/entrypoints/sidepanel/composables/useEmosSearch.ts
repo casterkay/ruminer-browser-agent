@@ -32,16 +32,44 @@ export interface UseEmosSearch {
 }
 
 function normalizeItem(raw: any): MemoryItem {
+  const content =
+    raw?.content ?? raw?.text ?? raw?.summary ?? raw?.memory ?? raw?.message ?? raw?.excerpt ?? '';
+
+  const stableIdCandidate =
+    raw?.id ||
+    raw?.message_id ||
+    raw?.memory_id ||
+    (raw?.group_id && (raw?.timestamp || raw?.create_time)
+      ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
+      : null);
+
+  const id = stableIdCandidate ? String(stableIdCandidate) : crypto.randomUUID();
+
   return {
-    id: String(raw.id || raw.message_id || crypto.randomUUID()),
-    message_id: String(raw.message_id || raw.id || ''),
-    content: String(raw.content || raw.text || ''),
-    sender: typeof raw.sender === 'string' ? raw.sender : undefined,
-    create_time: typeof raw.create_time === 'string' ? raw.create_time : undefined,
-    group_id: typeof raw.group_id === 'string' ? raw.group_id : undefined,
-    group_name: typeof raw.group_name === 'string' ? raw.group_name : undefined,
-    canonical_url: typeof raw.canonical_url === 'string' ? raw.canonical_url : undefined,
-    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : undefined,
+    id,
+    message_id: String(raw?.message_id || raw?.id || raw?.memory_id || id),
+    content: String(content || ''),
+    sender: typeof raw?.sender === 'string' ? raw.sender : undefined,
+    create_time:
+      typeof raw?.create_time === 'string'
+        ? raw.create_time
+        : typeof raw?.timestamp === 'string'
+          ? raw.timestamp
+          : undefined,
+    group_id: typeof raw?.group_id === 'string' ? raw.group_id : undefined,
+    group_name:
+      typeof raw?.group_name === 'string'
+        ? raw.group_name
+        : typeof raw?.group?.name === 'string'
+          ? raw.group.name
+          : undefined,
+    canonical_url:
+      typeof raw?.canonical_url === 'string'
+        ? raw.canonical_url
+        : typeof raw?.url === 'string'
+          ? raw.url
+          : undefined,
+    metadata: raw?.metadata && typeof raw.metadata === 'object' ? raw.metadata : undefined,
   };
 }
 
@@ -59,7 +87,7 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
     Authorization: `Bearer ${settings.apiKey}`,
   };
 
-  // Build query string from body params - always include user_id (required by API)
+  // Build query string from body params - always include user_id (required by API).
   const params = new URLSearchParams();
   params.append('user_id', settings.userId.trim());
   Object.entries(body).forEach(([key, value]) => {
@@ -77,13 +105,11 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
   );
 
   const json = await response.json().catch(() => ({}));
-  console.log('[EMOS Search] Response:', { status: response.status, json });
 
   if (!response.ok) {
     throw new Error(`EMOS search failed (${response.status}) ${JSON.stringify(json)}`);
   }
 
-  console.log('[EMOS Search] Memories count:', json?.memories?.length ?? json?.items?.length ?? 0);
   return json;
 }
 
@@ -111,6 +137,50 @@ async function deleteMemory(messageId: string): Promise<void> {
   }
 }
 
+function extractRawItems(response: any): any[] {
+  const root = response?.result ?? response?.data ?? response;
+
+  const candidates = [
+    root?.memories,
+    root?.items,
+    response?.memories,
+    response?.items,
+    root,
+    response,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      // Some APIs return groups like: [{ episodic_memory: [...] }, ...]
+      const flattened: any[] = [];
+      for (const entry of candidate) {
+        if (Array.isArray(entry)) {
+          flattened.push(...entry);
+          continue;
+        }
+        if (entry && typeof entry === 'object') {
+          const values = Object.values(entry);
+          const arrayValues = values.filter((value) => Array.isArray(value)) as any[][];
+          if (arrayValues.length > 0) {
+            for (const list of arrayValues) flattened.push(...list);
+            continue;
+          }
+        }
+        flattened.push(entry);
+      }
+      return flattened;
+    }
+  }
+
+  return [];
+}
+
+function safeParseDate(value?: string): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 export function useEmosSearch(): UseEmosSearch {
   const items = ref<MemoryItem[]>([]);
   const loading = ref(false);
@@ -124,15 +194,8 @@ export function useEmosSearch(): UseEmosSearch {
 
     try {
       const settings = await getEmosSettings();
-      console.log('[EMOS Search] Settings:', {
-        baseUrl: settings.baseUrl ? '(set)' : '(empty)',
-        apiKey: settings.apiKey ? '(set)' : '(empty)',
-        userId: settings.userId || '(empty)',
-      });
       isConfigured.value =
         !!settings.baseUrl.trim() && !!settings.apiKey.trim() && !!settings.userId.trim();
-
-      console.log('[EMOS Search] isConfigured:', isConfigured.value);
 
       if (!isConfigured.value) {
         items.value = [];
@@ -144,9 +207,6 @@ export function useEmosSearch(): UseEmosSearch {
         limit: 50,
       };
 
-      if (filters.platform) {
-        body.group_id = `${filters.platform}:`;
-      }
       if (filters.startDate) {
         body.start_time = filters.startDate;
       }
@@ -155,40 +215,37 @@ export function useEmosSearch(): UseEmosSearch {
       }
 
       const response = await fetchSearchResult(body);
-      console.log('[EMOS Search] Raw response:', response);
-      console.log('[EMOS Search] Response data:', JSON.stringify(response, null, 2));
 
-      // Extract items from response - check multiple possible locations
-      let rawList: any[] = [];
+      const rawList = extractRawItems(response);
+      const normalized = rawList
+        .map((raw) => normalizeItem(raw))
+        .filter((item) => item.content.trim().length > 0);
 
-      // Check for memories array
-      if (Array.isArray(response.memories)) {
-        rawList = response.memories;
-      }
-      // Check for items array
-      else if (Array.isArray(response.items)) {
-        rawList = response.items;
-      }
-      // Check for data.memories array
-      else if (Array.isArray(response.data?.memories)) {
-        rawList = response.data.memories;
-      }
-      // Check for data.items array
-      else if (Array.isArray(response.data?.items)) {
-        rawList = response.data.items;
-      }
-      // Check for data array (assuming it might be nested)
-      else if (Array.isArray(response.data)) {
-        rawList = response.data;
-      }
+      const platformPrefix = filters.platform?.trim().toLowerCase();
+      const filteredByPlatform = platformPrefix
+        ? normalized.filter((item) =>
+            (item.group_id || '').toLowerCase().startsWith(`${platformPrefix}:`),
+          )
+        : normalized;
 
-      console.log(
-        '[EMOS Search] Extracted',
-        rawList.length,
-        'items from',
-        rawList.length,
-        ' items',
-      );
+      const startMs = filters.startDate ? safeParseDate(`${filters.startDate}T00:00:00Z`) : null;
+      const endMs = filters.endDate ? safeParseDate(`${filters.endDate}T23:59:59Z`) : null;
+
+      const filteredByDate =
+        startMs || endMs
+          ? filteredByPlatform.filter((item) => {
+              const createdMs = safeParseDate(item.create_time);
+              if (createdMs === null) return true;
+              if (startMs !== null && createdMs < startMs) return false;
+              if (endMs !== null && createdMs > endMs) return false;
+              return true;
+            })
+          : filteredByPlatform;
+
+      items.value = filteredByDate;
+      if (selectedItem.value && !items.value.some((entry) => entry.id === selectedItem.value?.id)) {
+        selectedItem.value = null;
+      }
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : String(reason);
       items.value = [];
