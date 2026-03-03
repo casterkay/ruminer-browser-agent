@@ -16,9 +16,12 @@
 
 import type { UnixMillis } from '../../domain/json';
 import type { RunId } from '../../domain/ids';
+import { RR_ERROR_CODES, type RRError } from '../../domain/errors';
+import { isTerminalStatus } from '../../domain/events';
 import type { LeaseManager } from './leasing';
 import type { RunQueue, RunQueueConfig, RunQueueItem } from './queue';
 import type { KeepaliveController } from '../keepalive/offscreen-keepalive';
+import type { RunsStore } from '../storage/storage-port';
 
 // ==================== Types ====================
 
@@ -50,7 +53,8 @@ export interface RunSchedulerTuning {
  * Scheduler dependencies (dependency injection)
  */
 export interface RunSchedulerDeps {
-  queue: Pick<RunQueue, 'claimNext' | 'markDone'>;
+  queue: Pick<RunQueue, 'claimNext' | 'markDone' | 'requeue'>;
+  runs: Pick<RunsStore, 'get' | 'patch'>;
   leaseManager: Pick<LeaseManager, 'startHeartbeat' | 'stopHeartbeat' | 'reclaimExpiredLeases'>;
   keepalive: Pick<KeepaliveController, 'acquire'>;
   config: RunQueueConfig;
@@ -95,6 +99,29 @@ export interface RunScheduler {
 const DEFAULT_POLL_INTERVAL_MS = 500;
 
 // ==================== Helpers ====================
+
+function shouldRetryRun(error: RRError | undefined): boolean {
+  if (!error) return true;
+  if (error.retryable === true) return true;
+
+  switch (error.code) {
+    case RR_ERROR_CODES.NETWORK_REQUEST_FAILED:
+    case RR_ERROR_CODES.TIMEOUT:
+    case RR_ERROR_CODES.NAVIGATION_FAILED:
+    case RR_ERROR_CODES.INTERNAL:
+      return true;
+
+    case RR_ERROR_CODES.VALIDATION_ERROR:
+    case RR_ERROR_CODES.PERMISSION_DENIED:
+    case RR_ERROR_CODES.DAG_INVALID:
+    case RR_ERROR_CODES.DAG_CYCLE:
+    case RR_ERROR_CODES.UNSUPPORTED_NODE:
+      return false;
+
+    default:
+      return false;
+  }
+}
 
 function clampNonNegativeInt(value: unknown, fallback: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback;
@@ -213,10 +240,61 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
         })
         .finally(async () => {
           activeRunIds.delete(claimedItem.id);
+
+          const t2 = now();
           try {
-            await deps.queue.markDone(claimedItem.id, now());
+            const run = await deps.runs.get(claimedItem.id);
+
+            // Defensive cleanup: if run record is missing, drop queue item.
+            if (!run) {
+              await deps.queue.markDone(claimedItem.id, t2);
+              return;
+            }
+
+            // Invariant: executor should resolve only on terminal run status.
+            // If not terminal, markDone to avoid wedging the queue, but log loudly.
+            if (!isTerminalStatus(run.status)) {
+              logger.error(
+                `[RunScheduler] Invariant violation: run "${claimedItem.id}" executor resolved but status="${run.status}" is not terminal`,
+              );
+              await deps.queue.markDone(claimedItem.id, t2);
+              return;
+            }
+
+            // Retry policy: failed runs may be requeued until maxAttempts is reached.
+            if (run.status === 'failed') {
+              const canRetry = claimedItem.attempt < claimedItem.maxAttempts;
+              const retryable = shouldRetryRun(run.error);
+
+              if (canRetry && retryable) {
+                // IMPORTANT: patch run status back to queued so crash recovery doesn't treat it as terminal.
+                // We keep the failure event log for debugging.
+                await deps.runs.patch(claimedItem.id, {
+                  status: 'queued',
+                  startedAt: undefined,
+                  finishedAt: undefined,
+                  tookMs: undefined,
+                  outputs: undefined,
+                  error: undefined,
+                  currentNodeId: undefined,
+                });
+                await deps.queue.requeue(claimedItem.id, t2, { reason: 'run_retry' });
+                return;
+              }
+            }
+
+            // Terminal + no retry => remove from queue
+            await deps.queue.markDone(claimedItem.id, t2);
           } catch (e) {
-            logger.warn(`[RunScheduler] markDone failed for run "${claimedItem.id}":`, e);
+            logger.warn(`[RunScheduler] finalize failed for run "${claimedItem.id}":`, e);
+            try {
+              await deps.queue.markDone(claimedItem.id, t2);
+            } catch (markDoneErr) {
+              logger.warn(
+                `[RunScheduler] markDone after finalize failure for run "${claimedItem.id}" failed:`,
+                markDoneErr,
+              );
+            }
           }
 
           // Backfill immediately when a slot frees up

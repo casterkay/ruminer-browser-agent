@@ -33,6 +33,7 @@ export {
   buildToolGroupRestrictionText,
   clearIndividualToolOverrides,
   getDefaultToolGroupState,
+  getEffectiveEnabledToolIds,
   getIndividualToolState,
   getToolGroupState,
   setIndividualToolOverride,
@@ -44,3 +45,5 @@ export {
   type ToolGroupId,
   type ToolGroupState,
 } from './tool-groups';
+
+export { stableJson } from './stable-json';

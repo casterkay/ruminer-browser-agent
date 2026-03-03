@@ -1,9 +1,15 @@
 import { NativeMessageType } from 'chrome-mcp-shared';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { NATIVE_HOST, STORAGE_KEYS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/common/constants';
+import { createErrorResponse } from '@/common/tool-handler';
 import { handleCallTool } from './tools';
 import { listPublished, getFlow } from './record-replay/flow-store';
 import { acquireKeepalive } from './keepalive-manager';
+import {
+  getEffectiveToolSelection,
+  isToolAllowedBySelection,
+  normalizeToolNameForPolicy,
+} from './tool-selection/resolve';
 
 const LOG_PREFIX = '[NativeHost]';
 
@@ -359,7 +365,39 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
       } else if (message.type === NativeMessageType.CALL_TOOL && message.requestId) {
         const requestId = message.requestId;
         try {
-          const result = await handleCallTool(message.payload);
+          const rawName = message.payload?.name;
+          const rawArgs = message.payload?.args;
+          if (typeof rawName !== 'string' || rawName.length === 0) {
+            const result = createErrorResponse('Invalid tool call: missing tool name');
+            nativePort?.postMessage({
+              responseToRequestId: requestId,
+              payload: {
+                status: 'success',
+                message: SUCCESS_MESSAGES.TOOL_EXECUTED,
+                data: result,
+              },
+            });
+            return;
+          }
+
+          const selection = await getEffectiveToolSelection();
+          if (!isToolAllowedBySelection(rawName, selection)) {
+            const result = createErrorResponse(
+              `Disabled tool: ${rawName}. Enable it in Ruminer → Tools.`,
+            );
+            nativePort?.postMessage({
+              responseToRequestId: requestId,
+              payload: {
+                status: 'success',
+                message: SUCCESS_MESSAGES.TOOL_EXECUTED,
+                data: result,
+              },
+            });
+            return;
+          }
+
+          const normalizedName = normalizeToolNameForPolicy(rawName);
+          const result = await handleCallTool({ name: normalizedName, args: rawArgs });
           nativePort?.postMessage({
             responseToRequestId: requestId,
             payload: {
@@ -493,7 +531,20 @@ export const initNativeHostListener = () => {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Allow UI to call tools directly
     if (message && message.type === 'call_tool' && message.name) {
-      handleCallTool({ name: message.name, args: message.args })
+      (async () => {
+        const rawName = message.name;
+        if (typeof rawName !== 'string' || rawName.length === 0) {
+          return createErrorResponse('Invalid tool call: missing tool name');
+        }
+
+        const selection = await getEffectiveToolSelection();
+        if (!isToolAllowedBySelection(rawName, selection)) {
+          return createErrorResponse(`Disabled tool: ${rawName}. Enable it in Ruminer → Tools.`);
+        }
+
+        const normalizedName = normalizeToolNameForPolicy(rawName);
+        return handleCallTool({ name: normalizedName, args: message.args });
+      })()
         .then((res) => sendResponse({ success: true, result: res }))
         .catch((err) =>
           sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) }),

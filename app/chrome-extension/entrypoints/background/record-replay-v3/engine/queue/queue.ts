@@ -140,8 +140,15 @@ export interface RunQueue {
     now: UnixMillis,
   ): Promise<{
     requeuedRunning: Array<{ runId: RunId; prevOwnerId?: string }>;
-    adoptedPaused: Array<{ runId: RunId; prevOwnerId?: string }>;
+    requeuedPaused: Array<{ runId: RunId; prevOwnerId?: string }>;
   }>;
+
+  /**
+   * Requeue a run without incrementing its attempt counter.
+   * @description
+   * Used for run-level retries after a terminal failure. The next claim will increment attempt.
+   */
+  requeue(runId: RunId, now: UnixMillis, opts?: { reason?: string }): Promise<void>;
 
   /**
    * 标记为 running
@@ -189,6 +196,7 @@ export function createNotImplementedQueue(): RunQueue {
     heartbeat: async () => notImplemented(),
     reclaimExpiredLeases: async () => notImplemented(),
     recoverOrphanLeases: async () => notImplemented(),
+    requeue: async () => notImplemented(),
     markRunning: async () => notImplemented(),
     markPaused: async () => notImplemented(),
     markDone: async () => notImplemented(),

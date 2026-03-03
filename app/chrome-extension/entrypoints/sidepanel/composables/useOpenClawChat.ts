@@ -1,7 +1,8 @@
 import {
-  buildToolGroupRestrictionText,
+  getEffectiveEnabledToolIds,
   getIndividualToolState,
   getToolGroupState,
+  type IndividualToolState,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
 import { computed, onUnmounted, ref, type Ref } from 'vue';
@@ -425,12 +426,25 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
   function applyToolGroupsToPrompt(
     message: string,
     toolGroups: ToolGroupState,
-    individualToolState?: { overrides: Record<string, boolean> } | null,
+    individualToolState?: IndividualToolState | null,
   ): string {
-    const restrictionText = buildToolGroupRestrictionText(toolGroups, individualToolState ?? null);
-    if (!restrictionText) {
-      return message;
-    }
+    const allowedTools = getEffectiveEnabledToolIds(toolGroups, individualToolState ?? null);
+    const restrictionText =
+      allowedTools.length === 0
+        ? [
+            'Browser tool restrictions (enforced at runtime):',
+            '- No browser tools are currently allowed.',
+            '',
+            'Ask the user to enable the required tools in Ruminer → Tools before using them.',
+          ].join('\n')
+        : [
+            'Browser tool restrictions (enforced at runtime):',
+            `- Allowed browser tools: ${allowedTools.join(', ')}`,
+            '- Do not use any other browser tools.',
+            '',
+            'Ask the user to enable a tool in Ruminer → Tools before using it.',
+          ].join('\n');
+
     return `${restrictionText}\n\nUser request:\n${message}`;
   }
 

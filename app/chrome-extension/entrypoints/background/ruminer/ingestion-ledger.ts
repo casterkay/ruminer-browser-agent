@@ -163,3 +163,21 @@ export async function getLedgerStats(): Promise<LedgerStats> {
     lastUpdatedAt,
   };
 }
+
+export async function hasAnyLedgerEntryForGroup(groupId: string): Promise<boolean> {
+  if (!groupId.trim()) {
+    return false;
+  }
+
+  return withStore('readonly', async (store) => {
+    try {
+      const index = store.index('group_id');
+      const key = await requestToPromise<IDBValidKey | undefined>(index.getKey(groupId));
+      return key !== undefined;
+    } catch {
+      // Defensive fallback: older IndexedDB implementations may not support getKey().
+      const all = await requestToPromise<IngestionLedgerEntry[]>(store.getAll());
+      return all.some((entry) => entry.group_id === groupId);
+    }
+  });
+}

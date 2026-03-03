@@ -89,6 +89,7 @@ export type RunEvent =
       patch: Array<{ op: 'set' | 'delete'; name: string; value?: JsonValue }>;
     })
   | (EventBase & { type: 'artifact.screenshot'; nodeId: NodeId; data: string; savedAs?: string })
+  | (EventBase & { type: 'artifact.html_snippet'; nodeId: NodeId; data: string })
   | (EventBase & {
       type: 'log';
       level: 'debug' | 'info' | 'warn' | 'error';
@@ -165,6 +166,9 @@ export interface RunRecordV3 {
   error?: RRError;
   /** 输出结果 */
   outputs?: JsonObject;
+
+  /** 需要人工修复的漂移信号（可选） */
+  repair?: { needed: true; nodeId: NodeId; ts: UnixMillis; reason: 'drift_3x' };
 
   /** 下一个事件序列号（缓存字段） */
   nextSeq: number;

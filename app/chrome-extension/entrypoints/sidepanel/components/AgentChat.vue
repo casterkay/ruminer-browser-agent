@@ -1255,48 +1255,75 @@ async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
     return;
   }
 
-  // Otherwise create a fresh empty session for the engine
-  const typedEngineName = normalizedEngineName as
-    | 'openclaw'
-    | 'claude'
-    | 'codex'
-    | 'cursor'
-    | 'qwen'
-    | 'glm';
-
-  const optionsConfig =
-    typedEngineName === 'codex'
-      ? {
-          codexConfig: {
-            reasoningEffort: getNormalizedReasoningEffort(),
-          },
-        }
-      : typedEngineName === 'claude'
-        ? {
-            tools: { type: 'preset', preset: 'claude_code' },
-          }
-        : undefined;
-
-  const created = await sessions.createSession(projectId, {
-    engineName: typedEngineName,
-    name: `Session ${sessions.sessions.value.length + 1}`,
-    optionsConfig,
-  });
-
-  // Guard: only clear messages if the new session is still selected
-  if (created && sessions.selectedSessionId.value === created.id) {
-    chat.setMessages([]);
-  }
-
+  // No matching session exists yet.
+  // Do NOT create an empty session here; we'll create/select on first send.
   engineMenuOpen.value = false;
 }
 
 // Send handler
 async function handleSend(): Promise<void> {
-  const dbSessionId = sessions.selectedSessionId.value;
+  let dbSessionId = sessions.selectedSessionId.value;
   if (!dbSessionId) {
     chat.errorMessage.value = 'No session selected.';
     return;
+  }
+
+  // If user switched engine while still in an empty chat, defer session creation
+  // until the first message is sent, to avoid producing lots of empty sessions.
+  if (threadState.threads.value.length === 0) {
+    const desiredEngine = selectedCli.value.trim();
+    const currentSession = sessions.selectedSession.value;
+    const projectId = projects.selectedProjectId.value || currentSession?.projectId;
+    const currentEngine = currentSession?.engineName;
+
+    if (projectId && desiredEngine && currentEngine && desiredEngine !== currentEngine) {
+      const candidateSessions = sessions.sessions.value.filter(
+        (s) => s.projectId === projectId && s.engineName === desiredEngine,
+      );
+
+      // Prefer an empty session for that engine.
+      const emptyCandidate = candidateSessions.find((s) => !s.preview);
+      const target = emptyCandidate ?? candidateSessions[0] ?? null;
+
+      if (target) {
+        await sessions.selectSession(target.id);
+        chat.setMessages([]);
+        dbSessionId = target.id;
+      } else {
+        const typedEngineName = desiredEngine as
+          | 'openclaw'
+          | 'claude'
+          | 'codex'
+          | 'cursor'
+          | 'qwen'
+          | 'glm';
+
+        const optionsConfig =
+          typedEngineName === 'codex'
+            ? {
+                codexConfig: {
+                  reasoningEffort: getNormalizedReasoningEffort(),
+                },
+              }
+            : typedEngineName === 'claude'
+              ? {
+                  tools: { type: 'preset', preset: 'claude_code' },
+                }
+              : undefined;
+
+        const created = await sessions.createSession(projectId, {
+          engineName: typedEngineName,
+          name: `Session ${sessions.sessions.value.length + 1}`,
+          optionsConfig,
+        });
+
+        if (created) {
+          await sessions.selectSession(created.id);
+          chat.setMessages([]);
+          dbSessionId = created.id;
+        }
+      }
+    }
   }
 
   // Capture input before clearing for preview update

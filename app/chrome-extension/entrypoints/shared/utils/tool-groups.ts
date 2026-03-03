@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from '@/common/constants';
+import { TOOL_NAMES, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 
 export type ToolGroupId = 'observe' | 'navigate' | 'interact' | 'execute' | 'workflow';
 
@@ -30,6 +31,15 @@ export interface IndividualToolState {
   updatedAt: string;
 }
 
+const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
+  chrome_file_upload: TOOL_NAMES.BROWSER.FILE_UPLOAD,
+};
+
+function toolSchemaDescription(toolName: string): string | null {
+  const schema = TOOL_SCHEMAS.find((tool) => tool.name === toolName);
+  return typeof schema?.description === 'string' ? schema.description : null;
+}
+
 export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
   {
     id: 'observe',
@@ -37,20 +47,51 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     description: 'Read-only tools (no side effects)',
     defaultEnabled: true,
     tools: [
-      { id: 'get_windows_and_tabs', name: 'List Tabs', description: 'Get all windows and tabs' },
-      { id: 'chrome_screenshot', name: 'Screenshot', description: 'Capture page screenshot' },
-      { id: 'chrome_read_page', name: 'Read Page', description: 'Read page content' },
       {
-        id: 'chrome_get_web_content',
-        name: 'Get Web Content',
-        description: 'Fetch interactive elements',
+        id: TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS,
+        name: 'List Tabs',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS) ??
+          'Get all windows and tabs',
       },
-      { id: 'chrome_console', name: 'Console', description: 'Read console output' },
-      { id: 'chrome_history', name: 'History', description: 'Read browser history' },
       {
-        id: 'chrome_bookmark_search',
+        id: TOOL_NAMES.BROWSER.SCREENSHOT,
+        name: 'Screenshot',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.SCREENSHOT) ?? 'Capture page screenshot',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.READ_PAGE,
+        name: 'Read Page',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.READ_PAGE) ?? 'Read page content',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.WEB_FETCHER,
+        name: 'Get Web Content',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.WEB_FETCHER) ?? 'Fetch web content',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.CONSOLE,
+        name: 'Console',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.CONSOLE) ?? 'Read console output',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.HISTORY,
+        name: 'History',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.HISTORY) ?? 'Read browser history',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.BOOKMARK_SEARCH,
         name: 'Search Bookmarks',
-        description: 'Search browser bookmarks',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.BOOKMARK_SEARCH) ?? 'Search browser bookmarks',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.GIF_RECORDER,
+        name: 'GIF Recorder',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.GIF_RECORDER) ??
+          'Record a short GIF of the current page',
       },
     ],
   },
@@ -60,41 +101,118 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     description: 'Tab and page navigation',
     defaultEnabled: true,
     tools: [
-      { id: 'chrome_navigate', name: 'Navigate', description: 'Navigate to URL' },
-      { id: 'chrome_switch_tab', name: 'Switch Tab', description: 'Switch to a tab' },
-      { id: 'chrome_close_tabs', name: 'Close Tabs', description: 'Close tabs' },
+      {
+        id: TOOL_NAMES.BROWSER.NAVIGATE,
+        name: 'Navigate',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.NAVIGATE) ?? 'Navigate to URL',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.SWITCH_TAB,
+        name: 'Switch Tab',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.SWITCH_TAB) ?? 'Switch to a tab',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.CLOSE_TABS,
+        name: 'Close Tabs',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.CLOSE_TABS) ?? 'Close tabs',
+      },
     ],
   },
   {
     id: 'interact',
     label: 'Interact',
     description: 'DOM manipulation and network',
-    defaultEnabled: true,
+    defaultEnabled: false,
     tools: [
-      { id: 'chrome_click_element', name: 'Click', description: 'Click an element' },
       {
-        id: 'chrome_fill_or_select',
+        id: TOOL_NAMES.BROWSER.CLICK,
+        name: 'Click',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.CLICK) ?? 'Click an element',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.FILL,
         name: 'Fill/Select',
-        description: 'Fill forms or select options',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.FILL) ?? 'Fill forms or select options',
       },
-      { id: 'chrome_keyboard', name: 'Keyboard', description: 'Send keyboard input' },
-      { id: 'chrome_computer', name: 'Computer', description: 'Computer use (mouse/keyboard)' },
       {
-        id: 'chrome_request_element_selection',
+        id: TOOL_NAMES.BROWSER.KEYBOARD,
+        name: 'Keyboard',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.KEYBOARD) ?? 'Send keyboard input',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.COMPUTER,
+        name: 'Computer',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.COMPUTER) ??
+          'Computer use (mouse/keyboard via screen coordinates)',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.REQUEST_ELEMENT_SELECTION,
         name: 'Element Picker',
-        description: 'Pick an element',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.REQUEST_ELEMENT_SELECTION) ?? 'Pick an element',
       },
-      { id: 'chrome_handle_dialog', name: 'Dialog', description: 'Handle browser dialogs' },
       {
-        id: 'chrome_network_capture',
-        name: 'Network Capture',
-        description: 'Capture network traffic',
+        id: TOOL_NAMES.BROWSER.HANDLE_DIALOG,
+        name: 'Dialog',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.HANDLE_DIALOG) ?? 'Handle dialogs',
       },
-      { id: 'chrome_network_request', name: 'Network Request', description: 'Make HTTP requests' },
-      { id: 'chrome_bookmark_add', name: 'Add Bookmark', description: 'Create a bookmark' },
-      { id: 'chrome_bookmark_delete', name: 'Delete Bookmark', description: 'Delete a bookmark' },
-      { id: 'chrome_file_upload', name: 'File Upload', description: 'Upload files' },
-      { id: 'chrome_handle_download', name: 'Download', description: 'Handle downloads' },
+      {
+        id: TOOL_NAMES.BROWSER.NETWORK_CAPTURE,
+        name: 'Network Capture',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.NETWORK_CAPTURE) ?? 'Capture network traffic',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.NETWORK_REQUEST,
+        name: 'Network Request',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.NETWORK_REQUEST) ?? 'Make HTTP requests',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.BOOKMARK_ADD,
+        name: 'Add Bookmark',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.BOOKMARK_ADD) ?? 'Create a bookmark',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.BOOKMARK_DELETE,
+        name: 'Delete Bookmark',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.BOOKMARK_DELETE) ?? 'Delete a bookmark',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.FILE_UPLOAD,
+        name: 'File Upload',
+        description: toolSchemaDescription(TOOL_NAMES.BROWSER.FILE_UPLOAD) ?? 'Upload files',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.HANDLE_DOWNLOAD,
+        name: 'Download',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.HANDLE_DOWNLOAD) ?? 'Handle downloads',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.PERFORMANCE_START_TRACE,
+        name: 'Start Perf Trace',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.PERFORMANCE_START_TRACE) ??
+          'Start performance trace recording',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.PERFORMANCE_STOP_TRACE,
+        name: 'Stop Perf Trace',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.PERFORMANCE_STOP_TRACE) ??
+          'Stop performance trace recording',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.PERFORMANCE_ANALYZE_INSIGHT,
+        name: 'Analyze Perf Trace',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.PERFORMANCE_ANALYZE_INSIGHT) ??
+          'Analyze last recorded trace',
+      },
     ],
   },
   {
@@ -103,13 +221,22 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     description: 'JavaScript execution',
     defaultEnabled: false,
     tools: [
-      { id: 'chrome_javascript', name: 'JavaScript', description: 'Execute JavaScript code' },
       {
-        id: 'chrome_inject_script',
-        name: 'Inject Script',
-        description: 'Inject and execute scripts',
+        id: TOOL_NAMES.BROWSER.JAVASCRIPT,
+        name: 'JavaScript',
+        description:
+          toolSchemaDescription(TOOL_NAMES.BROWSER.JAVASCRIPT) ?? 'Execute JavaScript code',
       },
-      { id: 'chrome_userscript', name: 'Userscript', description: 'Run userscripts' },
+      {
+        id: TOOL_NAMES.BROWSER.INJECT_SCRIPT,
+        name: 'Inject Script',
+        description: 'Inject and execute scripts (not exposed to MCP by default)',
+      },
+      {
+        id: TOOL_NAMES.BROWSER.USERSCRIPT,
+        name: 'Userscript',
+        description: 'Run userscripts (not exposed to MCP by default)',
+      },
     ],
   },
   {
@@ -118,11 +245,35 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     description: 'Browser workflow actions',
     defaultEnabled: true,
     tools: [
-      { id: 'flow_record_start', name: 'Record Start', description: 'Start recording' },
-      { id: 'flow_record_stop', name: 'Record Stop', description: 'Stop recording' },
-      { id: 'flow_save', name: 'Save Flow', description: 'Save recorded flow' },
-      { id: 'flow_list', name: 'List Flows', description: 'List saved flows' },
-      { id: 'flow_run', name: 'Run Flow', description: 'Execute a flow' },
+      {
+        id: TOOL_NAMES.RECORD_REPLAY.RECORD_START,
+        name: 'Record Start',
+        description:
+          toolSchemaDescription(TOOL_NAMES.RECORD_REPLAY.RECORD_START) ?? 'Start recording',
+      },
+      {
+        id: TOOL_NAMES.RECORD_REPLAY.RECORD_STOP,
+        name: 'Record Stop',
+        description:
+          toolSchemaDescription(TOOL_NAMES.RECORD_REPLAY.RECORD_STOP) ?? 'Stop recording',
+      },
+      {
+        id: TOOL_NAMES.RECORD_REPLAY.FLOW_SAVE,
+        name: 'Save Flow',
+        description:
+          toolSchemaDescription(TOOL_NAMES.RECORD_REPLAY.FLOW_SAVE) ?? 'Save recorded flow',
+      },
+      {
+        id: TOOL_NAMES.RECORD_REPLAY.FLOW_LIST,
+        name: 'List Flows',
+        description:
+          toolSchemaDescription(TOOL_NAMES.RECORD_REPLAY.FLOW_LIST) ?? 'List saved flows',
+      },
+      {
+        id: TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
+        name: 'Run Flow',
+        description: toolSchemaDescription(TOOL_NAMES.RECORD_REPLAY.FLOW_RUN) ?? 'Execute a flow',
+      },
     ],
   },
 ];
@@ -130,7 +281,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
 const DEFAULT_TOOL_GROUP_STATE: ToolGroupState = {
   observe: true,
   navigate: true,
-  interact: true,
+  interact: false,
   execute: false,
   workflow: true,
   updatedAt: new Date(0).toISOString(),
@@ -196,9 +347,38 @@ export async function getIndividualToolState(): Promise<IndividualToolState> {
     (await chrome.storage.local.get(STORAGE_KEYS.INDIVIDUAL_TOOL_STATE))[
       STORAGE_KEYS.INDIVIDUAL_TOOL_STATE
     ] || {};
-  const overrides = raw.overrides && typeof raw.overrides === 'object' ? raw.overrides : {};
+  const overridesRaw = raw.overrides && typeof raw.overrides === 'object' ? raw.overrides : {};
+  const overrides = overridesRaw as Record<string, unknown>;
+  const nextOverrides: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === 'boolean') {
+      nextOverrides[key] = value;
+    }
+  }
+
+  let migrated = false;
+  for (const [legacyId, canonicalId] of Object.entries(LEGACY_TOOL_ID_ALIASES)) {
+    if (nextOverrides[legacyId] === false && nextOverrides[canonicalId] !== false) {
+      nextOverrides[canonicalId] = false;
+      migrated = true;
+    }
+    if (legacyId in nextOverrides) {
+      delete nextOverrides[legacyId];
+      migrated = true;
+    }
+  }
+
+  if (migrated) {
+    const migratedState: IndividualToolState = {
+      overrides: nextOverrides,
+      updatedAt: new Date().toISOString(),
+    };
+    await chrome.storage.local.set({ [STORAGE_KEYS.INDIVIDUAL_TOOL_STATE]: migratedState });
+    return migratedState;
+  }
+
   return {
-    overrides: overrides as Record<string, boolean>,
+    overrides: nextOverrides,
     updatedAt:
       typeof raw.updatedAt === 'string' && raw.updatedAt.length > 0
         ? raw.updatedAt
@@ -288,4 +468,23 @@ export function buildToolGroupRestrictionText(
   ]
     .join('\n')
     .trim();
+}
+
+export function getEffectiveEnabledToolIds(
+  state: ToolGroupState,
+  individualState?: IndividualToolState | null,
+): string[] {
+  const overrides = individualState?.overrides ?? {};
+  const enabled: string[] = [];
+
+  for (const group of TOOL_GROUP_DEFINITIONS) {
+    if (!state[group.id]) continue;
+    for (const tool of group.tools) {
+      if (overrides[tool.id] === false) continue;
+      enabled.push(tool.id);
+    }
+  }
+
+  enabled.sort();
+  return enabled;
 }

@@ -33,7 +33,7 @@ import { createIntervalTriggerHandlerFactory } from './engine/triggers/interval-
 import { createOnceTriggerHandlerFactory } from './engine/triggers/once-trigger';
 import { createManualTriggerHandlerFactory } from './engine/triggers/manual-trigger';
 
-import { createChromeArtifactService } from './engine/kernel/artifacts';
+import { createCdpArtifactService } from './engine/kernel/artifacts';
 import { createRunRunnerFactory, type RunRunnerFactory } from './engine/kernel/runner';
 import {
   createDebugController,
@@ -51,6 +51,7 @@ import { registerRuminerIngestNodes } from './engine/plugins/ruminer-ingest';
 
 import { acquireKeepalive } from '../keepalive-manager';
 import { createStoragePort } from './index';
+import { ensureBuiltinFlows } from '@/entrypoints/background/ruminer/builtin-flows';
 
 // ==================== Types ====================
 
@@ -291,6 +292,13 @@ export async function bootstrapV3(): Promise<V3Runtime> {
     // 1) Storage
     const storage = createStoragePort();
 
+    // 1.5) Built-in flows (best-effort)
+    try {
+      await ensureBuiltinFlows(storage);
+    } catch (e) {
+      logger.warn('[RR-V3] ensureBuiltinFlows failed:', e);
+    }
+
     // 2) EventsBus
     const events: EventsBus = new StorageBackedEventsBus(storage.events);
 
@@ -324,7 +332,7 @@ export async function bootstrapV3(): Promise<V3Runtime> {
       storage,
       events,
       plugins,
-      artifactService: createChromeArtifactService(),
+      artifactService: createCdpArtifactService(),
       now,
     });
 
@@ -340,6 +348,7 @@ export async function bootstrapV3(): Promise<V3Runtime> {
     // 7) Scheduler
     const scheduler = createRunScheduler({
       queue: storage.queue,
+      runs: storage.runs,
       leaseManager,
       keepalive,
       config: DEFAULT_QUEUE_CONFIG,

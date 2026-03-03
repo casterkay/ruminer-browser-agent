@@ -3,10 +3,7 @@
  * @description 定义和实现单个 Run 的顺序执行器
  */
 
-import type { NodeId, RunId } from '../../domain/ids';
-import { EDGE_LABELS } from '../../domain/ids';
-import type { FlowV3, NodeV3 } from '../../domain/flow';
-import { findNodeById } from '../../domain/flow';
+import { RR_ERROR_CODES, createRRError, type RRError } from '../../domain/errors';
 import type {
   PauseReason,
   RunEvent,
@@ -15,22 +12,25 @@ import type {
   Unsubscribe,
 } from '../../domain/events';
 import { RUN_SCHEMA_VERSION } from '../../domain/events';
+import type { FlowV3, NodeV3 } from '../../domain/flow';
+import { findNodeById } from '../../domain/flow';
+import type { NodeId, RunId } from '../../domain/ids';
+import { EDGE_LABELS } from '../../domain/ids';
 import type { JsonObject, JsonValue } from '../../domain/json';
-import { RR_ERROR_CODES, createRRError, type RRError } from '../../domain/errors';
 import type { NodePolicy, RetryPolicy } from '../../domain/policy';
 import { mergeNodePolicy } from '../../domain/policy';
 
-import type { EventsBus } from '../transport/events-bus';
-import type { StoragePort } from '../storage/storage-port';
 import type { PluginRegistry } from '../plugins/registry';
 import { getPluginRegistry } from '../plugins/registry';
 import type { NodeExecutionContext, NodeExecutionResult, VarsPatchOp } from '../plugins/types';
+import type { StoragePort } from '../storage/storage-port';
+import type { EventsBus } from '../transport/events-bus';
 
 import type { ArtifactService } from './artifacts';
 import { createNotImplementedArtifactService } from './artifacts';
 import { getBreakpointRegistry, type BreakpointManager } from './breakpoints';
-import { findEdgeByLabel, findNextNode, validateFlowDAG } from './traversal';
 import type { RunResult } from './kernel';
+import { findEdgeByLabel, findNextNode, validateFlowDAG } from './traversal';
 
 // ==================== Types ====================
 
@@ -163,6 +163,53 @@ async function withTimeout<T>(
   }
 }
 
+function minFinite(...values: Array<number | undefined>): number | undefined {
+  const defined = values.filter(
+    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
+  );
+  if (defined.length === 0) return undefined;
+  return Math.min(...defined);
+}
+
+async function captureHtmlSnippet(
+  tabId: number,
+  opts?: { maxChars?: number },
+): Promise<string | null> {
+  const maxChars = Math.max(1_000, Math.floor(opts?.maxChars ?? 50_000));
+
+  try {
+    const injected = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (maxCharsInner: number) => {
+        try {
+          const url = window.location.href;
+          const title = document.title || '';
+          const raw = document.documentElement?.outerHTML ?? '';
+
+          const withoutScripts = raw
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+          const compact = withoutScripts.replace(/\s+/g, ' ').trim();
+          const snippet =
+            compact.length > maxCharsInner ? compact.slice(0, maxCharsInner) : compact;
+
+          const header = `URL: ${url}\nTITLE: ${title}\n\n`;
+          return `${header}${snippet}`;
+        } catch (e) {
+          return null;
+        }
+      },
+      args: [maxChars],
+    });
+
+    const result = injected[0]?.result;
+    return typeof result === 'string' && result.trim() ? result : null;
+  } catch {
+    return null;
+  }
+}
+
 function computeRetryDelayMs(policy: RetryPolicy, attempt: number): number {
   const base = Math.max(0, policy.intervalMs);
   let delay = base;
@@ -290,6 +337,7 @@ class StorageBackedRunRunner implements RunRunner {
   private readonly env: RunnerEnv;
   private readonly queue = new SerialQueue();
   private readonly breakpoints: BreakpointManager;
+  private readonly repairCapturedNodes = new Set<NodeId>();
 
   private startPromise: Promise<RunResult> | null = null;
   private outputs: JsonObject = {};
@@ -424,6 +472,53 @@ class StorageBackedRunRunner implements RunRunner {
     }
   }
 
+  private async captureRepairArtifacts(nodeId: NodeId): Promise<void> {
+    if (this.repairCapturedNodes.has(nodeId)) {
+      return;
+    }
+    this.repairCapturedNodes.add(nodeId);
+
+    const ts = this.env.now();
+
+    const [screenshot, htmlSnippet] = await Promise.all([
+      this.env.artifactService.screenshot(this.config.tabId, { format: 'jpeg', quality: 70 }),
+      captureHtmlSnippet(this.config.tabId, { maxChars: 50_000 }),
+    ]);
+
+    await this.queue
+      .run(async () => {
+        // Patch run record with repair signal first (best-effort)
+        try {
+          await this.env.storage.runs.patch(this.runId, {
+            repair: { needed: true, nodeId, ts, reason: 'drift_3x' },
+          });
+        } catch {
+          // ignore
+        }
+
+        if (screenshot.ok) {
+          await this.env.events.append({
+            runId: this.runId,
+            type: 'artifact.screenshot',
+            nodeId,
+            data: screenshot.base64,
+          } as RunEventInput);
+        }
+
+        if (typeof htmlSnippet === 'string' && htmlSnippet.trim()) {
+          await this.env.events.append({
+            runId: this.runId,
+            type: 'artifact.html_snippet',
+            nodeId,
+            data: htmlSnippet,
+          } as RunEventInput);
+        }
+      })
+      .catch(() => {
+        // ignore - capture is best-effort
+      });
+  }
+
   private async ensureRunRecord(startNodeId: NodeId, startedAt: number): Promise<void> {
     await this.queue.run(async () => {
       const existing = await this.env.storage.runs.get(this.runId);
@@ -460,6 +555,10 @@ class StorageBackedRunRunner implements RunRunner {
         status: 'running',
         tabId: this.config.tabId,
         currentNodeId: startNodeId,
+        finishedAt: undefined,
+        tookMs: undefined,
+        outputs: undefined,
+        error: undefined,
       };
       if (existing.startedAt === undefined) patch.startedAt = startedAt;
       if (this.config.startNodeId !== undefined) patch.startNodeId = this.config.startNodeId;
@@ -506,9 +605,20 @@ class StorageBackedRunRunner implements RunRunner {
       this.requestPause({ kind: 'policy', nodeId: startNodeId, reason: 'pauseOnStart' });
     }
 
+    const runTimeoutMs = flow.policy?.runTimeoutMs;
+    const runDeadlineAt =
+      typeof runTimeoutMs === 'number' && Number.isFinite(runTimeoutMs) && runTimeoutMs > 0
+        ? startedAt + runTimeoutMs
+        : null;
+
     // Main execution loop
     let currentNodeId: NodeId | null = startNodeId;
     while (currentNodeId) {
+      if (runDeadlineAt !== null && this.env.now() >= runDeadlineAt) {
+        const error = createRRError(RR_ERROR_CODES.TIMEOUT, `Run "${this.runId}" timed out`);
+        return this.finishFailed(startedAt, error, currentNodeId);
+      }
+
       this.state.currentNodeId = currentNodeId;
 
       // Only update currentNodeId, not status (to preserve paused state)
@@ -572,7 +682,7 @@ class StorageBackedRunRunner implements RunRunner {
 
       // Execute node
       const nodeStartAt = this.env.now();
-      const next = await this.runNode(flow, node, nodeStartAt);
+      const next = await this.runNode(flow, node, nodeStartAt, runDeadlineAt);
       if ('terminal' in next) {
         if (next.terminal === 'canceled') break;
         if (next.terminal === 'failed') {
@@ -591,13 +701,25 @@ class StorageBackedRunRunner implements RunRunner {
     return this.finishSucceeded(startedAt);
   }
 
-  private async runNode(flow: FlowV3, node: NodeV3, nodeStartAt: number): Promise<NodeRunResult> {
+  private async runNode(
+    flow: FlowV3,
+    node: NodeV3,
+    nodeStartAt: number,
+    runDeadlineAt: number | null,
+  ): Promise<NodeRunResult> {
     let attempt = 1;
 
     for (;;) {
       if (this.state.canceled) return { terminal: 'canceled' };
       await this.waitIfPaused();
       if (this.state.canceled) return { terminal: 'canceled' };
+
+      if (runDeadlineAt !== null && this.env.now() >= runDeadlineAt) {
+        return {
+          terminal: 'failed',
+          error: createRRError(RR_ERROR_CODES.TIMEOUT, `Run "${this.runId}" timed out`),
+        };
+      }
 
       this.state.attempt = attempt;
 
@@ -611,7 +733,7 @@ class StorageBackedRunRunner implements RunRunner {
         } as RunEventInput),
       );
 
-      const exec = await this.executeNodeAttempt(flow, node);
+      const exec = await this.executeNodeAttempt(flow, node, { nodeStartAt, runDeadlineAt });
       if (exec.status === 'succeeded') {
         const tookMs = this.env.now() - nodeStartAt;
 
@@ -667,6 +789,15 @@ class StorageBackedRunRunner implements RunRunner {
           decision: decision.kind,
         } as RunEventInput),
       );
+
+      // If the run timed out, do not apply node-level onError; stop the run.
+      if (error.code === RR_ERROR_CODES.TIMEOUT && error.message.includes(`Run "${this.runId}"`)) {
+        return { terminal: 'failed', error };
+      }
+
+      if (attempt >= 3) {
+        await this.captureRepairArtifacts(node.id);
+      }
 
       if (decision.kind === 'retry' && decision.retryPolicy) {
         const maxAttempts = 1 + Math.max(0, decision.retryPolicy.retries);
@@ -749,7 +880,11 @@ class StorageBackedRunRunner implements RunRunner {
     return { kind: 'retry', retryPolicy };
   }
 
-  private async executeNodeAttempt(flow: FlowV3, node: NodeV3): Promise<NodeExecutionResult> {
+  private async executeNodeAttempt(
+    flow: FlowV3,
+    node: NodeV3,
+    limits: { nodeStartAt: number; runDeadlineAt: number | null },
+  ): Promise<NodeExecutionResult> {
     const def = this.env.plugins.getNode(node.kind);
     if (!def) {
       return {
@@ -812,13 +947,44 @@ class StorageBackedRunRunner implements RunRunner {
     const timeoutMs = policy.timeout?.ms;
     const scope = policy.timeout?.scope ?? 'attempt';
     const attemptTimeoutMs = scope === 'attempt' && timeoutMs !== undefined ? timeoutMs : undefined;
+    const nodeTimeoutMs = scope === 'node' && timeoutMs !== undefined ? timeoutMs : undefined;
+
+    const nowMs = this.env.now();
+    const runRemainingMs =
+      limits.runDeadlineAt !== null ? Math.floor(limits.runDeadlineAt - nowMs) : undefined;
+    const nodeRemainingMs =
+      nodeTimeoutMs !== undefined
+        ? Math.floor(nodeTimeoutMs - (nowMs - limits.nodeStartAt))
+        : undefined;
+
+    if (runRemainingMs !== undefined && runRemainingMs <= 0) {
+      return {
+        status: 'failed',
+        error: createRRError(RR_ERROR_CODES.TIMEOUT, `Run "${this.runId}" timed out`),
+      };
+    }
+
+    if (nodeRemainingMs !== undefined && nodeRemainingMs <= 0) {
+      return {
+        status: 'failed',
+        error: createRRError(RR_ERROR_CODES.TIMEOUT, `Node "${node.id}" timed out (scope=node)`),
+      };
+    }
+
+    const effectiveTimeoutMs = minFinite(attemptTimeoutMs, nodeRemainingMs, runRemainingMs);
 
     try {
       const nodeWithConfig = { ...node, config: parsedConfig } as Parameters<typeof def.execute>[1];
       const execPromise = def.execute(ctx, nodeWithConfig);
-      const result = await withTimeout(execPromise, attemptTimeoutMs, () =>
-        createRRError(RR_ERROR_CODES.TIMEOUT, `Node "${node.id}" timed out`),
-      );
+      const result = await withTimeout(execPromise, effectiveTimeoutMs, () => {
+        if (runRemainingMs !== undefined && effectiveTimeoutMs === runRemainingMs) {
+          return createRRError(RR_ERROR_CODES.TIMEOUT, `Run "${this.runId}" timed out`);
+        }
+        if (nodeRemainingMs !== undefined && effectiveTimeoutMs === nodeRemainingMs) {
+          return createRRError(RR_ERROR_CODES.TIMEOUT, `Node "${node.id}" timed out (scope=node)`);
+        }
+        return createRRError(RR_ERROR_CODES.TIMEOUT, `Node "${node.id}" timed out`);
+      });
       return result;
     } catch (e) {
       return {
@@ -836,6 +1002,7 @@ class StorageBackedRunRunner implements RunRunner {
         finishedAt: this.env.now(),
         tookMs,
         outputs: this.outputs,
+        error: undefined,
       });
       await this.env.events.append({
         runId: this.runId,
@@ -880,6 +1047,7 @@ class StorageBackedRunRunner implements RunRunner {
         status: 'canceled',
         finishedAt: this.env.now(),
         tookMs,
+        error: undefined,
       });
       await this.env.events.append({
         runId: this.runId,

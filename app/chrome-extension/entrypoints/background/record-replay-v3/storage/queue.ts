@@ -282,7 +282,7 @@ export function createQueueStore(): RunQueue {
       now: number,
     ): Promise<{
       requeuedRunning: Array<{ runId: RunId; prevOwnerId?: string }>;
-      adoptedPaused: Array<{ runId: RunId; prevOwnerId?: string }>;
+      requeuedPaused: Array<{ runId: RunId; prevOwnerId?: string }>;
     }> {
       // Validate inputs
       if (!ownerId) {
@@ -297,7 +297,7 @@ export function createQueueStore(): RunQueue {
         const statusIndex = store.index('status');
 
         const requeuedRunning: Array<{ runId: RunId; prevOwnerId?: string }> = [];
-        const adoptedPaused: Array<{ runId: RunId; prevOwnerId?: string }> = [];
+        const requeuedPaused: Array<{ runId: RunId; prevOwnerId?: string }> = [];
 
         /**
          * 扫描并回收孤儿 running 项
@@ -347,10 +347,10 @@ export function createQueueStore(): RunQueue {
           });
 
         /**
-         * 扫描并接管孤儿 paused 项
+         * 扫描并回收孤儿 paused 项
          * @description
          * - 孤儿定义：无租约或 lease.ownerId !== currentOwnerId
-         * - 接管策略：保持 status=paused，更新 lease.ownerId 为新 ownerId，续约 TTL
+         * - 回收策略：status -> queued，清除 lease，保留 attempt
          */
         const recoverPausedItems = (): Promise<void> =>
           new Promise<void>((resolve, reject) => {
@@ -373,20 +373,18 @@ export function createQueueStore(): RunQueue {
                 return;
               }
 
-              // 接管：更新 lease 为新 ownerId，续约 TTL
+              // 回收：移除 lease，状态改为 queued
+              const { lease: _droppedLease, ...itemWithoutLease } = item;
               const updated: RunQueueItem = {
-                ...item,
+                ...itemWithoutLease,
+                status: 'queued',
                 updatedAt: now,
-                lease: {
-                  ownerId,
-                  expiresAt: now + DEFAULT_LEASE_TTL_MS,
-                },
               };
 
               const updateRequest = cursor.update(updated);
               updateRequest.onerror = () => reject(updateRequest.error);
               updateRequest.onsuccess = () => {
-                adoptedPaused.push({
+                requeuedPaused.push({
                   runId: item.id,
                   ...(prevOwnerId ? { prevOwnerId } : {}),
                 });
@@ -399,7 +397,36 @@ export function createQueueStore(): RunQueue {
         await recoverRunningItems();
         await recoverPausedItems();
 
-        return { requeuedRunning, adoptedPaused };
+        return { requeuedRunning, requeuedPaused };
+      });
+    },
+
+    async requeue(runId: RunId, now: number, _opts?: { reason?: string }): Promise<void> {
+      await withTransaction(RR_V3_STORES.QUEUE, 'readwrite', async (stores) => {
+        const store = stores[RR_V3_STORES.QUEUE];
+
+        const existing = await new Promise<RunQueueItem | null>((resolve, reject) => {
+          const request = store.get(runId);
+          request.onsuccess = () => resolve((request.result as RunQueueItem) ?? null);
+          request.onerror = () => reject(request.error);
+        });
+
+        if (!existing) {
+          throw new Error(`Queue item "${runId}" not found`);
+        }
+
+        const { lease: _droppedLease, ...itemWithoutLease } = existing;
+        const updated: RunQueueItem = {
+          ...itemWithoutLease,
+          status: 'queued',
+          updatedAt: now,
+        };
+
+        await new Promise<void>((resolve, reject) => {
+          const request = store.put(updated);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
       });
     },
 

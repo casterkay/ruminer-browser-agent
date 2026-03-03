@@ -8,13 +8,19 @@ import { normalizeAndHashNodeDefinition } from './normalize-and-hash';
 import { ledgerUpsertNodeDefinition } from './ledger-upsert';
 import { emosIngestNodeDefinition } from './emos-ingest';
 import { batchingNodeDefinition } from './batching';
+import { scanConversationListNodeDefinition } from './scan-conversation-list';
+import { pageAuthCheckNodeDefinition } from './page-auth-check';
+import { randomDelayNodeDefinition } from './random-delay';
 
 export const ruminerIngestPlugin: RRPlugin = {
   name: 'ruminer-ingest',
   register(ctx) {
     ctx.registerNode(authCheckNodeDefinition);
+    ctx.registerNode(pageAuthCheckNodeDefinition);
     ctx.registerNode(extractListNodeDefinition);
+    ctx.registerNode(scanConversationListNodeDefinition);
     ctx.registerNode(extractMessagesNodeDefinition);
+    ctx.registerNode(randomDelayNodeDefinition);
     ctx.registerNode(batchingNodeDefinition);
     ctx.registerNode(normalizeAndHashNodeDefinition);
     ctx.registerNode(ledgerUpsertNodeDefinition);

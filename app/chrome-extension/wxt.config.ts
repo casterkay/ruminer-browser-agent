@@ -43,6 +43,7 @@ export default defineConfig({
       'activeTab',
       'scripting',
       'contextMenus',
+      'notifications',
       'downloads',
       'webRequest',
       'webNavigation',

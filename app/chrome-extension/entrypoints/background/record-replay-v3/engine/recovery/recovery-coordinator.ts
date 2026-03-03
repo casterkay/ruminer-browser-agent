@@ -6,7 +6,7 @@
  *
  * 恢复策略：
  * - 孤儿 running 项：回收为 queued，等待重新调度（从头重跑）
- * - 孤儿 paused 项：接管 lease，保持 paused 状态
+ * - 孤儿 paused 项：回收为 queued（避免 SW 重启后卡死在 paused）
  * - 已终态 Run 的队列残留：清理
  *
  * 调用时机：
@@ -28,8 +28,8 @@ import type { EventsBus } from '../transport/events-bus';
 export interface RecoveryResult {
   /** 被回收为 queued 的 running Run ID */
   requeuedRunning: RunId[];
-  /** 被接管的 paused Run ID */
-  adoptedPaused: RunId[];
+  /** 被回收为 queued 的 paused Run ID */
+  requeuedPaused: RunId[];
   /** 被清理的已终态 Run ID */
   cleanedTerminal: RunId[];
 }
@@ -113,11 +113,11 @@ export async function recoverFromCrash(deps: RecoveryCoordinatorDeps): Promise<R
   // ==================== Step 2: 恢复孤儿租约 ====================
   // Best-effort：即使失败也不应该阻止启动
   let requeuedRunning: Array<{ runId: RunId; prevOwnerId?: string }> = [];
-  let adoptedPaused: Array<{ runId: RunId; prevOwnerId?: string }> = [];
+  let requeuedPaused: Array<{ runId: RunId; prevOwnerId?: string }> = [];
   try {
     const result = await deps.storage.queue.recoverOrphanLeases(deps.ownerId, now);
     requeuedRunning = result.requeuedRunning;
-    adoptedPaused = result.adoptedPaused;
+    requeuedPaused = result.requeuedPaused;
   } catch (e) {
     logger.error('[Recovery] recoverOrphanLeases failed:', e);
     // 继续执行，不阻止启动
@@ -125,9 +125,23 @@ export async function recoverFromCrash(deps: RecoveryCoordinatorDeps): Promise<R
 
   // ==================== Step 3: 同步 RunRecord 状态 ====================
   const requeuedRunningIds: RunId[] = [];
-  for (const entry of requeuedRunning) {
+  const requeuedPausedIds: RunId[] = [];
+  const toRequeue: Array<{
+    runId: RunId;
+    prevOwnerId?: string;
+    expectedFrom: 'running' | 'paused';
+  }> = [
+    ...requeuedRunning.map((entry) => ({ ...entry, expectedFrom: 'running' as const })),
+    ...requeuedPaused.map((entry) => ({ ...entry, expectedFrom: 'paused' as const })),
+  ];
+
+  for (const entry of toRequeue) {
     const runId = entry.runId;
-    requeuedRunningIds.push(runId);
+    if (entry.expectedFrom === 'running') {
+      requeuedRunningIds.push(runId);
+    } else {
+      requeuedPausedIds.push(runId);
+    }
 
     // 跳过在 Step 1 中已清理的项
     if (cleanedTerminalSet.has(runId)) {
@@ -171,7 +185,12 @@ export async function recoverFromCrash(deps: RecoveryCoordinatorDeps): Promise<R
 
       // 发送恢复事件（best-effort，失败不影响恢复流程）
       try {
-        const fromStatus: 'running' | 'paused' = run.status === 'paused' ? 'paused' : 'running';
+        const fromStatus: 'running' | 'paused' =
+          entry.expectedFrom === 'paused'
+            ? 'paused'
+            : run.status === 'paused'
+              ? 'paused'
+              : 'running';
         await deps.events.append({
           runId,
           type: 'run.recovered',
@@ -181,7 +200,7 @@ export async function recoverFromCrash(deps: RecoveryCoordinatorDeps): Promise<R
           prevOwnerId: entry.prevOwnerId,
           ts: now,
         });
-        logger.info(`[Recovery] Requeued orphan running run: ${runId} (from=${fromStatus})`);
+        logger.info(`[Recovery] Requeued orphan run: ${runId} (from=${fromStatus})`);
       } catch (eventErr) {
         logger.warn('[Recovery] Failed to emit run.recovered event:', runId, eventErr);
         // 继续执行，不影响恢复流程
@@ -191,68 +210,15 @@ export async function recoverFromCrash(deps: RecoveryCoordinatorDeps): Promise<R
     }
   }
 
-  // ==================== Step 4: 同步 adopted paused 的 RunRecord ====================
-  const adoptedPausedIds: RunId[] = [];
-  for (const entry of adoptedPaused) {
-    const runId = entry.runId;
-    adoptedPausedIds.push(runId);
-
-    // 跳过在 Step 1 中已清理的项
-    if (cleanedTerminalSet.has(runId)) {
-      continue;
-    }
-
-    try {
-      const run = await deps.storage.runs.get(runId);
-      if (!run) {
-        // RunRecord 不存在，清理队列项（防御性）
-        try {
-          await deps.storage.queue.markDone(runId, now);
-          cleanedTerminalSet.add(runId);
-        } catch (markDoneErr) {
-          logger.warn(
-            '[Recovery] markDone for missing RunRecord in Step4 failed:',
-            runId,
-            markDoneErr,
-          );
-        }
-        continue;
-      }
-
-      // 跳过已终态的 Run，同时清理队列项
-      if (isTerminalStatus(run.status)) {
-        try {
-          await deps.storage.queue.markDone(runId, now);
-          cleanedTerminalSet.add(runId);
-          logger.debug(
-            `[Recovery] Cleaned terminal queue item in Step4: ${runId} (status=${run.status})`,
-          );
-        } catch (markDoneErr) {
-          logger.warn('[Recovery] markDone for terminal run in Step4 failed:', runId, markDoneErr);
-        }
-        continue;
-      }
-
-      // 如果 RunRecord 状态不是 paused，同步更新
-      if (run.status !== 'paused') {
-        await deps.storage.runs.patch(runId, { status: 'paused' as RunStatus, updatedAt: now });
-      }
-
-      logger.info(`[Recovery] Adopted orphan paused run: ${runId}`);
-    } catch (e) {
-      logger.warn('[Recovery] Reconcile adopted paused failed:', runId, e);
-    }
-  }
-
   const result: RecoveryResult = {
     requeuedRunning: requeuedRunningIds,
-    adoptedPaused: adoptedPausedIds,
+    requeuedPaused: requeuedPausedIds,
     cleanedTerminal: Array.from(cleanedTerminalSet),
   };
 
   logger.info('[Recovery] Complete:', {
     requeuedRunning: result.requeuedRunning.length,
-    adoptedPaused: result.adoptedPaused.length,
+    requeuedPaused: result.requeuedPaused.length,
     cleanedTerminal: result.cleanedTerminal.length,
   });
 

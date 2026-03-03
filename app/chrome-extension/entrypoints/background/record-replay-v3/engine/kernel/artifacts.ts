@@ -6,6 +6,7 @@
 import type { NodeId, RunId } from '../../domain/ids';
 import type { RRError } from '../../domain/errors';
 import { RR_ERROR_CODES, createRRError } from '../../domain/errors';
+import { cdpSessionManager } from '@/utils/cdp-session-manager';
 
 /**
  * 截图结果
@@ -121,6 +122,66 @@ export function createChromeArtifactService(): ArtifactService {
         // Store in memory (in production, this would go to IndexedDB or cloud storage)
         screenshotStore.set(key, base64);
 
+        return { savedAs };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          error: createRRError(RR_ERROR_CODES.INTERNAL, `Save screenshot failed: ${message}`),
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Create an ArtifactService backed by Chrome DevTools Protocol (CDP).
+ * @description
+ * Uses `Page.captureScreenshot` for the specific tab (works even when the tab isn't visible).
+ */
+export function createCdpArtifactService(): ArtifactService {
+  // In-memory storage for screenshots (could be replaced with IndexedDB)
+  const screenshotStore = new Map<string, string>();
+
+  return {
+    screenshot: async (tabId, options) => {
+      try {
+        const format = options?.format ?? 'png';
+        const quality = options?.quality ?? 80;
+
+        const { data } = await cdpSessionManager.withSession(tabId, 'rr_v3:artifact', async () => {
+          return await cdpSessionManager.sendCommand<{ data: string }>(
+            tabId,
+            'Page.captureScreenshot',
+            {
+              format,
+              quality: format === 'jpeg' ? quality : undefined,
+              fromSurface: true,
+            },
+          );
+        });
+
+        if (typeof data !== 'string' || data.length === 0) {
+          return {
+            ok: false,
+            error: createRRError(RR_ERROR_CODES.INTERNAL, 'CDP screenshot returned empty data'),
+          };
+        }
+
+        return { ok: true, base64: data };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          ok: false,
+          error: createRRError(RR_ERROR_CODES.INTERNAL, `CDP screenshot failed: ${message}`),
+        };
+      }
+    },
+
+    saveScreenshot: async (runId, nodeId, base64, filename) => {
+      try {
+        const savedAs = filename ?? `${runId}_${nodeId}_${Date.now()}.png`;
+        const key = `${runId}/${savedAs}`;
+        screenshotStore.set(key, base64);
         return { savedAs };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

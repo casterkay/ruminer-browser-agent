@@ -90,6 +90,8 @@ app/
 │   │   │   │   └── ledger-policy.ts
 │   │   │   ├── semantic-similarity.ts
 │   │   │   ├── storage-manager.ts
+│   │   │   ├── tool-selection
+│   │   │   │   └── resolve.ts
 │   │   │   ├── tools
 │   │   │   │   ├── base-browser.ts
 │   │   │   │   ├── browser
@@ -421,4 +423,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-96 directories, 301 files
+97 directories, 302 files

@@ -71,7 +71,7 @@
         />
       </label>
       <label class="settings-field">
-        <span class="settings-field-label">Auth Token (optional on localhost)</span>
+        <span class="settings-field-label">Auth Token</span>
         <input
           v-model="gatewayAuthToken"
           class="settings-field-input"

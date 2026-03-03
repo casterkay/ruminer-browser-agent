@@ -583,7 +583,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
         <input data-id="gatewayWsUrl" class="qp-settings-field-input" type="text" placeholder="ws://127.0.0.1:18789"/>
       </label>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Auth Token (optional on localhost)</span>
+        <span class="qp-settings-field-label">Auth Token</span>
         <input data-id="gatewayAuthToken" class="qp-settings-field-input" type="password" placeholder="gateway token"/>
       </label>
       <div data-id="gatewayStatus" class="qp-settings-status" hidden></div>
