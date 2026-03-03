@@ -32,9 +32,13 @@
             class="inline-flex items-center justify-center w-4 h-4 flex-shrink-0"
             :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
           >
-            <ILucideBot v-if="engine.name === 'openclaw'" class="w-4 h-4" />
-            <ILucideCode v-else-if="engine.name === 'claude'" class="w-4 h-4" />
-            <ILucideTerminal v-else-if="engine.name === 'codex'" class="w-4 h-4" />
+            <img
+              v-if="getEngineIconUrl(engine.name)"
+              :src="getEngineIconUrl(engine.name)"
+              alt=""
+              class="w-4 h-4 rounded-full object-cover"
+              :style="{ backgroundColor: 'var(--ac-surface, #ffffff)' }"
+            />
             <ILucidePointer v-else-if="engine.name === 'cursor'" class="w-4 h-4" />
             <ILucideSparkles v-else-if="engine.name === 'qwen'" class="w-4 h-4" />
             <ILucideBrain v-else-if="engine.name === 'glm'" class="w-4 h-4" />
@@ -64,9 +68,6 @@
 
 <script lang="ts" setup>
 import type { AgentEngineInfo } from 'chrome-mcp-shared';
-import ILucideBot from '~icons/lucide/bot';
-import ILucideCode from '~icons/lucide/code';
-import ILucideTerminal from '~icons/lucide/terminal';
 import ILucidePointer from '~icons/lucide/mouse-pointer-2';
 import ILucideSparkles from '~icons/lucide/sparkles';
 import ILucideBrain from '~icons/lucide/brain';
@@ -81,6 +82,30 @@ defineProps<{
 defineEmits<{
   'engine:select': [engineName: string];
 }>();
+
+function getEngineIconUrl(engineName: string): string {
+  const normalized = engineName.trim();
+  const path =
+    normalized === 'openclaw'
+      ? 'engine-icons/openclaw.svg'
+      : normalized === 'claude'
+        ? 'engine-icons/claude.png'
+        : normalized === 'codex'
+          ? 'engine-icons/codex.svg'
+          : '';
+
+  if (!path) return '';
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+      return chrome.runtime.getURL(path);
+    }
+  } catch {
+    // ignore
+  }
+
+  return `/${path}`;
+}
 
 function toDisplayName(engineName: string): string {
   switch (engineName) {

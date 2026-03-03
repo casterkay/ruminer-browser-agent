@@ -210,7 +210,7 @@ function formatSource(suggestion: MemorySuggestion): string {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 2rem 1.25rem;
+  padding: 12rem 1.25rem;
 }
 
 .memory-suggestion-layout {

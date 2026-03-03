@@ -33,10 +33,28 @@
             data-tooltip="Select engine"
             @click="$emit('toggle:engineMenu')"
           >
-            <span>{{ brandLabel || 'Agent' }}</span>
+            <span class="inline-flex items-center gap-2">
+              <img
+                v-if="brandIconUrl"
+                :src="brandIconUrl"
+                alt=""
+                class="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                :style="{ backgroundColor: 'var(--ac-surface)' }"
+              />
+              <span>{{ brandLabel || 'Agent' }}</span>
+            </span>
             <ILucideChevronDown class="w-4 h-4" :style="{ color: 'var(--ac-text-subtle)' }" />
           </button>
-          <span v-else>{{ brandLabel || 'Agent' }}</span>
+          <span v-else class="inline-flex items-center gap-2">
+            <img
+              v-if="brandIconUrl"
+              :src="brandIconUrl"
+              alt=""
+              class="w-5 h-5 rounded-full object-cover flex-shrink-0"
+              :style="{ backgroundColor: 'var(--ac-surface)' }"
+            />
+            <span>{{ brandLabel || 'Agent' }}</span>
+          </span>
         </h1>
 
         <!-- Connection Indicator (left, after engine name) -->
@@ -94,6 +112,8 @@ const props = defineProps<{
   showBackButton?: boolean;
   /** Brand label to display (e.g., "Claude Code", "Codex") */
   brandLabel?: string;
+  /** Engine name for resolving brand icon asset (e.g., "openclaw", "claude") */
+  brandEngineName?: string;
   /** Whether current chat is empty; enables engine switching affordance */
   isEmptyChat?: boolean;
 }>();
@@ -128,5 +148,33 @@ const connectionText = computed(() => {
     default:
       return 'Disconnected';
   }
+});
+
+const brandIconUrl = computed(() => {
+  const engineName = props.brandEngineName?.trim();
+  if (!engineName) return '';
+
+  const path =
+    engineName === 'openclaw'
+      ? 'engine-icons/openclaw.svg'
+      : engineName === 'claude'
+        ? 'engine-icons/claude.png'
+        : engineName === 'codex'
+          ? 'engine-icons/codex.svg'
+          : '';
+
+  if (!path) return '';
+
+  try {
+    // Prefer extension-safe URL in sidepanel context
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+      return chrome.runtime.getURL(path);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Dev/preview fallback
+  return `/${path}`;
 });
 </script>

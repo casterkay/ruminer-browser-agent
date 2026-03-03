@@ -35,6 +35,7 @@
             :connection-state="connectionState"
             :show-back-button="true"
             :brand-label="engineDisplayName"
+            :brand-engine-name="currentEngineName"
             :is-empty-chat="threadState.threads.value.length === 0"
             @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
