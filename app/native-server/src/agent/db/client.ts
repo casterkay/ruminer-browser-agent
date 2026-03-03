@@ -4,9 +4,9 @@
  * Uses Node's built-in `node:sqlite` (DatabaseSync) to avoid native addon binding issues
  * from packages like `better-sqlite3`.
  */
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { getAgentDataDir, getDatabasePath } from '../storage';
 
 // ============================================================
@@ -82,6 +82,25 @@ CREATE INDEX IF NOT EXISTS messages_project_id_idx ON messages(project_id);
 CREATE INDEX IF NOT EXISTS messages_session_id_idx ON messages(session_id);
 CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages(created_at);
 CREATE INDEX IF NOT EXISTS messages_request_id_idx ON messages(request_id);
+
+-- OpenClaw Gateway settings (native-server owned)
+CREATE TABLE IF NOT EXISTS openclaw_gateway_settings (
+  id TEXT PRIMARY KEY,
+  ws_url TEXT NOT NULL,
+  auth_token TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_test_ok_at TEXT,
+  last_test_error TEXT
+);
+
+-- OpenClaw device identity (Ed25519 keys + derived deviceId)
+CREATE TABLE IF NOT EXISTS openclaw_device_identity (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  private_key TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
 `;
 
 // ============================================================

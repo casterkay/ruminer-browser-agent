@@ -353,6 +353,7 @@ app/
 │   │   │   ├── engines
 │   │   │   │   ├── claude.ts
 │   │   │   │   ├── codex.ts
+│   │   │   │   ├── openclaw.ts
 │   │   │   │   └── types.ts
 │   │   │   ├── message-service.ts
 │   │   │   ├── open-project.ts
@@ -411,4 +412,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-94 directories, 293 files
+94 directories, 294 files

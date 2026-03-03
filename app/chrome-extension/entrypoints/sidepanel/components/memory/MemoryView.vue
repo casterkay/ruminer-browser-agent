@@ -111,7 +111,7 @@ import { useEmosSearch, type MemoryItem } from '../../composables/useEmosSearch'
 
 const memory = useEmosSearch();
 const detailsOpen = ref(false);
-const ALL_PLATFORMS = ['agent', 'chatgpt', 'gemini', 'claude', 'deepseek'] as const;
+const ALL_PLATFORMS = ['openclaw', 'chatgpt', 'gemini', 'claude', 'deepseek'] as const;
 
 const LIVE_SEARCH_DEBOUNCE_MS = 250;
 const KNOWN_PLATFORM_LABELS: Record<string, string> = {

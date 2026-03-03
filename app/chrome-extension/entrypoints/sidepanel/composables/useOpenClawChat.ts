@@ -1,10 +1,10 @@
-import { computed, onUnmounted, ref, type Ref } from 'vue';
 import {
   buildToolGroupRestrictionText,
   getIndividualToolState,
   getToolGroupState,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
+import { computed, onUnmounted, ref, type Ref } from 'vue';
 import type { GatewayEvent, UseOpenClawGateway } from './useOpenClawGateway';
 
 export type ChatRole = 'user' | 'assistant' | 'tool' | 'system';
@@ -559,7 +559,7 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
       return;
     }
 
-    if (event.event === 'agent') {
+    if (event.event === 'openclaw') {
       const payload: any = event.payload;
       const toolEvent = parseToolEvent(payload);
       if (toolEvent) {

@@ -38,7 +38,7 @@ export interface QuickPanelAiChatPanelOptions {
   /** Agent bridge for background communication */
   agentBridge: QuickPanelAgentBridge;
 
-  /** Header title. Default: "Agent" */
+  /** Header title. Default: "Ruminer Agent" */
   title?: string;
   /** Header subtitle. Default: "Quick Panel" */
   subtitle?: string;
@@ -79,7 +79,7 @@ export interface QuickPanelAiChatPanelManager {
 
 const LOG_PREFIX = '[QuickPanelAiChatPanel]';
 
-const DEFAULT_TITLE = 'Agent';
+const DEFAULT_TITLE = 'Ruminer Agent';
 const DEFAULT_SUBTITLE = 'Quick Panel';
 const DEFAULT_PLACEHOLDER = 'Ask the agent...';
 

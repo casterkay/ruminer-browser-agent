@@ -123,7 +123,7 @@ const emit = defineEmits<{
 }>();
 
 const platformOptions = [
-  { label: 'OpenClaw', value: 'agent' },
+  { label: 'OpenClaw', value: 'openclaw' },
   { label: 'ChatGPT', value: 'chatgpt' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'Claude', value: 'claude' },

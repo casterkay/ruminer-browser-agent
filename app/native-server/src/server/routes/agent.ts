@@ -8,55 +8,73 @@
  * - Chat actions (act, cancel)
  * - Engine listing
  */
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { HTTP_STATUS, ERROR_MESSAGES } from '../../constant';
-import { AgentStreamManager } from '../../agent/stream-manager';
+import type {
+  AttachmentCleanupRequest,
+  AttachmentCleanupResponse,
+  AttachmentStatsResponse,
+  GetOpenClawGatewaySettingsResponse,
+  OpenProjectRequest,
+  OpenProjectTarget,
+  TestOpenClawGatewayResponse,
+  UpdateOpenClawGatewaySettingsRequest,
+  UpdateOpenClawGatewaySettingsResponse,
+} from 'chrome-mcp-shared';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { attachmentService } from '../../agent/attachment-service';
 import { AgentChatService } from '../../agent/chat-service';
-import type { AgentActRequest, AgentActResponse, RealtimeEvent } from '../../agent/types';
-import type { CreateOrUpdateProjectInput } from '../../agent/project-types';
-import {
-  createProjectDirectory,
-  deleteProject,
-  listProjects,
-  upsertProject,
-  validateRootPath,
-} from '../../agent/project-service';
+import { openDirectoryPicker } from '../../agent/directory-picker';
+import type { EngineName } from '../../agent/engines/types';
 import {
   createMessage as createStoredMessage,
   deleteMessagesByProjectId,
   deleteMessagesBySessionId,
   getMessagesByProjectId,
-  getMessagesCountByProjectId,
   getMessagesBySessionId,
+  getMessagesCountByProjectId,
   getMessagesCountBySessionId,
 } from '../../agent/message-service';
+import { openFileInVSCode, openProjectDirectory } from '../../agent/open-project';
+import { getOrCreateOpenClawDeviceIdentity } from '../../agent/openclaw/device-identity';
+import { OpenClawGatewayClient } from '../../agent/openclaw/gateway-client';
+import {
+  getOpenClawGatewaySettings,
+  recordOpenClawGatewayTestResult,
+  updateOpenClawGatewaySettings,
+} from '../../agent/openclaw/settings-service';
+import {
+  createProjectDirectory,
+  deleteProject,
+  getProject,
+  listProjects,
+  upsertProject,
+  validateRootPath,
+} from '../../agent/project-service';
+import type { CreateOrUpdateProjectInput } from '../../agent/project-types';
 import {
   createSession,
   deleteSession,
+  getAllSessions,
   getSession,
   getSessionsByProject,
   getSessionsByProjectAndEngine,
-  getAllSessions,
   updateSession,
   type CreateSessionOptions,
   type UpdateSessionInput,
 } from '../../agent/session-service';
-import { getProject } from '../../agent/project-service';
-import { getDefaultWorkspaceDir, getDefaultProjectRoot } from '../../agent/storage';
-import { openDirectoryPicker } from '../../agent/directory-picker';
-import type { EngineName } from '../../agent/engines/types';
-import { attachmentService } from '../../agent/attachment-service';
-import { openProjectDirectory, openFileInVSCode } from '../../agent/open-project';
-import type {
-  AttachmentStatsResponse,
-  AttachmentCleanupRequest,
-  AttachmentCleanupResponse,
-  OpenProjectRequest,
-  OpenProjectTarget,
-} from 'chrome-mcp-shared';
+import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/storage';
+import { AgentStreamManager } from '../../agent/stream-manager';
+import type { AgentActRequest, AgentActResponse, RealtimeEvent } from '../../agent/types';
+import { ERROR_MESSAGES, HTTP_STATUS } from '../../constant';
 
 // Valid engine names for validation
-const VALID_ENGINE_NAMES: readonly EngineName[] = ['claude', 'codex', 'cursor', 'qwen', 'glm'];
+const VALID_ENGINE_NAMES: readonly EngineName[] = [
+  'openclaw',
+  'claude',
+  'codex',
+  'cursor',
+  'qwen',
+  'glm',
+];
 
 function isValidEngineName(name: string): name is EngineName {
   return VALID_ENGINE_NAMES.includes(name as EngineName);
@@ -103,6 +121,125 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
           .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
           .send({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
       }
+    }
+  });
+
+  // ============================================================
+  // OpenClaw Gateway Settings (native-server owned)
+  // ============================================================
+
+  fastify.get('/agent/openclaw/settings', async (_request, reply) => {
+    try {
+      const settings = await getOpenClawGatewaySettings();
+      const identity = await getOrCreateOpenClawDeviceIdentity();
+      const body: GetOpenClawGatewaySettingsResponse = {
+        settings: {
+          wsUrl: settings.wsUrl,
+          authToken: settings.authToken,
+          deviceId: identity.deviceId,
+          updatedAt: settings.updatedAt,
+          lastTestOkAt: settings.lastTestOkAt,
+          lastTestError: settings.lastTestError,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/openclaw/settings',
+    async (
+      request: FastifyRequest<{ Body: UpdateOpenClawGatewaySettingsRequest }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const body = request.body || {};
+
+        const patch: { wsUrl?: string; authToken?: string } = {};
+        if (typeof body.wsUrl === 'string') {
+          const trimmed = body.wsUrl.trim();
+          if (!trimmed) {
+            return reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'wsUrl must not be empty' });
+          }
+          let parsed: URL;
+          try {
+            parsed = new URL(trimmed);
+          } catch {
+            return reply
+              .status(HTTP_STATUS.BAD_REQUEST)
+              .send({ error: 'wsUrl must be a valid URL' });
+          }
+          if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+            return reply
+              .status(HTTP_STATUS.BAD_REQUEST)
+              .send({ error: 'wsUrl protocol must be ws: or wss:' });
+          }
+          patch.wsUrl = trimmed;
+        }
+        if (typeof body.authToken === 'string') {
+          patch.authToken = body.authToken;
+        }
+
+        const settings = await updateOpenClawGatewaySettings(patch);
+        const identity = await getOrCreateOpenClawDeviceIdentity();
+
+        const resBody: UpdateOpenClawGatewaySettingsResponse = {
+          settings: {
+            wsUrl: settings.wsUrl,
+            authToken: settings.authToken,
+            deviceId: identity.deviceId,
+            updatedAt: settings.updatedAt,
+            lastTestOkAt: settings.lastTestOkAt,
+            lastTestError: settings.lastTestError,
+          },
+        };
+
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post('/agent/openclaw/test', async (_request, reply) => {
+    const identity = await getOrCreateOpenClawDeviceIdentity();
+    try {
+      const settings = await getOpenClawGatewaySettings();
+      const client = new OpenClawGatewayClient({
+        wsUrl: settings.wsUrl,
+        authToken: settings.authToken,
+        clientInfo: {
+          id: 'node-host',
+          version: '0.1.0',
+          platform: process.platform,
+          mode: 'node',
+        },
+      });
+
+      await client.connect();
+      client.close();
+
+      await recordOpenClawGatewayTestResult({ ok: true, message: null });
+
+      const resBody: TestOpenClawGatewayResponse = {
+        ok: true,
+        message: 'OpenClaw Gateway connect OK',
+        deviceId: identity.deviceId,
+      };
+      reply.status(HTTP_STATUS.OK).send(resBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await recordOpenClawGatewayTestResult({ ok: false, message });
+      const resBody: TestOpenClawGatewayResponse = {
+        ok: false,
+        message,
+        deviceId: identity.deviceId,
+      };
+      reply.status(HTTP_STATUS.OK).send(resBody);
     }
   });
 

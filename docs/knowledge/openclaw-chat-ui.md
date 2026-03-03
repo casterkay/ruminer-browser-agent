@@ -14,7 +14,7 @@ To implement a chat UI for OpenClaw, connect to the Gateway WebSocket and use th
    - `chat.inject(sessionKey, message)` to append an assistant note without running the agent [6](#0-5) .
 
 3. **Subscribe to events**
-   - After handshake, listen for server‑push events: `chat` (message updates), `agent` (streaming tool output), `presence`, `tick`, `health`, `shutdown` [7](#0-6) .
+   - After handshake, listen for server‑push events: `chat` (message updates), `openclaw` (streaming tool output), `presence`, `tick`, `health`, `shutdown` [7](#0-6) .
    - Map these to UI state (e.g., append streaming assistant text, show tool calls).
 
 4. **Session handling**
@@ -23,7 +23,7 @@ To implement a chat UI for OpenClaw, connect to the Gateway WebSocket and use th
 ### Example patterns from the codebase
 
 - **Swift/macOS**: `MacGatewayChatTransport` implements `OpenClawChatTransport` by calling `GatewayConnection.shared` methods (`chatHistory`, `chatSend`, `abortRun`) and mapping Gateway push events to `OpenClawChatTransportEvent` [9](#0-8) [10](#0-9) .
-- **TypeScript/TUI**: `GatewayChatClient` wraps `GatewayClient`, sets role/mode/caps, and exposes `onEvent` for `chat`/`agent`/`tick` [11](#0-10) .
+- **TypeScript/TUI**: `GatewayChatClient` wraps `GatewayClient`, sets role/mode/caps, and exposes `onEvent` for `chat`/`openclaw`/`tick` [11](#0-10) .
 - **Web UI (Control UI)**: The Vite+Lit SPA at `http://<host>:18789/` speaks directly to the Gateway WebSocket on the same port [12](#0-11) .
 - **ChatViewModel**: Manages messages, pending runs, and tool calls by calling the transport’s `sendMessage` and handling events in `handleTransportEvent` [13](#0-12) [14](#0-13) .
 
@@ -37,12 +37,13 @@ To implement a chat UI for OpenClaw, connect to the Gateway WebSocket and use th
 
 - Connect to Gateway WebSocket, perform `connect` handshake with auth.
 - Use `chat.history`, `chat.send`, `chat.abort`, `chat.inject`.
-- Listen for `chat`, `agent`, `presence`, `tick`, `health`, `shutdown` events.
+- Listen for `chat`, `openclaw`, `presence`, `tick`, `health`, `shutdown` events.
 - No separate chat server is needed; the Gateway is the source of truth [17](#0-16) .
 
 ## Notes
 
 - The Gateway validates all frames against JSON Schema; ensure your client sends well‑formed requests [18](#0-17) .
+- OpenClaw Gateway emits streaming tool output as `agent` events (with `stream: "tool"` in the payload). Ruminer’s clients normalize this to `openclaw`.
 - For remote access, Tailscale Serve is preferred over direct LAN binding for security [15](#0-14) .
 - If you need node capabilities (e.g., camera, canvas), connect with `role: "node"` and handle `node.invoke` commands; this is separate from the chat UI flow [19](#0-18) .
 - The Control UI’s source is in the repo under `ui/` and can be referenced as a working example of a web-based chat client [12](#0-11) .

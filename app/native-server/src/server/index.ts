@@ -8,26 +8,27 @@
  * - MCP transport handling
  * - Server lifecycle management
  */
-import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
-import {
-  NATIVE_SERVER_PORT,
-  TIMEOUTS,
-  SERVER_CONFIG,
-  HTTP_STATUS,
-  ERROR_MESSAGES,
-} from '../constant';
-import { NativeMessagingHost } from '../native-messaging-host';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { randomUUID } from 'node:crypto';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import { getMcpServer } from '../mcp/mcp-server';
-import { AgentStreamManager } from '../agent/stream-manager';
+import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { AgentChatService } from '../agent/chat-service';
-import { CodexEngine } from '../agent/engines/codex';
-import { ClaudeEngine } from '../agent/engines/claude';
 import { closeDb } from '../agent/db';
+import { ClaudeEngine } from '../agent/engines/claude';
+import { CodexEngine } from '../agent/engines/codex';
+import { OpenClawEngine } from '../agent/engines/openclaw';
+import { AgentStreamManager } from '../agent/stream-manager';
+import {
+  ERROR_MESSAGES,
+  HTTP_STATUS,
+  NATIVE_SERVER_PORT,
+  SERVER_CONFIG,
+  TIMEOUTS,
+} from '../constant';
+import { getMcpServer } from '../mcp/mcp-server';
+import { NativeMessagingHost } from '../native-messaging-host';
 import { registerAgentRoutes } from './routes';
 
 // ============================================================
@@ -55,7 +56,7 @@ export class Server {
     this.fastify = Fastify({ logger: SERVER_CONFIG.LOGGER_ENABLED });
     this.agentStreamManager = new AgentStreamManager();
     this.agentChatService = new AgentChatService({
-      engines: [new CodexEngine(), new ClaudeEngine()],
+      engines: [new OpenClawEngine(), new CodexEngine(), new ClaudeEngine()],
       streamManager: this.agentStreamManager,
     });
     this.setupPlugins();

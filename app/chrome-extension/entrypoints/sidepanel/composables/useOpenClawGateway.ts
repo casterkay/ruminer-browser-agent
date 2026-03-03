@@ -1,11 +1,11 @@
-import { onUnmounted, ref, type Ref } from 'vue';
-import { getGatewaySettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
   buildSignedConnectParams,
   extractConnectChallengeNonce,
   OPENCLAW_CLIENT_IDS,
   OPENCLAW_CLIENT_MODES,
 } from '@/entrypoints/shared/utils/openclaw-device-auth';
+import { getGatewaySettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { onUnmounted, ref, type Ref } from 'vue';
 
 export interface GatewayEvent {
   event: string;
@@ -84,6 +84,11 @@ export function useOpenClawGateway(): UseOpenClawGateway {
   const pendingRequests = new Map<string, PendingRequest>();
   const listeners = new Set<(event: GatewayEvent) => void>();
 
+  function normalizeEventName(eventName: string): string {
+    // OpenClaw Gateway emits `agent` for streaming tool output; Ruminer standardizes this as `openclaw`.
+    return eventName === 'agent' ? 'openclaw' : eventName;
+  }
+
   function clearReconnectTimer(): void {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -101,7 +106,7 @@ export function useOpenClawGateway(): UseOpenClawGateway {
 
   function emitEvent(frame: EventFrame): void {
     const event: GatewayEvent = {
-      event: frame.event,
+      event: normalizeEventName(frame.event),
       seq: frame.seq,
       payload: frame.payload,
     };

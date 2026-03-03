@@ -3,7 +3,7 @@
     <div v-if="threads.length === 0" class="empty-mode">
       <div v-if="trimmedQuery.length >= 3" class="memory-suggestion-layout">
         <div class="memory-suggestion-header">
-          <strong>Memory Matches</strong>
+          <strong>Related Memories</strong>
           <span>{{ memoryLoading ? 'Searching...' : `${memorySuggestions.length} found` }}</span>
         </div>
 
@@ -49,16 +49,45 @@
           </template>
         </div>
       </div>
-      <div v-else class="empty-state-placeholder">
+      <div v-else class="empty-state-placeholder flex flex-col items-center">
         <p
-          class="text-2xl italic opacity-40"
+          class="text-2xl italic mb-6"
           :style="{
             fontFamily: 'var(--ac-font-heading)',
             color: 'var(--ac-text-subtle)',
+            opacity: 0.4,
           }"
         >
           How can I help you today?
         </p>
+
+        <div
+          v-if="engines?.length"
+          class="flex items-center gap-2 mt-4 opacity-80"
+          :style="{ color: 'var(--ac-text)' }"
+        >
+          <span class="text-xs font-medium">Engine:</span>
+          <select
+            :value="currentEngine"
+            @change="$emit('engine:change', ($event.target as HTMLSelectElement).value)"
+            class="border border-slate-200 dark:border-slate-700 rounded px-3 py-1.5 text-xs bg-transparent focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+          >
+            <option
+              v-for="e in engines"
+              :key="e.name"
+              :value="e.name"
+              class="bg-white dark:bg-slate-800"
+            >
+              {{
+                e.name === 'openclaw'
+                  ? 'OpenClaw'
+                  : e.name === 'claude'
+                    ? 'Claude Code'
+                    : e.name.charAt(0).toUpperCase() + e.name.slice(1)
+              }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -86,6 +115,7 @@ import type { MemorySuggestion } from '../../composables/useEmosSuggestions';
 import type { MemoryItem } from '../../composables/useEmosSearch';
 import AgentRequestThread from './AgentRequestThread.vue';
 import MemoryItemDetails from '../memory/MemoryItemDetails.vue';
+import type { AgentEngineInfo } from 'chrome-mcp-shared';
 
 const props = withDefaults(
   defineProps<{
@@ -94,14 +124,22 @@ const props = withDefaults(
     memorySuggestions?: MemorySuggestion[];
     memoryLoading?: boolean;
     memoryError?: string | null;
+    engines?: AgentEngineInfo[];
+    currentEngine?: string;
   }>(),
   {
     searchQuery: '',
     memorySuggestions: () => [],
     memoryLoading: false,
     memoryError: null,
+    engines: () => [],
+    currentEngine: '',
   },
 );
+
+const emit = defineEmits<{
+  'engine:change': [engineName: string];
+}>();
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 const trimmedQuery = computed(() => props.searchQuery.trim());

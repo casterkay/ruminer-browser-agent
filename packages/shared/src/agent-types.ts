@@ -80,7 +80,7 @@ export interface AgentAttachment {
   dataBase64: string;
 }
 
-export type AgentCliPreference = 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+export type AgentCliPreference = 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
 
 export interface AgentActRequest {
   instruction: string;
@@ -124,6 +124,38 @@ export interface AgentActResponse {
   requestId: string;
   sessionId: string;
   status: 'accepted';
+}
+
+// ============================================================
+// OpenClaw Gateway Settings API
+// ============================================================
+
+export interface OpenClawGatewaySettingsDto {
+  wsUrl: string;
+  authToken: string;
+  deviceId: string;
+  updatedAt: string;
+  lastTestOkAt: string | null;
+  lastTestError: string | null;
+}
+
+export interface GetOpenClawGatewaySettingsResponse {
+  settings: OpenClawGatewaySettingsDto;
+}
+
+export interface UpdateOpenClawGatewaySettingsRequest {
+  wsUrl?: string;
+  authToken?: string;
+}
+
+export interface UpdateOpenClawGatewaySettingsResponse {
+  settings: OpenClawGatewaySettingsDto;
+}
+
+export interface TestOpenClawGatewayResponse {
+  ok: boolean;
+  message: string;
+  deviceId: string;
 }
 
 // ============================================================

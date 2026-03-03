@@ -691,7 +691,7 @@ a flow, run the flow, and verify it executes the recorded actions.
   the extension Options, ingestion workflows MUST be disabled with a
   clear message directing the user to configure EMOS.
 - **FR-034**: Without OpenClaw connected, the extension UI MUST render
-  but clearly indicate that chat/agent features are unavailable.
+  but clearly indicate that chat/openclaw features are unavailable.
   Ingestion workflows remain available as long as EMOS is configured.
 
 ### Key Entities

@@ -51,6 +51,9 @@
             :memory-suggestions="emosSuggestions.suggestions.value"
             :memory-loading="emosSuggestions.loading.value"
             :memory-error="emosSuggestions.error.value"
+            :engines="server.engines.value"
+            :current-engine="currentEngineName"
+            @engine:change="handleEmptyChatEngineChange"
           />
         </template>
 
@@ -419,6 +422,8 @@ const currentEngineName = computed(() => sessions.selectedSession.value?.engineN
 const engineDisplayName = computed(() => {
   const name = currentEngineName.value;
   switch (name) {
+    case 'openclaw':
+      return 'OpenClaw';
     case 'claude':
       return 'Claude Code';
     case 'codex':
@@ -650,7 +655,8 @@ async function handleNewSession(): Promise<void> {
   clearRequestState();
 
   const engineName =
-    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+    (selectedCli.value as 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') ||
+    'openclaw';
 
   // Include engine-specific defaults
   const optionsConfig =
@@ -949,7 +955,13 @@ async function handleSaveSettings(): Promise<void> {
     // If CLI changed, create a new empty session with the new CLI
     const cliChanged = previousCli !== selectedCli.value;
     if (cliChanged && selectedCli.value) {
-      const engineName = selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+      const engineName = selectedCli.value as
+        | 'openclaw'
+        | 'claude'
+        | 'codex'
+        | 'cursor'
+        | 'qwen'
+        | 'glm';
 
       // Include codex config if using codex engine
       const optionsConfig =
@@ -1061,7 +1073,8 @@ async function handleNewSessionAndNavigate(): Promise<void> {
   clearRequestState();
 
   const engineName =
-    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+    (selectedCli.value as 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') ||
+    'openclaw';
   const optionsConfig =
     engineName === 'codex'
       ? {
@@ -1171,6 +1184,14 @@ function handleAttachmentAdd(): void {
   input.multiple = true;
   input.onchange = (e) => attachments.handleFileSelect(e);
   input.click();
+}
+
+async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (!sessionId) return;
+
+  // Actually update the session engine
+  await sessions.updateSession(sessionId, { engineName });
 }
 
 // Send handler

@@ -1,5 +1,5 @@
-import type { AgentAttachment, RealtimeEvent } from '../types';
 import type { CodexEngineConfig } from 'chrome-mcp-shared';
+import type { AgentAttachment, AgentCliPreference, RealtimeEvent } from '../types';
 
 export interface EngineInitOptions {
   sessionId: string;
@@ -95,7 +95,7 @@ export interface ClaudeManagementInfo {
  */
 export type ManagementInfoPersistCallback = (info: ClaudeManagementInfo) => Promise<void>;
 
-export type EngineName = 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+export type EngineName = AgentCliPreference;
 
 export interface EngineExecutionContext {
   /**
