@@ -227,7 +227,7 @@ const fallbackMessages: Record<string, string> = {
   bookmarksBar: 'Bookmarks Bar',
 
   // Chat composer placeholders
-  chatPlaceholderEmpty: 'Type to search memory or chat with assistant...',
+  chatPlaceholderEmpty: 'Type to search memory or chat with AI...',
   chatPlaceholderNonempty: 'Send a message to assistant...',
 
   // System settings notifications

@@ -357,6 +357,11 @@ app/
 │   │   │   │   └── types.ts
 │   │   │   ├── message-service.ts
 │   │   │   ├── open-project.ts
+│   │   │   ├── openclaw
+│   │   │   │   ├── device-auth.ts
+│   │   │   │   ├── device-identity.ts
+│   │   │   │   ├── gateway-client.ts
+│   │   │   │   └── settings-service.ts
 │   │   │   ├── project-service.ts
 │   │   │   ├── project-types.ts
 │   │   │   ├── session-service.ts
@@ -412,4 +417,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-94 directories, 294 files
+95 directories, 298 files

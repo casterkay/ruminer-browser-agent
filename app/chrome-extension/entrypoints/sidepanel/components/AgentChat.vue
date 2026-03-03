@@ -35,9 +35,11 @@
             :connection-state="connectionState"
             :show-back-button="true"
             :brand-label="engineDisplayName"
+            :is-empty-chat="threadState.threads.value.length === 0"
             @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
             @toggle:session-menu="toggleSessionMenu"
+            @toggle:engine-menu="toggleEngineMenu"
             @toggle:open-project-menu="toggleOpenProjectMenu"
             @back="handleBackToSessions"
           />
@@ -100,7 +102,7 @@
 
     <!-- Click-outside handler for menus (z-40) -->
     <div
-      v-if="projectMenuOpen || sessionMenuOpen || openProjectMenuOpen"
+      v-if="projectMenuOpen || sessionMenuOpen || engineMenuOpen || openProjectMenuOpen"
       class="fixed inset-0 z-40"
       @click="closeMenus"
     />
@@ -140,6 +142,13 @@
       @session:new="handleNewSession"
       @session:delete="handleDeleteSession"
       @session:rename="handleRenameSession"
+    />
+
+    <AgentEngineMenu
+      :open="engineMenuOpen"
+      :engines="server.engines.value"
+      :current-engine="currentEngineName"
+      @engine:select="handleEmptyChatEngineChange"
     />
 
     <AgentOpenProjectMenu
@@ -214,6 +223,7 @@ import {
   AgentConversation,
   AgentProjectMenu,
   AgentSessionMenu,
+  AgentEngineMenu,
   AgentSessionSettingsPanel,
   AgentToolSelectionPanel,
   AgentSessionsView,
@@ -272,6 +282,7 @@ function getNormalizedReasoningEffort(): CodexReasoningEffort {
 const isPickingDirectory = ref(false);
 const projectMenuOpen = ref(false);
 const sessionMenuOpen = ref(false);
+const engineMenuOpen = ref(false);
 const openProjectMenuOpen = ref(false);
 
 // Open project context: which session/project to open when menu selects
@@ -545,6 +556,7 @@ function toggleProjectMenu(): void {
   projectMenuOpen.value = !projectMenuOpen.value;
   if (projectMenuOpen.value) {
     sessionMenuOpen.value = false;
+    engineMenuOpen.value = false;
     openProjectMenuOpen.value = false;
   }
 }
@@ -553,6 +565,19 @@ function toggleSessionMenu(): void {
   sessionMenuOpen.value = !sessionMenuOpen.value;
   if (sessionMenuOpen.value) {
     projectMenuOpen.value = false;
+    engineMenuOpen.value = false;
+    openProjectMenuOpen.value = false;
+  }
+}
+
+function toggleEngineMenu(): void {
+  if (threadState.threads.value.length > 0) {
+    return;
+  }
+  engineMenuOpen.value = !engineMenuOpen.value;
+  if (engineMenuOpen.value) {
+    projectMenuOpen.value = false;
+    sessionMenuOpen.value = false;
     openProjectMenuOpen.value = false;
   }
 }
@@ -562,6 +587,7 @@ function toggleOpenProjectMenu(): void {
   if (openProjectMenuOpen.value) {
     projectMenuOpen.value = false;
     sessionMenuOpen.value = false;
+    engineMenuOpen.value = false;
     // Set context to current session from chat view
     const sessionId = sessions.selectedSessionId.value;
     if (sessionId) {
@@ -595,6 +621,7 @@ async function handleSessionOpenProject(sessionId: string): Promise<void> {
     openProjectMenuOpen.value = true;
     projectMenuOpen.value = false;
     sessionMenuOpen.value = false;
+    engineMenuOpen.value = false;
   }
 }
 
@@ -631,6 +658,7 @@ async function handleOpenProjectSelect(target: OpenProjectTarget): Promise<void>
 function closeMenus(): void {
   projectMenuOpen.value = false;
   sessionMenuOpen.value = false;
+  engineMenuOpen.value = false;
   openProjectMenuOpen.value = false;
   openProjectContext.value = null;
 }
@@ -1187,11 +1215,79 @@ function handleAttachmentAdd(): void {
 }
 
 async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
-  const sessionId = sessions.selectedSessionId.value;
-  if (!sessionId) return;
+  if (threadState.threads.value.length > 0) {
+    return;
+  }
 
-  // Actually update the session engine
-  await sessions.updateSession(sessionId, { engineName });
+  const normalizedEngineName = engineName.trim();
+  if (!normalizedEngineName) return;
+
+  const currentSession = sessions.selectedSession.value;
+  const projectId = projects.selectedProjectId.value || currentSession?.projectId;
+  if (!projectId) return;
+
+  // No-op if already on that engine
+  if (currentSession?.engineName === normalizedEngineName) {
+    engineMenuOpen.value = false;
+    return;
+  }
+
+  // Keep UI defaults in sync (used by "New Session" creation)
+  selectedCli.value = normalizedEngineName;
+
+  // Sessions are engine-scoped on the server (engineName is not patchable).
+  // So switching engine means selecting (or creating) a session for that engine.
+  clearRequestState();
+
+  const candidateSessions = sessions.sessions.value.filter(
+    (s) => s.projectId === projectId && s.engineName === normalizedEngineName,
+  );
+
+  // Prefer an empty session (no preview = no first user message)
+  const emptyCandidate = candidateSessions.find((s) => !s.preview);
+  const target = emptyCandidate ?? null;
+
+  if (target) {
+    chat.setMessages([]);
+    await sessions.selectSession(target.id);
+    engineMenuOpen.value = false;
+    return;
+  }
+
+  // Otherwise create a fresh empty session for the engine
+  const typedEngineName = normalizedEngineName as
+    | 'openclaw'
+    | 'claude'
+    | 'codex'
+    | 'cursor'
+    | 'qwen'
+    | 'glm';
+
+  const optionsConfig =
+    typedEngineName === 'codex'
+      ? {
+          codexConfig: {
+            reasoningEffort: getNormalizedReasoningEffort(),
+          },
+        }
+      : typedEngineName === 'claude'
+        ? {
+            tools: { type: 'preset', preset: 'claude_code' },
+          }
+        : undefined;
+
+  const created = await sessions.createSession(projectId, {
+    engineName: typedEngineName,
+    name: `Session ${sessions.sessions.value.length + 1}`,
+    optionsConfig,
+  });
+
+  // Guard: only clear messages if the new session is still selected
+  if (created && sessions.selectedSessionId.value === created.id) {
+    chat.setMessages([]);
+  }
+
+  engineMenuOpen.value = false;
 }
 
 // Send handler

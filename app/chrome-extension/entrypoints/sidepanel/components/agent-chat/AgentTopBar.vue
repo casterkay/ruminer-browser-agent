@@ -25,7 +25,18 @@
             color: 'var(--ac-text)',
           }"
         >
-          {{ brandLabel || 'Agent' }}
+          <button
+            v-if="isEmptyChat"
+            type="button"
+            class="flex items-center gap-1 ac-btn ac-hover-text cursor-pointer"
+            :style="{ borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Select engine"
+            @click="$emit('toggle:engineMenu')"
+          >
+            <span>{{ brandLabel || 'Agent' }}</span>
+            <ILucideChevronDown class="w-4 h-4" :style="{ color: 'var(--ac-text-subtle)' }" />
+          </button>
+          <span v-else>{{ brandLabel || 'Agent' }}</span>
         </h1>
 
         <!-- Connection Indicator (left, after engine name) -->
@@ -70,6 +81,7 @@
 import { computed } from 'vue';
 import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 import ILucideChevronLeft from '~icons/lucide/chevron-left';
+import ILucideChevronDown from '~icons/lucide/chevron-down';
 import ILucideFolderOpen from '~icons/lucide/folder-open';
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
@@ -82,11 +94,14 @@ const props = defineProps<{
   showBackButton?: boolean;
   /** Brand label to display (e.g., "Claude Code", "Codex") */
   brandLabel?: string;
+  /** Whether current chat is empty; enables engine switching affordance */
+  isEmptyChat?: boolean;
 }>();
 
 defineEmits<{
   'toggle:projectMenu': [];
   'toggle:sessionMenu': [];
+  'toggle:engineMenu': [];
   'toggle:openProjectMenu': [];
   'session:settings': [];
   /** Emitted when back button is clicked */

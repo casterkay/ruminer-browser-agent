@@ -616,7 +616,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
     // Update position
     currentRight += deltaX;
-    currentBottom -= deltaY;
+    currentBottom += deltaY;
 
     // Constrain to viewport
     const maxRight = window.innerWidth - ICON_SIZE - 16;

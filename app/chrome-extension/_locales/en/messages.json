@@ -502,7 +502,7 @@
   },
   "placeholderDomainHint": { "message": "example.com", "description": "domain filter placeholder" },
   "chatPlaceholderEmpty": {
-    "message": "Type to search memory or chat with assistant...",
+    "message": "Type to search memory or chat with AI...",
     "description": "Chat composer placeholder when chat is empty"
   },
   "chatPlaceholderNonempty": {
