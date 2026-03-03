@@ -508,5 +508,25 @@
   "chatPlaceholderNonempty": {
     "message": "Send a message to assistant...",
     "description": "Chat composer placeholder when chat has messages"
+  },
+  "settingsGatewaySavedNotification": {
+    "message": "Gateway settings saved",
+    "description": "Toast when Gateway settings are saved"
+  },
+  "settingsEmosSavedNotification": {
+    "message": "EverMemOS settings saved",
+    "description": "Toast when EverMemOS settings are saved"
+  },
+  "settingsQuickPanelSavedNotification": {
+    "message": "Quick Panel settings saved",
+    "description": "Toast when Quick Panel settings are saved"
+  },
+  "refreshStatusButtonAria": {
+    "message": "Refresh status",
+    "description": "Refresh button aria-label"
+  },
+  "testConnectionButtonAria": {
+    "message": "Test connection",
+    "description": "Test connection button aria-label"
   }
 }

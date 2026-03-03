@@ -62,16 +62,6 @@
       >
         <ILucideFolderOpen class="w-5 h-5" />
       </button>
-
-      <!-- Theme & Settings Icon (Color Palette) -->
-      <button
-        class="p-1 ac-btn ac-hover-text"
-        :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-        data-tooltip="Settings"
-        @click="$emit('toggle:settingsMenu')"
-      >
-        <ILucidePalette class="w-5 h-5" />
-      </button>
     </div>
   </div>
 </template>
@@ -81,7 +71,6 @@ import { computed } from 'vue';
 import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 import ILucideChevronLeft from '~icons/lucide/chevron-left';
 import ILucideFolderOpen from '~icons/lucide/folder-open';
-import ILucidePalette from '~icons/lucide/palette';
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
 
@@ -98,7 +87,6 @@ const props = defineProps<{
 defineEmits<{
   'toggle:projectMenu': [];
   'toggle:sessionMenu': [];
-  'toggle:settingsMenu': [];
   'toggle:openProjectMenu': [];
   'session:settings': [];
   /** Emitted when back button is clicked */

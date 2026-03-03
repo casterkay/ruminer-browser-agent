@@ -22,8 +22,9 @@ import { computed, type Component } from 'vue';
 import ILucideMessageCircleMore from '~icons/lucide/message-circle-more';
 import ILucideDatabase from '~icons/lucide/database';
 import ILucideZap from '~icons/lucide/zap';
+import ILucideSettings from '~icons/lucide/settings';
 
-type TabType = 'chat' | 'memory' | 'workflows';
+type TabType = 'chat' | 'memory' | 'workflows' | 'settings';
 
 const props = defineProps<{
   activeTab: TabType;
@@ -37,6 +38,7 @@ const tabs: Array<{ id: TabType; label: string; icon: Component }> = [
   { id: 'chat', label: 'Chat', icon: ILucideMessageCircleMore },
   { id: 'memory', label: 'Memory', icon: ILucideDatabase },
   { id: 'workflows', label: 'Workflows', icon: ILucideZap },
+  { id: 'settings', label: 'Settings', icon: ILucideSettings },
 ];
 
 const activeIndex = computed(() => tabs.findIndex((t) => t.id === props.activeTab));
@@ -74,7 +76,7 @@ const indicatorStyle = computed(() => {
 .navigator {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding: 6px 0 8px;
   flex-shrink: 0;
 }

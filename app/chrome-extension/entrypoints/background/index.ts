@@ -29,6 +29,11 @@ const ENABLE_RR_V3 = true;
  * Initializes all background services and listeners
  */
 export default defineBackground(() => {
+  // Extension button opens sidepanel directly (no popup)
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((err) => console.warn('[Sidepanel] setPanelBehavior failed:', err));
+
   // Open welcome page on first install
   chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {

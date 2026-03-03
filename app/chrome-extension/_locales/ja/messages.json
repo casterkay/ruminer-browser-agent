@@ -342,5 +342,25 @@
   "chatPlaceholderNonempty": {
     "message": "アシスタントにメッセージを送信...",
     "description": "チャットにメッセージがあるときの入力欄プレースホルダー"
+  },
+  "settingsGatewaySavedNotification": {
+    "message": "ゲートウェイ設定を保存しました",
+    "description": "ゲートウェイ設定保存時のトースト"
+  },
+  "settingsEmosSavedNotification": {
+    "message": "EverMemOS設定を保存しました",
+    "description": "EverMemOS設定保存時のトースト"
+  },
+  "settingsQuickPanelSavedNotification": {
+    "message": "クイックパネル設定を保存しました",
+    "description": "クイックパネル設定保存時のトースト"
+  },
+  "refreshStatusButtonAria": {
+    "message": "ステータスを更新",
+    "description": "更新ボタンのaria-label"
+  },
+  "testConnectionButtonAria": {
+    "message": "接続をテスト",
+    "description": "接続テストボタンのaria-label"
   }
 }

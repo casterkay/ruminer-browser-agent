@@ -229,6 +229,13 @@ const fallbackMessages: Record<string, string> = {
   // Chat composer placeholders
   chatPlaceholderEmpty: 'Type to search memory or chat with assistant...',
   chatPlaceholderNonempty: 'Send a message to assistant...',
+
+  // System settings notifications
+  settingsGatewaySavedNotification: 'Gateway settings saved',
+  settingsEmosSavedNotification: 'EverMemOS settings saved',
+  settingsQuickPanelSavedNotification: 'Quick Panel settings saved',
+  refreshStatusButtonAria: 'Refresh status',
+  testConnectionButtonAria: 'Test connection',
 };
 
 /**

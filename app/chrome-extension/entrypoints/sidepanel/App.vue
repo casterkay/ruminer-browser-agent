@@ -6,6 +6,10 @@
       <AgentChat v-show="activeTab === 'chat'" />
       <MemoryView v-show="activeTab === 'memory'" />
 
+      <div v-show="activeTab === 'settings'" class="settings-wrapper">
+        <SystemSettingsForm />
+      </div>
+
       <div v-show="activeTab === 'workflows'" class="workflows-wrapper">
         <WorkflowsView
           :flows="displayFlows"
@@ -35,6 +39,7 @@ import { computed, onMounted, ref } from 'vue';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
+import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useChatBackendPreference } from './composables/useChatBackendPreference';
@@ -42,7 +47,7 @@ import { useWorkflowsV3 } from './composables/useWorkflowsV3';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 
-type TabId = 'chat' | 'memory' | 'workflows';
+type TabId = 'chat' | 'memory' | 'workflows' | 'settings';
 
 const theme = useAgentTheme();
 const chatBackend = useChatBackendPreference();
@@ -143,7 +148,7 @@ onMounted(async () => {
 
   const stored = await chrome.storage.local.get(ACTIVE_TAB_KEY);
   const tab = stored[ACTIVE_TAB_KEY] as TabId | undefined;
-  if (tab === 'chat' || tab === 'memory' || tab === 'workflows') {
+  if (tab === 'chat' || tab === 'memory' || tab === 'workflows' || tab === 'settings') {
     activeTab.value = tab;
   }
 
@@ -171,6 +176,12 @@ onMounted(async () => {
   min-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+.settings-wrapper {
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 20px;
 }
 
 .workflows-wrapper {

@@ -38,7 +38,6 @@
             @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
             @toggle:session-menu="toggleSessionMenu"
-            @toggle:settings-menu="toggleSettingsMenu"
             @toggle:open-project-menu="toggleOpenProjectMenu"
             @back="handleBackToSessions"
           />
@@ -98,7 +97,7 @@
 
     <!-- Click-outside handler for menus (z-40) -->
     <div
-      v-if="projectMenuOpen || sessionMenuOpen || settingsMenuOpen || openProjectMenuOpen"
+      v-if="projectMenuOpen || sessionMenuOpen || openProjectMenuOpen"
       class="fixed inset-0 z-40"
       @click="closeMenus"
     />
@@ -138,18 +137,6 @@
       @session:new="handleNewSession"
       @session:delete="handleDeleteSession"
       @session:rename="handleRenameSession"
-    />
-
-    <AgentSettingsMenu
-      :open="settingsMenuOpen"
-      :theme="themeState.theme.value"
-      :fake-caret-enabled="inputPreferences.fakeCaretEnabled.value"
-      :floating-icon-enabled="floatingIconPreference.enabled.value"
-      @theme:set="handleThemeChange"
-      @reconnect="handleReconnect"
-      @attachments:open="handleOpenAttachmentCache"
-      @fake-caret:toggle="handleFakeCaretToggle"
-      @floatingIcon:toggle="handleFloatingIconToggle"
     />
 
     <AgentOpenProjectMenu
@@ -208,7 +195,6 @@ import {
   useAgentChatViewRoute,
   useOpenProjectPreference,
   useAgentInputPreferences,
-  useFloatingIconPreference,
   useEmosSuggestions,
   WEB_EDITOR_TX_STATE_INJECTION_KEY,
   AGENT_SERVER_PORT_KEY,
@@ -225,7 +211,6 @@ import {
   AgentConversation,
   AgentProjectMenu,
   AgentSessionMenu,
-  AgentSettingsMenu,
   AgentSessionSettingsPanel,
   AgentToolSelectionPanel,
   AgentSessionsView,
@@ -284,7 +269,6 @@ function getNormalizedReasoningEffort(): CodexReasoningEffort {
 const isPickingDirectory = ref(false);
 const projectMenuOpen = ref(false);
 const sessionMenuOpen = ref(false);
-const settingsMenuOpen = ref(false);
 const openProjectMenuOpen = ref(false);
 
 // Open project context: which session/project to open when menu selects
@@ -363,7 +347,6 @@ const openProjectPreference = useOpenProjectPreference({
   getServerPort: () => server.serverPort.value,
 });
 const inputPreferences = useAgentInputPreferences();
-const floatingIconPreference = useFloatingIconPreference();
 
 // Initialize Web Editor TX state at root level and provide to children
 // This prevents duplicate listener registration in child components
@@ -557,7 +540,6 @@ function toggleProjectMenu(): void {
   projectMenuOpen.value = !projectMenuOpen.value;
   if (projectMenuOpen.value) {
     sessionMenuOpen.value = false;
-    settingsMenuOpen.value = false;
     openProjectMenuOpen.value = false;
   }
 }
@@ -566,16 +548,6 @@ function toggleSessionMenu(): void {
   sessionMenuOpen.value = !sessionMenuOpen.value;
   if (sessionMenuOpen.value) {
     projectMenuOpen.value = false;
-    settingsMenuOpen.value = false;
-    openProjectMenuOpen.value = false;
-  }
-}
-
-function toggleSettingsMenu(): void {
-  settingsMenuOpen.value = !settingsMenuOpen.value;
-  if (settingsMenuOpen.value) {
-    projectMenuOpen.value = false;
-    sessionMenuOpen.value = false;
     openProjectMenuOpen.value = false;
   }
 }
@@ -585,7 +557,6 @@ function toggleOpenProjectMenu(): void {
   if (openProjectMenuOpen.value) {
     projectMenuOpen.value = false;
     sessionMenuOpen.value = false;
-    settingsMenuOpen.value = false;
     // Set context to current session from chat view
     const sessionId = sessions.selectedSessionId.value;
     if (sessionId) {
@@ -619,7 +590,6 @@ async function handleSessionOpenProject(sessionId: string): Promise<void> {
     openProjectMenuOpen.value = true;
     projectMenuOpen.value = false;
     sessionMenuOpen.value = false;
-    settingsMenuOpen.value = false;
   }
 }
 
@@ -656,40 +626,11 @@ async function handleOpenProjectSelect(target: OpenProjectTarget): Promise<void>
 function closeMenus(): void {
   projectMenuOpen.value = false;
   sessionMenuOpen.value = false;
-  settingsMenuOpen.value = false;
   openProjectMenuOpen.value = false;
   openProjectContext.value = null;
 }
 
-// Theme handler
-async function handleThemeChange(theme: AgentThemeId): Promise<void> {
-  await themeState.setTheme(theme);
-  closeMenus();
-}
-
-// Fake caret toggle handler
-async function handleFakeCaretToggle(enabled: boolean): Promise<void> {
-  await inputPreferences.setFakeCaretEnabled(enabled);
-}
-
-// Floating icon toggle handler
-async function handleFloatingIconToggle(enabled: boolean): Promise<void> {
-  await floatingIconPreference.setEnabled(enabled);
-}
-
-// Server reconnect
-async function handleReconnect(): Promise<void> {
-  closeMenus();
-  await server.reconnect();
-}
-
 // Attachment cache handlers
-function handleOpenAttachmentCache(): void {
-  attachmentCacheOpen.value = true;
-  sessionSettingsOpen.value = false;
-  closeMenus();
-}
-
 function handleCloseAttachmentCache(): void {
   attachmentCacheOpen.value = false;
 }
@@ -1390,8 +1331,6 @@ onMounted(async () => {
   await inputPreferences.init();
 
   // Load floating icon preference
-  await floatingIconPreference.initPreference();
-
   // Initialize server
   await server.initialize();
 

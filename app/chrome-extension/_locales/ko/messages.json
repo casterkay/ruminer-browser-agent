@@ -450,5 +450,25 @@
   "chatPlaceholderNonempty": {
     "message": "어시스턴트에게 메시지 보내기...",
     "description": "채팅에 메시지가 있을 때 입력란 플레이스홀더"
+  },
+  "settingsGatewaySavedNotification": {
+    "message": "게이트웨이 설정이 저장되었습니다",
+    "description": "게이트웨이 설정 저장 시 토스트"
+  },
+  "settingsEmosSavedNotification": {
+    "message": "EverMemOS 설정이 저장되었습니다",
+    "description": "EverMemOS 설정 저장 시 토스트"
+  },
+  "settingsQuickPanelSavedNotification": {
+    "message": "퀵 패널 설정이 저장되었습니다",
+    "description": "퀵 패널 설정 저장 시 토스트"
+  },
+  "refreshStatusButtonAria": {
+    "message": "상태 새로고침",
+    "description": "새로고침 버튼 aria-label"
+  },
+  "testConnectionButtonAria": {
+    "message": "연결 테스트",
+    "description": "연결 테스트 버튼 aria-label"
   }
 }

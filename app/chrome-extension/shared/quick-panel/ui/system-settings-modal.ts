@@ -3,23 +3,29 @@
  *
  * Vanilla DOM modal that shows the same Gateway + EverMemOS form as the options page.
  * Renders inside the Quick Panel overlay (content script Shadow DOM).
+ * Uses shared logic from system-settings.ts.
  */
 
+import { NATIVE_HOST } from '@/common/constants';
 import {
-  getGatewaySettings,
   getEmosSettings,
-  setGatewaySettings,
+  getGatewaySettings,
   setEmosSettings,
+  setGatewaySettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
-  buildSignedConnectParams,
-  extractConnectChallengeNonce,
-  OPENCLAW_CLIENT_IDS,
-  OPENCLAW_CLIENT_MODES,
-} from '@/entrypoints/shared/utils/openclaw-device-auth';
+  STORAGE_KEY_FLOATING_ICON,
+  refreshServerStatus as doRefreshServerStatus,
+  saveFloatingIcon as doSaveFloatingIcon,
+  testEmos as doTestEmos,
+  testGateway as doTestGateway,
+} from '@/entrypoints/shared/utils/system-settings';
 import { Disposer } from '@/entrypoints/web-editor-v2/utils/disposables';
+import { getMessage } from '@/utils/i18n';
 
 const ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICON_REFRESH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>`;
+const ICON_PLUG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>`;
 
 const MODAL_STYLES = /* css */ `
 .qp-settings-modal-backdrop {
@@ -130,6 +136,11 @@ const MODAL_STYLES = /* css */ `
   display: flex;
   gap: 8px;
 }
+.qp-settings-row-label {
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
 .qp-settings-btn-primary {
   padding: 9px 16px;
   font-size: 13px;
@@ -180,6 +191,83 @@ const MODAL_STYLES = /* css */ `
   height: 16px;
   flex-shrink: 0;
 }
+.qp-settings-value {
+  font-size: 12px;
+  font-weight: 500;
+}
+.qp-settings-value.ok {
+  color: var(--ac-success);
+}
+.qp-settings-value.warn {
+  color: var(--ac-warning);
+}
+.qp-settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ac-text);
+}
+.qp-settings-checkbox input {
+  accent-color: var(--ac-accent);
+}
+.qp-settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qp-settings-card-header .qp-settings-card-title {
+  margin: 0;
+}
+.qp-settings-btn-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--ac-border-width) solid var(--ac-border);
+  border-radius: var(--ac-radius-inner);
+  background-color: var(--ac-surface-muted);
+  color: var(--ac-text);
+  cursor: pointer;
+  padding: 0;
+}
+.qp-settings-btn-icon:hover:not(:disabled) {
+  background-color: var(--ac-hover-bg);
+}
+.qp-settings-btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.qp-settings-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.qp-settings-toast {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background-color: var(--ac-accent);
+  color: var(--ac-accent-contrast);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ac-accent) 40%, transparent), 0 1px 4px color-mix(in srgb, var(--ac-accent) 20%, transparent);
+  z-index: 101;
+}
+@keyframes qp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.qp-settings-btn-icon.spinning svg {
+  animation: qp-spin 0.8s linear infinite;
+}
 `;
 
 export interface SystemSettingsModalManager {
@@ -199,6 +287,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   let disposed = false;
 
   const state = {
+    mcpServerRunning: false,
+    mcpServerPort: null as number | null,
+    refreshing: false,
+    floatingIconEnabled: true,
     gatewayWsUrl: 'ws://127.0.0.1:18789',
     gatewayAuthToken: '',
     baseUrl: 'https://api.evermind.ai',
@@ -210,23 +302,84 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     gatewayMessage: '',
     emosOk: true,
     emosMessage: '',
+    lastSavedGateway: { wsUrl: '', authToken: '' },
+    lastSavedEmos: { baseUrl: '', apiKey: '', userId: '' },
+    lastSavedFloatingIcon: true,
   };
 
   function getEl(id: string): HTMLInputElement | HTMLButtonElement | HTMLDivElement | null {
     return backdrop?.querySelector(`[data-id="${id}"]`) ?? null;
   }
 
+  async function refreshServerStatus(): Promise<void> {
+    state.refreshing = true;
+    const refreshBtn = getEl('refreshServer') as HTMLButtonElement | null;
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add('spinning');
+    }
+    try {
+      const status = await doRefreshServerStatus();
+      state.mcpServerRunning = status.isRunning;
+      state.mcpServerPort = status.port;
+    } finally {
+      state.refreshing = false;
+      const btn = getEl('refreshServer') as HTMLButtonElement | null;
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('spinning');
+      }
+      updateMcpStatus();
+    }
+  }
+
+  function updateMcpStatus(): void {
+    const statusEl = getEl('mcpStatus') as HTMLSpanElement | null;
+    const portEl = getEl('mcpPort') as HTMLSpanElement | null;
+    if (statusEl) statusEl.textContent = state.mcpServerRunning ? 'Running' : 'Stopped';
+    if (statusEl)
+      statusEl.className = `qp-settings-value ${state.mcpServerRunning ? 'ok' : 'warn'}`;
+    if (portEl)
+      portEl.textContent =
+        state.mcpServerPort != null
+          ? String(state.mcpServerPort)
+          : `Default: ${NATIVE_HOST.DEFAULT_PORT}`;
+  }
+
+  async function saveFloatingIcon(): Promise<void> {
+    const cb = getEl('floatingIconCb') as HTMLInputElement | null;
+    if (!cb) return;
+    state.floatingIconEnabled = cb.checked;
+    if (state.floatingIconEnabled === state.lastSavedFloatingIcon) return;
+    await doSaveFloatingIcon(state.floatingIconEnabled);
+    state.lastSavedFloatingIcon = state.floatingIconEnabled;
+    showToast(getMessage('settingsQuickPanelSavedNotification'));
+  }
+
   async function loadSettings(): Promise<void> {
     const gw = await getGatewaySettings();
     const em = await getEmosSettings();
+    const fi = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON);
     state.gatewayWsUrl = gw.gatewayWsUrl;
     state.gatewayAuthToken = gw.gatewayAuthToken;
     state.baseUrl = em.baseUrl;
     state.apiKey = em.apiKey;
     state.userId = em.userId;
+    state.floatingIconEnabled = fi[STORAGE_KEY_FLOATING_ICON] ?? true;
+    state.lastSavedGateway = {
+      wsUrl: gw.gatewayWsUrl.trim(),
+      authToken: gw.gatewayAuthToken.trim(),
+    };
+    state.lastSavedEmos = {
+      baseUrl: em.baseUrl.trim(),
+      apiKey: em.apiKey.trim(),
+      userId: em.userId.trim(),
+    };
+    state.lastSavedFloatingIcon = state.floatingIconEnabled;
     updateInputs();
     updateStatus('gateway', state.gatewayOk, state.gatewayMessage);
     updateStatus('emos', state.emosOk, state.emosMessage);
+    await refreshServerStatus();
   }
 
   function updateInputs(): void {
@@ -235,11 +388,13 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const baseInput = getEl('baseUrl') as HTMLInputElement | null;
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
     const userInput = getEl('userId') as HTMLInputElement | null;
+    const floatingCb = getEl('floatingIconCb') as HTMLInputElement | null;
     if (gwInput) gwInput.value = state.gatewayWsUrl;
     if (gwToken) gwToken.value = state.gatewayAuthToken;
     if (baseInput) baseInput.value = state.baseUrl;
     if (apiInput) apiInput.value = state.apiKey;
     if (userInput) userInput.value = state.userId;
+    if (floatingCb) floatingCb.checked = state.floatingIconEnabled;
   }
 
   const ICON_OK =
@@ -268,117 +423,62 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (userInput) state.userId = userInput.value;
   }
 
+  function showToast(message: string): void {
+    const toast = getEl('toast') as HTMLDivElement | null;
+    if (!toast) return;
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout((toast as any).__toastTimer);
+    (toast as any).__toastTimer = setTimeout(() => {
+      toast.hidden = true;
+    }, 2500);
+  }
+
   async function saveGateway(): Promise<void> {
     syncFromInputs();
-    await setGatewaySettings({
-      gatewayWsUrl: state.gatewayWsUrl.trim(),
-      gatewayAuthToken: state.gatewayAuthToken.trim(),
-    });
+    const wsUrl = state.gatewayWsUrl.trim();
+    const authToken = state.gatewayAuthToken.trim();
+    if (wsUrl === state.lastSavedGateway.wsUrl && authToken === state.lastSavedGateway.authToken) {
+      return;
+    }
+    await setGatewaySettings({ gatewayWsUrl: wsUrl, gatewayAuthToken: authToken });
+    state.lastSavedGateway = { wsUrl, authToken };
     state.gatewayOk = true;
-    state.gatewayMessage = 'Gateway settings saved.';
-    updateStatus('gateway', true, state.gatewayMessage);
+    state.gatewayMessage = '';
+    updateStatus('gateway', true, '');
+    showToast(getMessage('settingsGatewaySavedNotification'));
   }
 
   async function saveEmos(): Promise<void> {
     syncFromInputs();
-    await setEmosSettings({
-      baseUrl: state.baseUrl.trim(),
-      apiKey: state.apiKey.trim(),
-      userId: state.userId.trim(),
-    });
+    const baseUrl = state.baseUrl.trim();
+    const apiKey = state.apiKey.trim();
+    const userId = state.userId.trim();
+    if (
+      baseUrl === state.lastSavedEmos.baseUrl &&
+      apiKey === state.lastSavedEmos.apiKey &&
+      userId === state.lastSavedEmos.userId
+    ) {
+      return;
+    }
+    await setEmosSettings({ baseUrl, apiKey, userId });
+    state.lastSavedEmos = { baseUrl, apiKey, userId };
     state.emosOk = true;
-    state.emosMessage = 'EverMemOS settings saved.';
-    updateStatus('emos', true, state.emosMessage);
+    state.emosMessage = '';
+    updateStatus('emos', true, '');
+    showToast(getMessage('settingsEmosSavedNotification'));
   }
 
   async function testGateway(): Promise<void> {
     syncFromInputs();
     state.testingGateway = true;
-    (getEl('testGateway') as HTMLButtonElement | null)!.disabled = true;
+    const testBtn = getEl('testGateway') as HTMLButtonElement | null;
+    if (testBtn) testBtn.disabled = true;
     state.gatewayMessage = '';
-
     try {
-      await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(state.gatewayWsUrl.trim());
-        const timer = setTimeout(() => {
-          ws.close();
-          reject(new Error('Gateway test timeout'));
-        }, 10_000);
-        const challengeTimer = setTimeout(() => {
-          if (!connectSent) void sendConnect(null).catch(reject);
-        }, 6_000);
-        let connectSent = false;
-
-        async function sendConnect(challengeNonce: string | null): Promise<void> {
-          if (connectSent) return;
-          connectSent = true;
-          const params = await buildSignedConnectParams({
-            role: 'operator',
-            authToken: state.gatewayAuthToken.trim(),
-            client: {
-              id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
-              version: chrome.runtime.getManifest().version || '0.1.0',
-              platform: typeof navigator !== 'undefined' ? navigator.platform || 'web' : 'web',
-              mode: OPENCLAW_CLIENT_MODES.WEBCHAT,
-            },
-            scopes: ['operator.read', 'operator.write'],
-            caps: [],
-            commands: [],
-            permissions: {},
-            locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
-            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-options',
-            nonce: challengeNonce,
-          });
-          ws.send(
-            JSON.stringify({
-              type: 'req',
-              id: crypto.randomUUID(),
-              method: 'connect',
-              params,
-            }),
-          );
-        }
-
-        ws.onmessage = (event) => {
-          try {
-            const frame = JSON.parse(String(event.data));
-            const challengeNonce = extractConnectChallengeNonce(String(event.data));
-            if (challengeNonce !== undefined) {
-              clearTimeout(challengeTimer);
-              void sendConnect(challengeNonce || null).catch(reject);
-              return;
-            }
-            if (frame?.type === 'res' && frame?.ok === true) {
-              clearTimeout(timer);
-              clearTimeout(challengeTimer);
-              ws.close();
-              resolve();
-            } else if (frame?.type === 'res' && frame?.ok === false) {
-              clearTimeout(timer);
-              clearTimeout(challengeTimer);
-              ws.close();
-              reject(new Error(String(frame?.payload || 'Gateway rejected connection')));
-            }
-          } catch (error) {
-            clearTimeout(timer);
-            clearTimeout(challengeTimer);
-            ws.close();
-            reject(error);
-          }
-        };
-
-        ws.onerror = () => {
-          clearTimeout(timer);
-          clearTimeout(challengeTimer);
-          ws.close();
-          reject(new Error('Gateway socket error'));
-        };
-      });
-      state.gatewayOk = true;
-      state.gatewayMessage = 'Gateway connection test passed.';
-    } catch (reason) {
-      state.gatewayOk = false;
-      state.gatewayMessage = reason instanceof Error ? reason.message : String(reason);
+      const result = await doTestGateway(state.gatewayWsUrl, state.gatewayAuthToken);
+      state.gatewayOk = result.ok;
+      state.gatewayMessage = result.message;
     } finally {
       state.testingGateway = false;
       const btn = getEl('testGateway') as HTMLButtonElement | null;
@@ -390,44 +490,17 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   async function testEmos(): Promise<void> {
     syncFromInputs();
     state.testingEmos = true;
-    (getEl('testEmos') as HTMLButtonElement | null)!.disabled = true;
+    const testBtn = getEl('testEmos') as HTMLButtonElement | null;
+    if (testBtn) testBtn.disabled = true;
     state.emosMessage = '';
-
-    const baseUrl = state.baseUrl.trim().replace(/\/$/, '');
-    const apiKey = state.apiKey.trim();
-    const userId = state.userId.trim();
-
-    if (!userId) {
-      state.emosOk = false;
-      state.emosMessage = 'User ID is required for EverMemOS connection.';
-      state.testingEmos = false;
-      (getEl('testEmos') as HTMLButtonElement | null)!.disabled = false;
-      updateStatus('emos', false, state.emosMessage);
-      return;
-    }
-
-    const endpoint = `${baseUrl}/api/v0/memories/search?query=ping&user_id=${encodeURIComponent(userId)}&limit=1`;
-
     try {
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      const responseText = await response.text();
-      if (!response.ok) {
-        throw new Error(`EverMemOS test failed (${response.status}): ${responseText}`);
-      }
-      state.emosOk = true;
-      state.emosMessage = 'EverMemOS connection test passed.';
-    } catch (reason) {
-      state.emosOk = false;
-      state.emosMessage =
-        reason instanceof Error
-          ? `${reason.message}\n\nEndpoint: ${endpoint}`
-          : `${String(reason)}\n\nEndpoint: ${endpoint}`;
+      const result = await doTestEmos(state.baseUrl, state.apiKey, state.userId);
+      state.emosOk = result.ok;
+      state.emosMessage = result.message;
     } finally {
       state.testingEmos = false;
-      (getEl('testEmos') as HTMLButtonElement | null)!.disabled = false;
+      const btn = getEl('testEmos') as HTMLButtonElement | null;
+      if (btn) btn.disabled = false;
       updateStatus('emos', state.emosOk, state.emosMessage);
     }
   }
@@ -461,11 +534,50 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const body = document.createElement('div');
     body.className = 'qp-settings-modal-body ac-scroll';
 
+    // Toast
+    const toast = document.createElement('div');
+    toast.id = 'qp-settings-toast';
+    toast.setAttribute('data-id', 'toast');
+    toast.className = 'qp-settings-toast';
+    toast.hidden = true;
+
+    // MCP Server card
+    const mcpCard = document.createElement('section');
+    mcpCard.className = 'qp-settings-card';
+    mcpCard.innerHTML = `
+      <div class="qp-settings-card-header">
+        <h2 class="qp-settings-card-title">MCP Server</h2>
+        <button data-id="refreshServer" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('refreshStatusButtonAria')}">${ICON_REFRESH}</button>
+      </div>
+      <div class="qp-settings-row qp-settings-row-label">
+        <span>Status</span>
+        <span data-id="mcpStatus" class="qp-settings-value warn">Stopped</span>
+      </div>
+      <div class="qp-settings-row qp-settings-row-label">
+        <span>Port</span>
+        <span data-id="mcpPort" class="qp-settings-value">Default: ${NATIVE_HOST.DEFAULT_PORT}</span>
+      </div>
+    `;
+
+    // Quick Panel card
+    const qpCard = document.createElement('section');
+    qpCard.className = 'qp-settings-card';
+    qpCard.innerHTML = `
+      <h2 class="qp-settings-card-title">Quick Panel</h2>
+      <label class="qp-settings-checkbox">
+        <input data-id="floatingIconCb" type="checkbox" checked/>
+        <span>Show in-page button</span>
+      </label>
+    `;
+
     // Gateway card
     const gwCard = document.createElement('section');
     gwCard.className = 'qp-settings-card';
     gwCard.innerHTML = `
-      <h2 class="qp-settings-card-title">OpenClaw Gateway</h2>
+      <div class="qp-settings-card-header">
+        <h2 class="qp-settings-card-title">OpenClaw Gateway</h2>
+        <button data-id="testGateway" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('testConnectionButtonAria')}">${ICON_PLUG}</button>
+      </div>
       <label class="qp-settings-field">
         <span class="qp-settings-field-label">Gateway WS URL</span>
         <input data-id="gatewayWsUrl" class="qp-settings-field-input" type="text" placeholder="ws://127.0.0.1:18789"/>
@@ -474,10 +586,6 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
         <span class="qp-settings-field-label">Auth Token (optional on localhost)</span>
         <input data-id="gatewayAuthToken" class="qp-settings-field-input" type="password" placeholder="gateway token"/>
       </label>
-      <div class="qp-settings-row">
-        <button data-id="saveGateway" type="button" class="qp-settings-btn-primary ac-focus-ring">Save</button>
-        <button data-id="testGateway" type="button" class="qp-settings-btn-secondary ac-focus-ring">Test Connection</button>
-      </div>
       <div data-id="gatewayStatus" class="qp-settings-status" hidden></div>
     `;
 
@@ -485,7 +593,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const emCard = document.createElement('section');
     emCard.className = 'qp-settings-card';
     emCard.innerHTML = `
-      <h2 class="qp-settings-card-title">EverMemOS</h2>
+      <div class="qp-settings-card-header">
+        <h2 class="qp-settings-card-title">EverMemOS</h2>
+        <button data-id="testEmos" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('testConnectionButtonAria')}">${ICON_PLUG}</button>
+      </div>
       <label class="qp-settings-field">
         <span class="qp-settings-field-label">Base URL</span>
         <input data-id="baseUrl" class="qp-settings-field-input" type="text" placeholder="https://api.evermind.ai"/>
@@ -498,33 +609,44 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
         <span class="qp-settings-field-label">User ID</span>
         <input data-id="userId" class="qp-settings-field-input" type="text" placeholder="your user identifier for memory storage"/>
       </label>
-      <div class="qp-settings-row">
-        <button data-id="saveEmos" type="button" class="qp-settings-btn-primary ac-focus-ring">Save</button>
-        <button data-id="testEmos" type="button" class="qp-settings-btn-secondary ac-focus-ring">Test Connection</button>
-      </div>
       <div data-id="emosStatus" class="qp-settings-status" hidden></div>
     `;
 
-    body.append(gwCard, emCard);
+    body.append(mcpCard, qpCard, gwCard, emCard);
     modal.append(header, body);
-    back.append(style, modal);
+    back.append(style, modal, toast);
 
     disposer.listen(back, 'click', (e) => {
       if (e.target === back) hide();
     });
     disposer.listen(closeBtn, 'click', hide);
     disposer.listen(
-      gwCard.querySelector('[data-id="saveGateway"]')!,
+      mcpCard.querySelector('[data-id="refreshServer"]')!,
       'click',
-      () => void saveGateway(),
+      () => void refreshServerStatus(),
+    );
+    disposer.listen(
+      qpCard.querySelector('[data-id="floatingIconCb"]')!,
+      'change',
+      () => void saveFloatingIcon(),
     );
     disposer.listen(
       gwCard.querySelector('[data-id="testGateway"]')!,
       'click',
       () => void testGateway(),
     );
-    disposer.listen(emCard.querySelector('[data-id="saveEmos"]')!, 'click', () => void saveEmos());
     disposer.listen(emCard.querySelector('[data-id="testEmos"]')!, 'click', () => void testEmos());
+
+    // Auto-save on blur for Gateway inputs
+    for (const id of ['gatewayWsUrl', 'gatewayAuthToken']) {
+      const input = gwCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
+      if (input) disposer.listen(input, 'blur', () => void saveGateway());
+    }
+    // Auto-save on blur for EverMemOS inputs
+    for (const id of ['baseUrl', 'apiKey', 'userId']) {
+      const input = emCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
+      if (input) disposer.listen(input, 'blur', () => void saveEmos());
+    }
 
     return back;
   }

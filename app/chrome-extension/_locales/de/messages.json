@@ -450,5 +450,25 @@
   "chatPlaceholderNonempty": {
     "message": "Nachricht an den Assistenten senden...",
     "description": "Platzhalter wenn Chat Nachrichten hat"
+  },
+  "settingsGatewaySavedNotification": {
+    "message": "Gateway-Einstellungen gespeichert",
+    "description": "Toast wenn Gateway-Einstellungen gespeichert"
+  },
+  "settingsEmosSavedNotification": {
+    "message": "EverMemOS-Einstellungen gespeichert",
+    "description": "Toast wenn EverMemOS-Einstellungen gespeichert"
+  },
+  "settingsQuickPanelSavedNotification": {
+    "message": "Quick-Panel-Einstellungen gespeichert",
+    "description": "Toast wenn Quick-Panel-Einstellungen gespeichert"
+  },
+  "refreshStatusButtonAria": {
+    "message": "Status aktualisieren",
+    "description": "Aktualisieren-Button aria-label"
+  },
+  "testConnectionButtonAria": {
+    "message": "Verbindung testen",
+    "description": "Verbindungstest-Button aria-label"
   }
 }

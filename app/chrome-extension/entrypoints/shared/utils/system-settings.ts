@@ -1,0 +1,179 @@
+/**
+ * Shared System Settings logic
+ *
+ * Pure logic for MCP status, Gateway/Emos tests, and floating icon preference.
+ * Used by both SystemSettingsForm.vue (extension pages) and system-settings-modal.ts (Quick Panel).
+ */
+
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import {
+  buildSignedConnectParams,
+  extractConnectChallengeNonce,
+  OPENCLAW_CLIENT_IDS,
+  OPENCLAW_CLIENT_MODES,
+} from '@/entrypoints/shared/utils/openclaw-device-auth';
+
+export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
+
+export interface ServerStatus {
+  isRunning: boolean;
+  port: number | null;
+}
+
+export interface TestResult {
+  ok: boolean;
+  message: string;
+}
+
+export async function refreshServerStatus(): Promise<ServerStatus> {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.GET_SERVER_STATUS,
+    });
+    if (!response?.success || !response?.serverStatus) {
+      return { isRunning: false, port: null };
+    }
+    const s = response.serverStatus;
+    const port = typeof s.port === 'number' ? s.port : s.port != null ? Number(s.port) : null;
+    return { isRunning: s.isRunning === true, port };
+  } catch {
+    return { isRunning: false, port: null };
+  }
+}
+
+export async function loadFloatingIcon(): Promise<boolean> {
+  const result = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON);
+  const stored = result[STORAGE_KEY_FLOATING_ICON];
+  return typeof stored === 'boolean' ? stored : true;
+}
+
+export async function saveFloatingIcon(enabled: boolean): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEY_FLOATING_ICON]: enabled });
+}
+
+export async function testGateway(
+  gatewayWsUrl: string,
+  gatewayAuthToken: string,
+): Promise<TestResult> {
+  const wsUrl = gatewayWsUrl.trim();
+  const authToken = gatewayAuthToken.trim();
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      const timer = setTimeout(() => {
+        ws.close();
+        reject(new Error('Gateway test timeout'));
+      }, 10_000);
+      const challengeTimer = setTimeout(() => {
+        if (!connectSent) void sendConnect(null).catch(reject);
+      }, 6_000);
+      let connectSent = false;
+
+      async function sendConnect(challengeNonce: string | null): Promise<void> {
+        if (connectSent) return;
+        connectSent = true;
+        const params = await buildSignedConnectParams({
+          role: 'operator',
+          authToken,
+          client: {
+            id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
+            version: chrome.runtime.getManifest().version || '0.1.0',
+            platform: typeof navigator !== 'undefined' ? navigator.platform || 'web' : 'web',
+            mode: OPENCLAW_CLIENT_MODES.WEBCHAT,
+          },
+          scopes: ['operator.read', 'operator.write'],
+          caps: [],
+          commands: [],
+          permissions: {},
+          locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-options',
+          nonce: challengeNonce,
+        });
+        ws.send(
+          JSON.stringify({
+            type: 'req',
+            id: crypto.randomUUID(),
+            method: 'connect',
+            params,
+          }),
+        );
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const frame = JSON.parse(String(event.data));
+          const challengeNonce = extractConnectChallengeNonce(String(event.data));
+          if (challengeNonce !== undefined) {
+            clearTimeout(challengeTimer);
+            void sendConnect(challengeNonce || null).catch(reject);
+            return;
+          }
+          if (frame?.type === 'res' && frame?.ok === true) {
+            clearTimeout(timer);
+            clearTimeout(challengeTimer);
+            ws.close();
+            resolve();
+          } else if (frame?.type === 'res' && frame?.ok === false) {
+            clearTimeout(timer);
+            clearTimeout(challengeTimer);
+            ws.close();
+            reject(new Error(String(frame?.payload || 'Gateway rejected connection')));
+          }
+        } catch (error) {
+          clearTimeout(timer);
+          clearTimeout(challengeTimer);
+          ws.close();
+          reject(error);
+        }
+      };
+
+      ws.onerror = () => {
+        clearTimeout(timer);
+        clearTimeout(challengeTimer);
+        ws.close();
+        reject(new Error('Gateway socket error'));
+      };
+    });
+    return { ok: true, message: 'Gateway connection test passed.' };
+  } catch (reason) {
+    return {
+      ok: false,
+      message: reason instanceof Error ? reason.message : String(reason),
+    };
+  }
+}
+
+export async function testEmos(
+  baseUrl: string,
+  apiKey: string,
+  userId: string,
+): Promise<TestResult> {
+  const base = baseUrl.trim().replace(/\/$/, '');
+  const key = apiKey.trim();
+  const user = userId.trim();
+
+  if (!user) {
+    return { ok: false, message: 'User ID is required for EverMemOS connection.' };
+  }
+
+  const endpoint = `${base}/api/v0/memories/search?query=ping&user_id=${encodeURIComponent(user)}&limit=1`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`EverMemOS test failed (${response.status}): ${responseText}`);
+    }
+    return { ok: true, message: 'EverMemOS connection test passed.' };
+  } catch (reason) {
+    const msg =
+      reason instanceof Error
+        ? `${reason.message}\n\nEndpoint: ${endpoint}`
+        : `${String(reason)}\n\nEndpoint: ${endpoint}`;
+    return { ok: false, message: msg };
+  }
+}

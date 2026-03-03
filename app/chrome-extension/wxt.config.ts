@@ -62,7 +62,6 @@ export default defineConfig({
       open_in_tab: true,
     },
     action: {
-      default_popup: 'popup.html',
       default_title: 'Ruminer Browser Agent',
     },
     // Chrome Side Panel entry for workflow management
