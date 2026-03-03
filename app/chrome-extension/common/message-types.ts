@@ -84,6 +84,7 @@ export const BACKGROUND_MESSAGE_TYPES = {
   // Quick Panel <-> AgentChat integration
   QUICK_PANEL_SEND_TO_AI: 'quick_panel_send_to_ai',
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
+  QUICK_PANEL_OPEN_SIDEPANEL: 'quick_panel_open_sidepanel',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
@@ -281,6 +282,7 @@ export interface QuickPanelCancelAIPayload {
  * Response from QUICK_PANEL_CANCEL_AI message handler.
  */
 export type QuickPanelCancelAIResponse = { success: true } | { success: false; error: string };
+export type QuickPanelOpenSidepanelResponse = { success: true } | { success: false; error: string };
 
 /**
  * Message structure for cancelling AI request.

@@ -35,6 +35,7 @@ import {
   TOOL_MESSAGE_TYPES,
   type QuickPanelAIEventMessage,
   type QuickPanelCancelAIResponse,
+  type QuickPanelOpenSidepanelResponse,
   type QuickPanelSendToAIPayload,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -242,6 +243,28 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to cancel request' };
+    }
+  }
+
+  /**
+   * Open the AgentChat sidepanel.
+   *
+   * @returns Promise resolving to success or failure
+   */
+  async openSidepanel(): Promise<QuickPanelOpenSidepanelResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL,
+      });
+
+      return response as QuickPanelOpenSidepanelResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to open sidepanel' };
     }
   }
 

@@ -727,6 +727,42 @@ async function handleCancelAI(
   return { success: true };
 }
 
+/**
+ * Handle QUICK_PANEL_OPEN_SIDEPANEL message.
+ * Opens the AgentChat sidepanel for the current tab.
+ */
+async function handleOpenSidepanel(
+  sender: chrome.runtime.MessageSender,
+): Promise<{ success: boolean; error?: string }> {
+  const tabId = sender?.tab?.id;
+  const windowId = sender?.tab?.windowId;
+
+  if (typeof tabId !== 'number') {
+    return { success: false, error: 'Quick Panel request must originate from a tab.' };
+  }
+
+  // Try synchronous open first (same as context menu handler)
+  const sidePanel = chrome.sidePanel as any;
+  if (sidePanel?.open) {
+    try {
+      sidePanel.open({ tabId });
+    } catch {
+      // Fallback to windowId if available
+      if (typeof windowId === 'number') {
+        try {
+          sidePanel.open({ windowId });
+        } catch {
+          // Both failed
+        }
+      }
+    }
+  }
+
+  // Also run the async setup (setOptions)
+  await openAgentChatSidepanel(tabId, windowId);
+  return { success: true };
+}
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -755,6 +791,17 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_CANCEL_AI
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CANCEL_AI) {
       handleCancelAI(message as QuickPanelCancelAIMessage, sender)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_OPEN_SIDEPANEL
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL) {
+      handleOpenSidepanel(sender)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

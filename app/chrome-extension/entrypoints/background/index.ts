@@ -10,8 +10,8 @@ import {
   initializeSemanticEngineIfCached,
 } from './semantic-similarity';
 import { initStorageManagerListener } from './storage-manager';
-import { initWebEditorListeners } from './web-editor';
 import { openAgentChatSidepanel } from './utils/sidepanel';
+import { initWebEditorListeners } from './web-editor';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
@@ -108,7 +108,6 @@ function initSidepanelContextMenu(): void {
 
   // Handle click
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    console.log('[Sidepanel] Context menu clicked:', info.menuItemId, 'tab:', tab?.id);
     if (info.menuItemId === SIDEPANEL_CONTEXT_MENU_ID && tab?.id) {
       // Open must happen synchronously - pass tab info and let the function handle both sync and async parts
       const sidePanel = chrome.sidePanel as any;
@@ -116,21 +115,19 @@ function initSidepanelContextMenu(): void {
         // Try immediate synchronous open first
         try {
           sidePanel.open({ tabId: tab.id });
-          console.log('[Sidepanel] open({ tabId }) called synchronously');
         } catch (e) {
           console.warn('[Sidepanel] Synchronous open failed:', e);
           // Fallback to windowId if available
           if (typeof tab.windowId === 'number') {
             try {
               sidePanel.open({ windowId: tab.windowId });
-              console.log('[Sidepanel] open({ windowId }) called synchronously');
             } catch (e2) {
               console.error('[Sidepanel] Window open also failed:', e2);
             }
           }
         }
       }
-      // Also run the async setup (setOptions) which doesn't require user gesture
+      // Also run the async setup (setOptions)
       openAgentChatSidepanel(tab.id, tab.windowId);
     }
   });

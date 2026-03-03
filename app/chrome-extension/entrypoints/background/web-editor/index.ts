@@ -1,14 +1,14 @@
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import {
-  WEB_EDITOR_V2_ACTIONS,
   WEB_EDITOR_V1_ACTIONS,
+  WEB_EDITOR_V2_ACTIONS,
   type ElementChangeSummary,
   type WebEditorApplyBatchPayload,
-  type WebEditorTxChangedPayload,
-  type WebEditorHighlightElementPayload,
-  type WebEditorRevertElementPayload,
   type WebEditorCancelExecutionPayload,
   type WebEditorCancelExecutionResponse,
+  type WebEditorHighlightElementPayload,
+  type WebEditorRevertElementPayload,
+  type WebEditorTxChangedPayload,
 } from '@/common/web-editor-types';
 import { openAgentChatSidepanel } from '../utils/sidepanel';
 

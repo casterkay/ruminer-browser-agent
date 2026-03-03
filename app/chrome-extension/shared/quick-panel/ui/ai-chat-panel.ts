@@ -97,6 +97,7 @@ const BANNER_AUTO_HIDE_MS = 2400;
 const ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
 const ICON_SEND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>`;
 const ICON_STOP = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>`;
+const ICON_SIDEPANEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>`;
 
 // ============================================================
 // Utility Functions
@@ -201,6 +202,7 @@ interface PanelDOMElements {
   streamIndicator: HTMLDivElement;
   streamText: HTMLSpanElement;
   closeBtn: HTMLButtonElement;
+  sidepanelBtn: HTMLButtonElement;
   contentEl: HTMLDivElement;
   emptyEl: HTMLDivElement;
   messagesEl: HTMLDivElement;
@@ -273,7 +275,13 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
   closeBtn.innerHTML = ICON_CLOSE;
   closeBtn.setAttribute('aria-label', 'Close Quick Panel');
 
-  headerRight.append(streamIndicator, closeBtn);
+  const sidepanelBtn = document.createElement('button');
+  sidepanelBtn.type = 'button';
+  sidepanelBtn.className = 'qp-icon-btn ac-focus-ring';
+  sidepanelBtn.innerHTML = ICON_SIDEPANEL;
+  sidepanelBtn.setAttribute('aria-label', 'Open in Sidepanel');
+
+  headerRight.append(streamIndicator, sidepanelBtn, closeBtn);
   header.append(headerLeft, headerRight);
 
   // ---- Content ----
@@ -361,6 +369,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
     streamIndicator,
     streamText,
     closeBtn,
+    sidepanelBtn,
     contentEl,
     emptyEl,
     messagesEl,
@@ -858,6 +867,15 @@ export function mountQuickPanelAiChatPanel(
   });
 
   disposer.listen(dom.closeBtn, 'click', () => close());
+
+  // Sidepanel button handler: open sidepanel and close quick panel
+  disposer.listen(dom.sidepanelBtn, 'click', async () => {
+    if (disposed) return;
+    // Open sidepanel (best-effort)
+    await agentBridge.openSidepanel();
+    // Close the quick panel
+    close();
+  });
 
   // Unified action button handler: send or stop based on current state
   disposer.listen(dom.actionBtn, 'click', () => {
