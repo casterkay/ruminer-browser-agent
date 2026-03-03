@@ -2,16 +2,16 @@
  * Composable for managing Agent Chat state and messages.
  * Handles message sending, receiving, and cancellation.
  */
-import { ref, computed } from 'vue';
 import type {
-  AgentMessage,
   AgentActRequest,
   AgentAttachment,
-  RealtimeEvent,
-  AgentStatusEvent,
   AgentCliPreference,
+  AgentMessage,
+  AgentStatusEvent,
   AgentUsageStats,
+  RealtimeEvent,
 } from 'chrome-mcp-shared';
+import { computed, ref } from 'vue';
 
 /**
  * Request lifecycle state.
@@ -309,7 +309,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       // Ensure SSE is open for this session
       options.openEventSource();
 
-      const url = `http://127.0.0.1:${serverPort}/agent/act`;
+      const url = `http://127.0.0.1:${serverPort}/agent/chat/${encodeURIComponent(sessionId)}/act`;
 
       const body: AgentActRequest = {
         instruction: text,
@@ -352,12 +352,13 @@ export function useAgentChat(options: UseAgentChatOptions) {
   async function cancelCurrentRequest(): Promise<void> {
     const serverPort = options.getServerPort();
     const requestId = currentRequestId.value;
+    const sessionId = options.getSessionId();
     if (!serverPort || !requestId) return;
 
     cancelling.value = true;
     try {
-      const url = `http://127.0.0.1:${serverPort}/agent/requests/${encodeURIComponent(requestId)}/cancel`;
-      await fetch(url, { method: 'POST' });
+      const url = `http://127.0.0.1:${serverPort}/agent/chat/${encodeURIComponent(sessionId)}/cancel/${encodeURIComponent(requestId)}`;
+      await fetch(url, { method: 'DELETE' });
       // Wait for SSE status cancelled/completed; don't clear requestId here
     } catch (error) {
       console.error('Failed to cancel request:', error);

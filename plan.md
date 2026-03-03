@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make **OpenClaw** a first-class engine integrated the same way as Claude/Codex: requests go through the native-server **AgentChatService** (`/agent/act`), and the UI consumes a single **SSE RealtimeEvent** stream (no direct OpenClaw-Gateway chat path in the sidepanel).
+Make **OpenClaw** a first-class engine integrated the same way as Claude/Codex: requests go through the native-server **AgentChatService** (`/agent/chat/:sessionId/act`), and the UI consumes a single **SSE RealtimeEvent** stream (no direct OpenClaw-Gateway chat path in the sidepanel).
 
 Constraints / invariants:
 
@@ -28,7 +28,7 @@ Non-goals:
 
 Single pipeline:
 
-- Sidepanel sends instructions to native-server via `/agent/act`.
+- Sidepanel sends instructions to native-server via `/agent/chat/:sessionId/act`.
 - Native-server `AgentChatService` selects engine (`openclaw`, `claude`, `codex`, …).
 - Engine emits **standard** `RealtimeEvent` events.
 - Native-server streams events over SSE; extension consumes them via `useAgentServer`/`useAgentChat`.
@@ -249,7 +249,7 @@ Settings UI should read/write/test OpenClaw Gateway via native-server endpoints.
 
 ## Acceptance Criteria
 
-- UI sidepanel chat works with `openclaw` engine through `/agent/act` + SSE.
+- UI sidepanel chat works with `openclaw` engine through `/agent/chat/:sessionId/act` + SSE.
 - No non-standard event types exist in engines; OpenClaw emits only shared `RealtimeEvent` shapes.
 - `AgentCliPreference` includes `openclaw` and typecheck passes without casts.
 - Settings UI can configure and test the Gateway via native-server endpoints.

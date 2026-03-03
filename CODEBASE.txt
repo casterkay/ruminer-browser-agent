@@ -255,7 +255,6 @@ app/
 │   │   ├── engine-icons
 │   │   │   ├── claude.png
 │   │   │   ├── codex.svg
-│   │   │   ├── openclaw.png
 │   │   │   └── openclaw.svg
 │   │   ├── icon
 │   │   │   ├── 128.png
@@ -422,4 +421,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-96 directories, 302 files
+96 directories, 301 files

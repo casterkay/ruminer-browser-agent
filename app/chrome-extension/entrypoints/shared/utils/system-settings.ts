@@ -6,12 +6,7 @@
  */
 
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import {
-  buildSignedConnectParams,
-  extractConnectChallengeNonce,
-  OPENCLAW_CLIENT_IDS,
-  OPENCLAW_CLIENT_MODES,
-} from '@/entrypoints/shared/utils/openclaw-device-auth';
+import { setGatewaySettings } from '@/entrypoints/shared/utils/openclaw-settings';
 
 export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
 
@@ -58,84 +53,37 @@ export async function testGateway(
   const wsUrl = gatewayWsUrl.trim();
   const authToken = gatewayAuthToken.trim();
 
+  const status = await refreshServerStatus();
+  if (!status.isRunning || !status.port) {
+    return {
+      ok: false,
+      message: 'Native server is not running. Start it first to test OpenClaw Gateway.',
+    };
+  }
+
   try {
-    await new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(wsUrl);
-      const timer = setTimeout(() => {
-        ws.close();
-        reject(new Error('Gateway test timeout'));
-      }, 10_000);
-      const challengeTimer = setTimeout(() => {
-        if (!connectSent) void sendConnect(null).catch(reject);
-      }, 6_000);
-      let connectSent = false;
+    // Persist settings to native-server so test uses the same config as the engine.
+    await setGatewaySettings({ gatewayWsUrl: wsUrl, gatewayAuthToken: authToken });
 
-      async function sendConnect(challengeNonce: string | null): Promise<void> {
-        if (connectSent) return;
-        connectSent = true;
-        const params = await buildSignedConnectParams({
-          role: 'operator',
-          authToken,
-          client: {
-            id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
-            version: chrome.runtime.getManifest().version || '0.1.0',
-            platform: typeof navigator !== 'undefined' ? navigator.platform || 'web' : 'web',
-            mode: OPENCLAW_CLIENT_MODES.WEBCHAT,
-          },
-          scopes: ['operator.read', 'operator.write'],
-          caps: [],
-          commands: [],
-          permissions: {},
-          locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
-          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ruminer-options',
-          nonce: challengeNonce,
-        });
-        ws.send(
-          JSON.stringify({
-            type: 'req',
-            id: crypto.randomUUID(),
-            method: 'connect',
-            params,
-          }),
-        );
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const frame = JSON.parse(String(event.data));
-          const challengeNonce = extractConnectChallengeNonce(String(event.data));
-          if (challengeNonce !== undefined) {
-            clearTimeout(challengeTimer);
-            void sendConnect(challengeNonce || null).catch(reject);
-            return;
-          }
-          if (frame?.type === 'res' && frame?.ok === true) {
-            clearTimeout(timer);
-            clearTimeout(challengeTimer);
-            ws.close();
-            resolve();
-          } else if (frame?.type === 'res' && frame?.ok === false) {
-            clearTimeout(timer);
-            clearTimeout(challengeTimer);
-            ws.close();
-            reject(new Error(String(frame?.payload || 'Gateway rejected connection')));
-          }
-        } catch (error) {
-          clearTimeout(timer);
-          clearTimeout(challengeTimer);
-          ws.close();
-          reject(error);
-        }
-      };
-
-      ws.onerror = () => {
-        clearTimeout(timer);
-        clearTimeout(challengeTimer);
-        ws.close();
-        reject(new Error('Gateway socket error'));
-      };
+    const response = await fetch(`http://127.0.0.1:${status.port}/agent/openclaw/test`, {
+      method: 'POST',
     });
-    return { ok: true, message: 'Gateway connection test passed.' };
+
+    const text = await response.text().catch(() => '');
+    let data: any = null;
+    try {
+      data = text ? (JSON.parse(text) as any) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      return { ok: false, message: text || `HTTP ${response.status}` };
+    }
+
+    const ok = data?.ok === true;
+    const message = typeof data?.message === 'string' ? data.message : ok ? 'OK' : 'Failed';
+    return { ok, message };
   } catch (reason) {
     return {
       ok: false,

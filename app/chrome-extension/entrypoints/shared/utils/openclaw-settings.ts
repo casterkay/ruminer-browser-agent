@@ -31,6 +31,8 @@ const DEFAULT_GATEWAY_SETTINGS: GatewayConnectionSettings = {
   deviceId: null,
 };
 
+const DEFAULT_NATIVE_SERVER_PORT = 12306;
+
 const DEFAULT_EMOS_SETTINGS: EmosConnectionSettings = {
   baseUrl: 'https://api.evermind.ai',
   apiKey: '',
@@ -57,7 +59,23 @@ function normalizeNullableString(value: unknown): string | null {
   return null;
 }
 
-export async function getGatewaySettings(): Promise<GatewayConnectionSettings> {
+async function getNativeServerPort(): Promise<number> {
+  const stored = await chrome.storage.local.get(['nativeServerPort']);
+  const raw = stored?.nativeServerPort;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_NATIVE_SERVER_PORT;
+}
+
+async function readJson<T>(response: Response): Promise<T> {
+  const text = await response.text().catch(() => '');
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+}
+
+async function getGatewaySettingsFromLocalStorage(): Promise<GatewayConnectionSettings> {
   const raw =
     (await chrome.storage.local.get(STORAGE_KEYS.OPENCLAW_GATEWAY_SETTINGS))[
       STORAGE_KEYS.OPENCLAW_GATEWAY_SETTINGS
@@ -72,10 +90,10 @@ export async function getGatewaySettings(): Promise<GatewayConnectionSettings> {
   };
 }
 
-export async function setGatewaySettings(
+async function setGatewaySettingsToLocalStorage(
   patch: Partial<GatewayConnectionSettings>,
 ): Promise<GatewayConnectionSettings> {
-  const current = await getGatewaySettings();
+  const current = await getGatewaySettingsFromLocalStorage();
   const next: GatewayConnectionSettings = {
     ...current,
     ...patch,
@@ -84,6 +102,61 @@ export async function setGatewaySettings(
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.OPENCLAW_GATEWAY_SETTINGS]: next });
   return next;
+}
+
+export async function getGatewaySettings(): Promise<GatewayConnectionSettings> {
+  try {
+    const port = await getNativeServerPort();
+    const response = await fetch(`http://127.0.0.1:${port}/agent/openclaw/settings`, {
+      method: 'GET',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await readJson<{ settings?: any }>(response);
+    const settings = data?.settings || {};
+
+    return {
+      gatewayWsUrl: normalizeString(settings.wsUrl, DEFAULT_GATEWAY_SETTINGS.gatewayWsUrl),
+      gatewayAuthToken: normalizeString(settings.authToken, ''),
+      // Native-server reports last test info; map it to existing UI fields.
+      lastConnectedAt: normalizeNullableString(settings.lastTestOkAt),
+      lastConnectionError: normalizeNullableString(settings.lastTestError),
+      deviceId: normalizeNullableString(settings.deviceId),
+    };
+  } catch {
+    return await getGatewaySettingsFromLocalStorage();
+  }
+}
+
+export async function setGatewaySettings(
+  patch: Partial<GatewayConnectionSettings>,
+): Promise<GatewayConnectionSettings> {
+  try {
+    const port = await getNativeServerPort();
+
+    const body: Record<string, unknown> = {};
+    if (typeof patch.gatewayWsUrl === 'string') {
+      body.wsUrl = patch.gatewayWsUrl;
+    }
+    if (typeof patch.gatewayAuthToken === 'string') {
+      body.authToken = patch.gatewayAuthToken;
+    }
+
+    const response = await fetch(`http://127.0.0.1:${port}/agent/openclaw/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text().catch(() => `HTTP ${response.status}`));
+    }
+
+    return await getGatewaySettings();
+  } catch {
+    return await setGatewaySettingsToLocalStorage(patch);
+  }
 }
 
 export async function getGatewayStatus(): Promise<GatewayConnectionStatus> {
