@@ -69,7 +69,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     id: 'interact',
     label: 'Interact',
     description: 'DOM manipulation and network',
-    defaultEnabled: false,
+    defaultEnabled: true,
     tools: [
       { id: 'chrome_click_element', name: 'Click', description: 'Click an element' },
       {
@@ -130,7 +130,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
 const DEFAULT_TOOL_GROUP_STATE: ToolGroupState = {
   observe: true,
   navigate: true,
-  interact: false,
+  interact: true,
   execute: false,
   workflow: true,
   updatedAt: new Date(0).toISOString(),
@@ -191,38 +191,100 @@ export async function isToolGroupEnabled(groupId: ToolGroupId): Promise<boolean>
   return state[groupId];
 }
 
+export async function getIndividualToolState(): Promise<IndividualToolState> {
+  const raw =
+    (await chrome.storage.local.get(STORAGE_KEYS.INDIVIDUAL_TOOL_STATE))[
+      STORAGE_KEYS.INDIVIDUAL_TOOL_STATE
+    ] || {};
+  const overrides = raw.overrides && typeof raw.overrides === 'object' ? raw.overrides : {};
+  return {
+    overrides: overrides as Record<string, boolean>,
+    updatedAt:
+      typeof raw.updatedAt === 'string' && raw.updatedAt.length > 0
+        ? raw.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+export async function setIndividualToolOverride(
+  toolId: string,
+  enabled: boolean,
+): Promise<IndividualToolState> {
+  const current = await getIndividualToolState();
+  const nextOverrides = { ...current.overrides };
+  if (enabled) {
+    delete nextOverrides[toolId];
+  } else {
+    nextOverrides[toolId] = false;
+  }
+  const next: IndividualToolState = {
+    overrides: nextOverrides,
+    updatedAt: new Date().toISOString(),
+  };
+  await chrome.storage.local.set({ [STORAGE_KEYS.INDIVIDUAL_TOOL_STATE]: next });
+  return next;
+}
+
+export async function clearIndividualToolOverrides(): Promise<IndividualToolState> {
+  const next: IndividualToolState = {
+    overrides: {},
+    updatedAt: new Date().toISOString(),
+  };
+  await chrome.storage.local.set({ [STORAGE_KEYS.INDIVIDUAL_TOOL_STATE]: next });
+  return next;
+}
+
 export function getDisabledToolGroups(state: ToolGroupState): ToolGroupId[] {
   return (Object.keys(state) as (keyof ToolGroupState)[])
     .filter((key): key is ToolGroupId => key !== 'updatedAt')
     .filter((key) => state[key] === false);
 }
 
-export function buildToolGroupRestrictionText(state: ToolGroupState): string {
-  const disabled = getDisabledToolGroups(state);
-  if (disabled.length === 0) {
-    return '';
-  }
+export function buildToolGroupRestrictionText(
+  state: ToolGroupState,
+  individualState?: IndividualToolState | null,
+): string {
+  const disabledGroups = getDisabledToolGroups(state);
+  const lines: string[] = [];
 
-  const lines = disabled.map((groupId) => {
+  for (const groupId of disabledGroups) {
     switch (groupId) {
       case 'interact':
-        return '- Interact: disabled (no DOM interaction, cookie-network/file tools, or bookmarks writes)';
+        lines.push(
+          '- Interact: disabled (no DOM interaction, cookie-network/file tools, or bookmarks writes)',
+        );
+        break;
       case 'execute':
-        return '- Execute: disabled (no JavaScript eval/injection tools)';
+        lines.push('- Execute: disabled (no JavaScript eval/injection tools)');
+        break;
       case 'navigate':
-        return '- Navigate: disabled (no navigation or tab switch/close actions)';
+        lines.push('- Navigate: disabled (no navigation or tab switch/close actions)');
+        break;
       case 'observe':
-        return '- Observe: disabled (no snapshot/screenshot/history/bookmark/console reads)';
+        lines.push('- Observe: disabled (no snapshot/screenshot/history/bookmark/console reads)');
+        break;
       case 'workflow':
-        return '- Workflow: disabled (no RR-V3 flow/trigger/run actions)';
+        lines.push('- Workflow: disabled (no RR-V3 flow/trigger/run actions)');
+        break;
     }
-  });
+  }
+
+  const overrides = individualState?.overrides ?? {};
+  for (const group of TOOL_GROUP_DEFINITIONS) {
+    if (!state[group.id]) continue;
+    const disabledTools = group.tools.filter((t) => overrides[t.id] === false).map((t) => t.id);
+    if (disabledTools.length > 0) {
+      lines.push(`- ${group.label}: disabled tools: ${disabledTools.join(', ')}`);
+    }
+  }
+
+  if (lines.length === 0) return '';
 
   return [
     'Tool group restrictions:',
     ...lines,
     '',
-    'Ask the user to enable a group before using it.',
+    'Ask the user to enable a group or tool before using it.',
   ]
     .join('\n')
     .trim();

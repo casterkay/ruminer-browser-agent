@@ -1,6 +1,7 @@
 import { computed, onUnmounted, ref, type Ref } from 'vue';
 import {
   buildToolGroupRestrictionText,
+  getIndividualToolState,
   getToolGroupState,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
@@ -55,7 +56,11 @@ export interface UseOpenClawChat {
   send: () => Promise<void>;
   abort: () => Promise<void>;
   newChat: () => Promise<void>;
-  applyToolGroupsToPrompt: (message: string, toolGroups: ToolGroupState) => string;
+  applyToolGroupsToPrompt: (
+    message: string,
+    toolGroups: ToolGroupState,
+    individualToolState?: { overrides: Record<string, boolean> } | null,
+  ) => string;
 }
 
 const SESSION_KEY = 'main';
@@ -417,8 +422,12 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
     return gateway.connected.value && input.value.trim().length > 0 && !sending.value;
   });
 
-  function applyToolGroupsToPrompt(message: string, toolGroups: ToolGroupState): string {
-    const restrictionText = buildToolGroupRestrictionText(toolGroups);
+  function applyToolGroupsToPrompt(
+    message: string,
+    toolGroups: ToolGroupState,
+    individualToolState?: { overrides: Record<string, boolean> } | null,
+  ): string {
+    const restrictionText = buildToolGroupRestrictionText(toolGroups, individualToolState ?? null);
     if (!restrictionText) {
       return message;
     }
@@ -475,8 +484,11 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
     input.value = '';
 
     try {
-      const toolGroups = await getToolGroupState();
-      const finalMessage = applyToolGroupsToPrompt(messageText, toolGroups);
+      const [toolGroups, individualToolState] = await Promise.all([
+        getToolGroupState(),
+        getIndividualToolState(),
+      ]);
+      const finalMessage = applyToolGroupsToPrompt(messageText, toolGroups, individualToolState);
 
       const response: any = await gateway.request('chat.send', {
         sessionKey: SESSION_KEY,

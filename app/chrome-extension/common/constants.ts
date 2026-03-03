@@ -228,6 +228,7 @@ export const STORAGE_KEYS = {
   OPENCLAW_GATEWAY_DEVICE_ID: 'openclawGatewayDeviceId',
   EMOS_SETTINGS: 'emosSettings',
   TOOL_GROUP_STATE: 'toolGroupState',
+  INDIVIDUAL_TOOL_STATE: 'individualToolState',
   SEMANTIC_MODEL: 'selectedModel',
   USER_PREFERENCES: 'userPreferences',
   VECTOR_INDEX: 'vectorIndex',

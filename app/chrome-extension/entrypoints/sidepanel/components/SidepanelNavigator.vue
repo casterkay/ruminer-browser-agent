@@ -8,9 +8,7 @@
       :style="activeTab === item.id ? activeTabStyle : inactiveTabStyle"
       @click="$emit('change', item.id)"
     >
-      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="item.icon" />
-      </svg>
+      <component :is="item.icon" class="nav-icon" />
       <span class="nav-label">{{ item.label }}</span>
     </button>
 
@@ -20,7 +18,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, type Component } from 'vue';
+import ILucideMessageCircleMore from '~icons/lucide/message-circle-more';
+import ILucideDatabase from '~icons/lucide/database';
+import ILucideZap from '~icons/lucide/zap';
 
 type TabType = 'chat' | 'memory' | 'workflows';
 
@@ -32,22 +33,10 @@ defineEmits<{
   (e: 'change', tab: TabType): void;
 }>();
 
-const tabs: Array<{ id: TabType; label: string; icon: string }> = [
-  {
-    id: 'chat',
-    label: 'Chat',
-    icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
-  },
-  {
-    id: 'memory',
-    label: 'Memory',
-    icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 12c0 2.21 3.582 4 8 4s8-1.79 8-4',
-  },
-  {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: 'm3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z',
-  },
+const tabs: Array<{ id: TabType; label: string; icon: Component }> = [
+  { id: 'chat', label: 'Chat', icon: ILucideMessageCircleMore },
+  { id: 'memory', label: 'Memory', icon: ILucideDatabase },
+  { id: 'workflows', label: 'Workflows', icon: ILucideZap },
 ];
 
 const activeIndex = computed(() => tabs.findIndex((t) => t.id === props.activeTab));

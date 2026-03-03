@@ -13,14 +13,7 @@
         data-tooltip="Back"
         @click="$emit('back')"
       >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M15 19l-7-7 7-7"
-          />
-        </svg>
+        <ILucideChevronLeft class="w-5 h-5" />
       </button>
 
       <!-- Brand + Connection Indicator -->
@@ -67,19 +60,7 @@
         data-tooltip="Open project workspace"
         @click="$emit('toggle:openProjectMenu')"
       >
-        <svg
-          class="w-5 h-5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
-          />
-        </svg>
+        <ILucideFolderOpen class="w-5 h-5" />
       </button>
 
       <!-- Theme & Settings Icon (Color Palette) -->
@@ -89,23 +70,7 @@
         data-tooltip="Settings"
         @click="$emit('toggle:settingsMenu')"
       >
-        <svg
-          class="w-5 h-5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
-          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
-          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
-          <path
-            d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"
-          />
-        </svg>
+        <ILucidePalette class="w-5 h-5" />
       </button>
     </div>
   </div>
@@ -114,6 +79,9 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
+import ILucideChevronLeft from '~icons/lucide/chevron-left';
+import ILucideFolderOpen from '~icons/lucide/folder-open';
+import ILucidePalette from '~icons/lucide/palette';
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
 

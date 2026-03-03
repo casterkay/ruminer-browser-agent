@@ -37,14 +37,7 @@
             class="w-full h-full flex items-center justify-center"
             :style="{ color: 'var(--ac-text-subtle)' }"
           >
-            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
+            <ILucideImage class="w-6 h-6" />
           </div>
         </div>
         <!-- Remove button (appears on hover) -->
@@ -57,14 +50,7 @@
           title="Remove image"
           @click="$emit('attachment:remove', index)"
         >
-          <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="3"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
+          <ILucideX class="w-2.5 h-2.5" />
         </button>
         <!-- Filename tooltip on hover -->
         <div
@@ -138,14 +124,7 @@
             title="Expand editor"
             @click="openDrawer"
           >
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-              />
-            </svg>
+            <ILucideMaximize2 class="w-3.5 h-3.5" />
           </button>
         </Transition>
       </div>
@@ -161,14 +140,7 @@
             data-tooltip="Attach image"
             @click="$emit('attachment:add')"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
+            <ILucideImage class="w-4 h-4" />
           </button>
 
           <!-- Model Selector (auto-width) -->
@@ -197,20 +169,10 @@
               </option>
             </select>
             <!-- Dropdown arrow -->
-            <svg
+            <ILucideChevronDown
               class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
               :style="{ color: 'var(--ac-text-subtle)' }"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
+            />
           </div>
 
           <!-- Reasoning Effort (Codex only) -->
@@ -267,18 +229,9 @@
             @click="handlePrimaryAction"
           >
             <!-- Stop icon (square) when request is active -->
-            <svg v-if="isRequestActive" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
+            <ILucideSquare v-if="isRequestActive" class="w-3.5 h-3.5 fill-current" />
             <!-- Send icon (arrow up) when idle -->
-            <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 10l7-7m0 0l7 7m-7-7v18"
-              />
-            </svg>
+            <ILucideArrowUp v-else class="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -314,14 +267,7 @@
             data-tooltip="Attach image"
             @click="$emit('attachment:add')"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
+            <ILucideImage class="w-4 h-4" />
           </button>
 
           <!-- Model Selector -->
@@ -340,20 +286,10 @@
                 {{ m.name }}
               </option>
             </select>
-            <svg
+            <ILucideChevronDown
               class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
               :style="{ color: 'var(--ac-text-subtle)' }"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
+            />
           </div>
 
           <!-- Status Text -->
@@ -379,6 +315,12 @@ import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import type { RequestState } from '../../composables/useAgentChat';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import ILucideWrench from '~icons/lucide/wrench';
+import ILucideImage from '~icons/lucide/image';
+import ILucideX from '~icons/lucide/x';
+import ILucideMaximize2 from '~icons/lucide/maximize-2';
+import ILucideChevronDown from '~icons/lucide/chevron-down';
+import ILucideSquare from '~icons/lucide/square';
+import ILucideArrowUp from '~icons/lucide/arrow-up';
 import ComposerDrawer from './ComposerDrawer.vue';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
 

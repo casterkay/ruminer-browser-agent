@@ -64,14 +64,7 @@
               class="flex-shrink-0 inline-flex items-center justify-center w-4 h-4 rounded"
               :style="previewChipIconStyle"
             >
-              <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-                />
-              </svg>
+              <ILucidePaintbrush class="w-2.5 h-2.5" />
             </span>
             <span class="flex-1 min-w-0 truncate" :style="previewStyle">
               {{ previewDisplayText }}
@@ -117,19 +110,7 @@
             title="Open project"
             @click.stop="handleOpenProject"
           >
-            <svg
-              class="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
-              />
-            </svg>
+            <ILucideFolderOpen class="w-3.5 h-3.5" />
           </button>
           <!-- Rename Button -->
           <button
@@ -139,14 +120,7 @@
             title="Rename"
             @click.stop="startRename"
           >
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-              />
-            </svg>
+            <ILucidePencil class="w-3.5 h-3.5" />
           </button>
           <!-- Delete Button -->
           <button
@@ -156,14 +130,7 @@
             title="Delete"
             @click.stop="handleDelete"
           >
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
+            <ILucideTrash2 class="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -174,6 +141,10 @@
 <script lang="ts" setup>
 import type { AgentSession } from 'chrome-mcp-shared';
 import { computed, nextTick, ref, watch } from 'vue';
+import ILucidePaintbrush from '~icons/lucide/paintbrush';
+import ILucideFolderOpen from '~icons/lucide/folder-open';
+import ILucidePencil from '~icons/lucide/pencil';
+import ILucideTrash2 from '~icons/lucide/trash-2';
 
 // =============================================================================
 // Props & Emits

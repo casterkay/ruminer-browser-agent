@@ -79,38 +79,59 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
     throw new Error('EMOS is not configured');
   }
 
-  if (!settings.userId.trim()) {
-    throw new Error('EMOS User ID is not configured');
-  }
-
   const headers: Record<string, string> = {
     Authorization: `Bearer ${settings.apiKey}`,
   };
 
-  // Build query string from body params - always include user_id (required by API).
-  const params = new URLSearchParams();
-  params.append('user_id', settings.userId.trim());
-  Object.entries(body).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
-      params.append(key, String(value));
-    }
-  });
-
-  const response = await fetch(
-    `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search?${params.toString()}`,
-    {
-      method: 'GET',
-      headers,
-    },
+  const userIds = Array.from(
+    new Set([settings.userId.trim(), 'me'].filter((value) => value.length > 0)),
   );
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(`EMOS search failed (${response.status}) ${JSON.stringify(json)}`);
+  if (userIds.length === 0) {
+    throw new Error('EMOS User ID is not configured');
   }
 
-  return json;
+  const requests = userIds.map(async (userId) => {
+    const params = new URLSearchParams();
+    params.append('user_id', userId);
+    Object.entries(body).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value));
+      }
+    });
+
+    const response = await fetch(
+      `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search?${params.toString()}`,
+      {
+        method: 'GET',
+        headers,
+      },
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        `EMOS search failed for user_id="${userId}" (${response.status}) ${JSON.stringify(json)}`,
+      );
+    }
+
+    return json;
+  });
+
+  const settled = await Promise.allSettled(requests);
+  const fulfilled = settled
+    .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+    .map((result) => result.value);
+
+  if (fulfilled.length === 0) {
+    const firstError = settled.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    throw firstError?.reason instanceof Error
+      ? firstError.reason
+      : new Error(String(firstError?.reason ?? 'EMOS search failed'));
+  }
+
+  return { result: { memories: fulfilled.map((entry) => extractRawItems(entry)).flat() } };
 }
 
 async function deleteMemory(messageId: string): Promise<void> {
@@ -137,42 +158,75 @@ async function deleteMemory(messageId: string): Promise<void> {
   }
 }
 
-function extractRawItems(response: any): any[] {
-  const root = response?.result ?? response?.data ?? response;
-
-  const candidates = [
-    root?.memories,
-    root?.items,
-    response?.memories,
-    response?.items,
-    root,
-    response,
-  ];
-
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      // Some APIs return groups like: [{ episodic_memory: [...] }, ...]
-      const flattened: any[] = [];
-      for (const entry of candidate) {
-        if (Array.isArray(entry)) {
-          flattened.push(...entry);
-          continue;
-        }
-        if (entry && typeof entry === 'object') {
-          const values = Object.values(entry);
-          const arrayValues = values.filter((value) => Array.isArray(value)) as any[][];
-          if (arrayValues.length > 0) {
-            for (const list of arrayValues) flattened.push(...list);
-            continue;
-          }
-        }
-        flattened.push(entry);
-      }
-      return flattened;
-    }
+function looksLikeMemoryItem(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
   }
 
-  return [];
+  const item = value as Record<string, unknown>;
+  return [
+    item.message_id,
+    item.id,
+    item.memory_id,
+    item.content,
+    item.text,
+    item.summary,
+    item.memory,
+    item.message,
+    item.excerpt,
+    item.timestamp,
+    item.create_time,
+    item.sender,
+    item.group_id,
+  ].some((field) => field !== undefined);
+}
+
+function collectMemoryItems(value: unknown, output: any[]): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectMemoryItems(entry, output);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  if (looksLikeMemoryItem(value)) {
+    output.push(value);
+    return;
+  }
+
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    if (Array.isArray(nested) || (nested && typeof nested === 'object')) {
+      collectMemoryItems(nested, output);
+    }
+  }
+}
+
+function extractRawItems(response: any): any[] {
+  const root = response?.result ?? response?.data ?? response;
+  const primaryCandidates = [
+    root?.memories,
+    root?.pending_messages,
+    root?.items,
+    response?.memories,
+    response?.pending_messages,
+    response?.items,
+  ];
+
+  const collected: any[] = [];
+  for (const candidate of primaryCandidates) {
+    collectMemoryItems(candidate, collected);
+  }
+
+  if (collected.length === 0) {
+    collectMemoryItems(root, collected);
+    collectMemoryItems(response, collected);
+  }
+
+  return collected;
 }
 
 function safeParseDate(value?: string): number | null {
@@ -220,13 +274,16 @@ export function useEmosSearch(): UseEmosSearch {
       const normalized = rawList
         .map((raw) => normalizeItem(raw))
         .filter((item) => item.content.trim().length > 0);
+      const deduped = Array.from(
+        new Map(normalized.map((item) => [item.message_id || item.id, item])).values(),
+      );
 
       const platformPrefix = filters.platform?.trim().toLowerCase();
       const filteredByPlatform = platformPrefix
-        ? normalized.filter((item) =>
+        ? deduped.filter((item) =>
             (item.group_id || '').toLowerCase().startsWith(`${platformPrefix}:`),
           )
-        : normalized;
+        : deduped;
 
       const startMs = filters.startDate ? safeParseDate(`${filters.startDate}T00:00:00Z`) : null;
       const endMs = filters.endDate ? safeParseDate(`${filters.endDate}T23:59:59Z`) : null;

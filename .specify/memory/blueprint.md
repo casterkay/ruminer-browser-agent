@@ -170,7 +170,7 @@ Both paths target the same EMOS instance. The duplication is intentional — it 
 Ruminer runs as a single local user, and uses simple, human-readable sender IDs.
 
 - `sender` (EverMemOS `user_id`):
-  - User messages: `me`
+  - User messages: `me` or user-configured `{user_id}`
   - AI assistant replies: `{platform}` (e.g., `chatgpt`, `gemini`, `claude`, `deepseek`)
   - OpenClaw agent replies (from sidepanel chat): `agent`
 - `group_id`: `{platform}:{conversation_id}`

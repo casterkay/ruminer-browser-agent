@@ -22,7 +22,7 @@
         class="flex items-center justify-between px-4 py-3"
         :style="{ borderBottom: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)' }"
       >
-        <h2 class="text-sm font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }"> Tools </h2>
+        <h2 class="text-sm font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">Tools</h2>
         <button
           class="p-1 ac-btn"
           :style="{
@@ -36,339 +36,195 @@
       </div>
 
       <!-- Content (scrollable) -->
-      <div class="flex-1 overflow-y-auto ac-scroll px-4 py-3 space-y-4">
-        <!-- Claude Code Tools -->
-        <div v-if="isClaudeEngine" class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <label
+      <div class="flex-1 overflow-y-auto ac-scroll px-4 py-3 space-y-2">
+        <!-- Agent Builtin Tools (same pattern as Browser Tools) -->
+        <section v-if="isClaudeEngine" class="space-y-2">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <h3
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
             >
-              Claude Code Tools
-            </label>
+              Agent Builtin Tools
+            </h3>
             <button
               class="text-[10px] ac-btn"
               :style="{ color: 'var(--ac-link, #3b82f6)' }"
+              :disabled="isSaving"
               @click="handleRestoreClaudeTools"
             >
-              Restore preset
+              Reset defaults
             </button>
           </div>
 
-          <p class="text-[10px]" :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }">
-            Controls Claude Code’s built-in tools (read/search/edit/run). Changes apply to the next
-            request; if a tool still seems missing, reset the session.
-          </p>
-
-          <div class="flex items-center gap-2">
-            <button
-              class="px-2 py-1 text-[10px] ac-btn"
-              :style="{
-                backgroundColor:
-                  localClaudeToolsMode === 'preset'
-                    ? 'var(--ac-accent-subtle, rgba(200,121,65,0.15))'
-                    : 'transparent',
-                color:
-                  localClaudeToolsMode === 'preset'
-                    ? 'var(--ac-accent, #c87941)'
-                    : 'var(--ac-text-muted, #6e6e6e)',
-                border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                borderRadius: 'var(--ac-radius-button, 8px)',
-              }"
-              @click="localClaudeToolsMode = 'preset'"
+          <div class="space-y-2">
+            <div
+              v-for="group in agentBuiltinGroupsWithTools"
+              :key="group.id"
+              class="rounded-lg overflow-hidden"
+              :style="cardStyle"
             >
-              Preset (claude_code)
-            </button>
-            <button
-              class="px-2 py-1 text-[10px] ac-btn"
-              :style="{
-                backgroundColor:
-                  localClaudeToolsMode === 'custom'
-                    ? 'var(--ac-accent-subtle, rgba(200,121,65,0.15))'
-                    : 'transparent',
-                color:
-                  localClaudeToolsMode === 'custom'
-                    ? 'var(--ac-accent, #c87941)'
-                    : 'var(--ac-text-muted, #6e6e6e)',
-                border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                borderRadius: 'var(--ac-radius-button, 8px)',
-              }"
-              @click="localClaudeToolsMode = 'custom'"
-            >
-              Custom list
-            </button>
-          </div>
-
-          <div
-            class="space-y-2 p-2"
-            :style="{
-              backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
-              borderRadius: 'var(--ac-radius-inner, 8px)',
-            }"
-          >
-            <template v-if="localClaudeToolsMode === 'preset'">
-              <div class="flex items-center justify-between text-[10px]">
-                <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                  Disabled: {{ localClaudeDisallowedTools.length }}
-                </span>
+              <div
+                class="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                :style="headerStyle"
+                @click="toggleAgentGroupExpanded(group.id)"
+              >
+                <ILucideChevronRight
+                  class="w-4 h-4 flex-shrink-0 transition-transform"
+                  :class="{ 'rotate-90': agentGroupExpanded[group.id] }"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                />
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                    {{ group.label }}
+                  </div>
+                  <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
+                    {{ agentGroupEnabledCount(group) }} / {{ group.tools.length }} enabled
+                  </div>
+                </div>
                 <button
-                  class="text-[10px] ac-btn"
-                  :style="{ color: 'var(--ac-link, #3b82f6)' }"
-                  @click="localClaudeDisallowedTools = []"
+                  class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
+                  :style="toggleStyle(isAgentGroupEnabled(group.id))"
+                  :disabled="isSaving"
+                  @click.stop="handleToggleAgentGroup(group.id)"
                 >
-                  Enable all
+                  <span
+                    class="inline-block w-3.5 h-3.5 rounded-full"
+                    :style="{
+                      backgroundColor: '#ffffff',
+                      transform: isAgentGroupEnabled(group.id)
+                        ? 'translateX(18px)'
+                        : 'translateX(2px)',
+                      transition: 'transform 120ms ease-out',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                    }"
+                  />
                 </button>
               </div>
 
-              <details class="text-[10px]">
-                <summary class="cursor-pointer" :style="{ color: 'var(--ac-link, #3b82f6)' }">
-                  Configure disabled tools
-                </summary>
-                <div class="mt-2 space-y-2">
-                  <input
-                    v-model="localClaudeToolsFilter"
-                    class="w-full px-2 py-1.5 text-xs"
-                    :style="{
-                      backgroundColor: 'var(--ac-surface, #ffffff)',
-                      border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                      borderRadius: 'var(--ac-radius-button, 8px)',
-                      color: 'var(--ac-text, #1a1a1a)',
-                    }"
-                    placeholder="Filter tools…"
-                  />
-
-                  <div
-                    class="max-h-40 overflow-y-auto ac-scroll space-y-1"
-                    :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
-                  >
-                    <div
-                      v-for="tool in filteredClaudeToolCandidates"
-                      :key="tool"
-                      class="flex items-center justify-between gap-2"
-                    >
-                      <label class="flex items-center gap-2 min-w-0 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          :checked="!localClaudeDisallowedTools.includes(tool)"
-                          @change="handleToggleClaudeToolDisabled(tool)"
-                        />
-                        <span class="font-mono truncate">{{ tool }}</span>
-                      </label>
-                      <span class="text-[9px]" :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }">
-                        {{ localClaudeDisallowedTools.includes(tool) ? 'disabled' : 'enabled' }}
-                      </span>
-                    </div>
-
-                    <div
-                      v-if="filteredClaudeToolCandidates.length === 0"
-                      class="py-2 text-center text-[10px]"
-                      :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
-                    >
-                      No tools to show. Open Tools again to refresh the tool list.
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </template>
-
-            <template v-else>
-              <div class="flex items-center justify-between text-[10px]">
-                <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                  Enabled: {{ localClaudeSelectedTools.length }}
-                </span>
-                <div class="flex items-center gap-2">
-                  <button
-                    class="text-[10px] ac-btn"
-                    :style="{ color: 'var(--ac-link, #3b82f6)' }"
-                    @click="handleSelectAllClaudeTools"
-                  >
-                    Select all
-                  </button>
-                  <button
-                    class="text-[10px] ac-btn"
-                    :style="{ color: 'var(--ac-link, #3b82f6)' }"
-                    @click="localClaudeSelectedTools = []"
-                  >
-                    Select none
-                  </button>
-                </div>
-              </div>
-
-              <input
-                v-model="localClaudeToolsFilter"
-                class="w-full px-2 py-1.5 text-xs"
-                :style="{
-                  backgroundColor: 'var(--ac-surface, #ffffff)',
-                  border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                  borderRadius: 'var(--ac-radius-button, 8px)',
-                  color: 'var(--ac-text, #1a1a1a)',
-                }"
-                placeholder="Filter tools…"
-              />
-
               <div
-                class="max-h-44 overflow-y-auto ac-scroll space-y-1"
-                :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                v-show="agentGroupExpanded[group.id]"
+                class="p-2 space-y-0.5 max-h-48 overflow-y-auto ac-scroll"
+                :style="bodyStyle"
               >
-                <div
-                  v-for="tool in filteredClaudeToolCandidates"
+                <label
+                  v-for="tool in group.tools"
                   :key="tool"
-                  class="flex items-center justify-between gap-2"
+                  class="flex items-center gap-2.5 py-1.5 px-2 rounded cursor-pointer hover:bg-black/5"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
                 >
-                  <label class="flex items-center gap-2 min-w-0 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      :checked="localClaudeSelectedTools.includes(tool)"
-                      @change="handleToggleClaudeToolSelected(tool)"
-                    />
-                    <span class="font-mono truncate">{{ tool }}</span>
-                  </label>
-                  <span class="text-[9px]" :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }">
-                    {{ localClaudeSelectedTools.includes(tool) ? 'enabled' : 'disabled' }}
-                  </span>
-                </div>
-
-                <div
-                  v-if="filteredClaudeToolCandidates.length === 0"
-                  class="py-2 text-center text-[10px]"
-                  :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
-                >
-                  No tools to show. Open Tools again to refresh the tool list.
-                </div>
+                  <input
+                    type="checkbox"
+                    :checked="isClaudeToolEnabled(tool)"
+                    :disabled="!isAgentGroupEnabled(group.id) || isSaving"
+                    @change="handleToggleClaudeTool(tool)"
+                  />
+                  <span class="font-mono text-xs truncate flex-1">{{ tool }}</span>
+                </label>
               </div>
-            </template>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Browser Tool Groups -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <label
+        <!-- Browser Tools (collapsible groups with toggle) -->
+        <section class="space-y-2">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <h3
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
             >
               Browser Tools
-            </label>
-            <div class="flex items-center gap-2">
-              <button
-                class="text-[10px] ac-btn"
-                :style="{ color: 'var(--ac-link, #3b82f6)' }"
-                :disabled="toolGroupsLoading || toolGroupsBusy"
-                @click="handleResetToolGroups"
-              >
-                Reset defaults
-              </button>
-              <button
-                class="text-[10px] ac-btn"
-                :style="{ color: 'var(--ac-link, #3b82f6)' }"
-                :disabled="toolGroupsLoading || toolGroupsBusy"
-                @click="handleSetSafeToolGroups"
-              >
-                Safe mode (no JS/interaction)
-              </button>
-            </div>
-          </div>
-
-          <p class="text-[10px]" :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }">
-            Enable or disable categories of browser automation tools. Safe mode enables Observe +
-            Navigate + Workflow only.
-          </p>
-
-          <div v-if="toolGroupsError" class="text-[10px]" :style="{ color: 'var(--ac-danger)' }">
-            {{ toolGroupsError }}
+            </h3>
+            <button
+              class="text-[10px] ac-btn"
+              :style="{ color: 'var(--ac-link, #3b82f6)' }"
+              :disabled="toolGroupsLoading || toolGroupsBusy"
+              @click="handleResetToolGroups"
+            >
+              Reset defaults
+            </button>
           </div>
 
           <div
-            class="space-y-2 p-2"
-            :style="{
-              backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
-              borderRadius: 'var(--ac-radius-inner, 8px)',
-            }"
+            v-if="toolGroupsError"
+            class="text-[10px] mb-2"
+            :style="{ color: 'var(--ac-danger)' }"
           >
-            <div v-if="toolGroupsLoading" class="text-[10px] py-2 text-center">
-              <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Loading tools…</span>
-            </div>
+            {{ toolGroupsError }}
+          </div>
 
-            <div v-else class="space-y-2">
+          <div v-if="toolGroupsLoading" class="py-4 text-center text-[10px]">
+            <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Loading tools…</span>
+          </div>
+
+          <div v-else class="space-y-2">
+            <div
+              v-for="group in toolGroupDefinitions"
+              :key="group.id"
+              class="rounded-lg overflow-hidden"
+              :style="cardStyle"
+            >
               <div
-                v-for="group in toolGroupDefinitions"
-                :key="group.id"
-                class="p-2"
-                :style="{
-                  backgroundColor: 'var(--ac-surface, #ffffff)',
-                  border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                  borderRadius: 'var(--ac-radius-inner, 8px)',
-                }"
+                class="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                :style="headerStyle"
+                @click="toggleBrowserGroupExpanded(group.id)"
               >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div
-                      class="text-xs font-semibold"
-                      :style="{ color: 'var(--ac-text, #1a1a1a)' }"
-                    >
-                      {{ group.label }}
-                    </div>
-                    <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                      {{ group.description }}
-                    </div>
+                <ILucideChevronRight
+                  class="w-4 h-4 flex-shrink-0 transition-transform"
+                  :class="{ 'rotate-90': browserGroupExpanded[group.id] }"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                />
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                    {{ group.label }}
                   </div>
-
-                  <button
-                    class="relative inline-flex w-10 h-5 items-center flex-shrink-0 ac-btn"
-                    :style="{
-                      backgroundColor: toolGroups?.[group.id]
-                        ? 'var(--ac-accent, #c87941)'
-                        : 'var(--ac-border, #e5e5e5)',
-                      borderRadius: '9999px',
-                      border: toolGroups?.[group.id]
-                        ? 'var(--ac-border-width, 1px) solid var(--ac-accent, #c87941)'
-                        : 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-                      padding: '1px',
-                    }"
-                    :disabled="toolGroupsBusy"
-                    :aria-pressed="!!toolGroups?.[group.id]"
-                    :data-tooltip="toolGroups?.[group.id] ? 'Enabled' : 'Disabled'"
-                    @click="handleToggleToolGroup(group.id)"
-                  >
-                    <span
-                      class="inline-block w-4 h-4"
-                      :style="{
-                        backgroundColor: '#ffffff',
-                        borderRadius: '9999px',
-                        transform: toolGroups?.[group.id] ? 'translateX(20px)' : 'translateX(0px)',
-                        transition: 'transform 120ms ease-out',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                      }"
-                    />
-                  </button>
+                  <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
+                    {{ browserGroupEnabledCount(group) }} / {{ group.tools.length }} enabled
+                  </div>
                 </div>
-
-                <details class="mt-2 text-[10px]">
-                  <summary class="cursor-pointer" :style="{ color: 'var(--ac-link, #3b82f6)' }">
-                    View tools ({{ group.tools.length }})
-                  </summary>
-                  <div
-                    class="mt-1 p-2 max-h-24 overflow-y-auto ac-scroll space-y-1"
+                <button
+                  class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
+                  :style="toggleStyle(!!toolGroups?.[group.id])"
+                  :disabled="toolGroupsBusy"
+                  @click.stop="handleToggleToolGroup(group.id)"
+                >
+                  <span
+                    class="inline-block w-3.5 h-3.5 rounded-full"
                     :style="{
-                      backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
-                      borderRadius: 'var(--ac-radius-inner, 8px)',
+                      backgroundColor: '#ffffff',
+                      transform: toolGroups?.[group.id] ? 'translateX(18px)' : 'translateX(2px)',
+                      transition: 'transform 120ms ease-out',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
                     }"
-                  >
-                    <div
-                      v-for="tool in group.tools"
-                      :key="tool.id"
-                      class="flex justify-between gap-2"
-                      :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
-                    >
-                      <span class="truncate">{{ tool.name }}</span>
-                      <span class="font-mono text-[9px] truncate max-w-[120px]">{{ tool.id }}</span>
-                    </div>
-                  </div>
-                </details>
+                  />
+                </button>
+              </div>
+
+              <div
+                v-show="browserGroupExpanded[group.id]"
+                class="p-2 space-y-0.5 max-h-48 overflow-y-auto ac-scroll"
+                :style="bodyStyle"
+              >
+                <label
+                  v-for="tool in group.tools"
+                  :key="tool.id"
+                  class="flex items-center gap-2.5 py-1.5 px-2 rounded cursor-pointer hover:bg-black/5"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="isBrowserToolEnabled(group, tool)"
+                    :disabled="!toolGroups?.[group.id] || toolGroupsBusy"
+                    @change="handleToggleBrowserTool(group, tool)"
+                  />
+                  <span class="text-xs truncate flex-1">{{ tool.name }}</span>
+                  <span class="font-mono text-[9px] truncate max-w-[100px] opacity-70">
+                    {{ tool.id }}
+                  </span>
+                </label>
               </div>
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
       <!-- Footer -->
@@ -415,17 +271,51 @@ import type {
 } from 'chrome-mcp-shared';
 import {
   TOOL_GROUP_DEFINITIONS,
+  clearIndividualToolOverrides,
   getDefaultToolGroupState,
+  getIndividualToolState,
   getToolGroupState,
+  setIndividualToolOverride,
   setToolGroupEnabled,
   setToolGroupState,
+  type IndividualToolState,
+  type ToolDefinition,
   type ToolGroupDefinition,
   type ToolGroupId,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
 import ILucideX from '~icons/lucide/x';
+import ILucideChevronRight from '~icons/lucide/chevron-right';
 
-type ClaudeToolsMode = 'preset' | 'custom';
+/** Agent Builtin Tool groups (same structure as Browser Tools) */
+const AGENT_BUILTIN_GROUPS = [
+  {
+    id: 'file_system',
+    label: 'File System',
+    tools: [
+      'read_file',
+      'write_file',
+      'search_code',
+      'edit_code',
+      'list_dir',
+      'glob_file_search',
+      'apply_patch',
+      'delete_file',
+    ],
+  },
+  {
+    id: 'runtime',
+    label: 'Runtime',
+    tools: ['run_terminal_cmd', 'run_command'],
+  },
+  {
+    id: 'web',
+    label: 'Web',
+    tools: ['web_search', 'fetch_documentation'],
+  },
+] as const;
+
+const AGENT_BUILTIN_ALL_TOOLS = AGENT_BUILTIN_GROUPS.flatMap((g) => g.tools);
 
 const props = defineProps<{
   open: boolean;
@@ -442,21 +332,98 @@ const emit = defineEmits<{
 
 const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
 
+const cardStyle = {
+  backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
+  border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+};
+const headerStyle = {
+  backgroundColor: 'var(--ac-surface, #ffffff)',
+  borderBottom: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+};
+const bodyStyle = { backgroundColor: 'var(--ac-surface-inset, #f5f5f5)' };
+
+function toggleStyle(enabled: boolean) {
+  return {
+    backgroundColor: enabled ? 'var(--ac-accent, #c87941)' : 'var(--ac-border, #e5e5e5)',
+    borderRadius: '9999px',
+    border: enabled
+      ? 'var(--ac-border-width, 1px) solid var(--ac-accent, #c87941)'
+      : 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+    padding: '1px',
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Collapse state
+// -----------------------------------------------------------------------------
+
+const agentGroupExpanded = ref<Record<string, boolean>>({});
+const browserGroupExpanded = ref<Record<string, boolean>>({});
+
+function toggleAgentGroupExpanded(groupId: string): void {
+  agentGroupExpanded.value = {
+    ...agentGroupExpanded.value,
+    [groupId]: !agentGroupExpanded.value[groupId],
+  };
+}
+
+function toggleBrowserGroupExpanded(groupId: ToolGroupId): void {
+  browserGroupExpanded.value = {
+    ...browserGroupExpanded.value,
+    [groupId]: !browserGroupExpanded.value[groupId],
+  };
+}
+
 // -----------------------------------------------------------------------------
 // Browser tool groups (global)
 // -----------------------------------------------------------------------------
 
 const toolGroupDefinitions = TOOL_GROUP_DEFINITIONS as readonly ToolGroupDefinition[];
 const toolGroups = ref<ToolGroupState | null>(null);
+const individualToolState = ref<IndividualToolState | null>(null);
 const toolGroupsLoading = ref(false);
 const toolGroupsBusy = ref(false);
 const toolGroupsError = ref<string | null>(null);
+
+function browserGroupEnabledCount(group: ToolGroupDefinition): number {
+  const groupEnabled = !!toolGroups.value?.[group.id];
+  if (!groupEnabled) return 0;
+  const overrides = individualToolState.value?.overrides ?? {};
+  return group.tools.filter((t) => overrides[t.id] !== false).length;
+}
+
+function isBrowserToolEnabled(group: ToolGroupDefinition, tool: ToolDefinition): boolean {
+  const groupEnabled = !!toolGroups.value?.[group.id];
+  if (!groupEnabled) return false;
+  const overrides = individualToolState.value?.overrides ?? {};
+  return overrides[tool.id] !== false;
+}
+
+async function handleToggleBrowserTool(
+  group: ToolGroupDefinition,
+  tool: ToolDefinition,
+): Promise<void> {
+  const groupEnabled = !!toolGroups.value?.[group.id];
+  if (!groupEnabled) return;
+  const currentlyEnabled = isBrowserToolEnabled(group, tool);
+  toolGroupsBusy.value = true;
+  toolGroupsError.value = null;
+  try {
+    individualToolState.value = await setIndividualToolOverride(tool.id, !currentlyEnabled);
+  } catch (reason) {
+    toolGroupsError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    toolGroupsBusy.value = false;
+  }
+}
 
 async function loadToolGroups(): Promise<void> {
   toolGroupsLoading.value = true;
   toolGroupsError.value = null;
   try {
-    toolGroups.value = await getToolGroupState();
+    const [groups, individual] = await Promise.all([getToolGroupState(), getIndividualToolState()]);
+    toolGroups.value = groups;
+    individualToolState.value = individual;
   } catch (reason) {
     toolGroupsError.value = reason instanceof Error ? reason.message : String(reason);
   } finally {
@@ -487,31 +454,18 @@ async function handleResetToolGroups(): Promise<void> {
   toolGroupsError.value = null;
   try {
     const defaults = getDefaultToolGroupState();
-    toolGroups.value = await setToolGroupState({
-      observe: defaults.observe,
-      navigate: defaults.navigate,
-      interact: defaults.interact,
-      execute: defaults.execute,
-      workflow: defaults.workflow,
-    });
-  } catch (reason) {
-    toolGroupsError.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    toolGroupsBusy.value = false;
-  }
-}
-
-async function handleSetSafeToolGroups(): Promise<void> {
-  toolGroupsBusy.value = true;
-  toolGroupsError.value = null;
-  try {
-    toolGroups.value = await setToolGroupState({
-      observe: true,
-      navigate: true,
-      interact: false,
-      execute: false,
-      workflow: true,
-    });
+    const [groups, individual] = await Promise.all([
+      setToolGroupState({
+        observe: defaults.observe,
+        navigate: defaults.navigate,
+        interact: defaults.interact,
+        execute: defaults.execute,
+        workflow: defaults.workflow,
+      }),
+      clearIndividualToolOverrides(),
+    ]);
+    toolGroups.value = groups;
+    individualToolState.value = individual;
   } catch (reason) {
     toolGroupsError.value = reason instanceof Error ? reason.message : String(reason);
   } finally {
@@ -525,7 +479,7 @@ function handleStorageChange(
 ): void {
   if (areaName !== 'local') return;
   if (!props.open) return;
-  if (!changes.toolGroupState) return;
+  if (!changes.toolGroupState && !changes.individualToolState) return;
   void loadToolGroups();
 }
 
@@ -551,10 +505,9 @@ watch(
 // Claude tools (per-session)
 // -----------------------------------------------------------------------------
 
-const localClaudeToolsMode = ref<ClaudeToolsMode>('preset');
+const localAgentGroupEnabled = ref<Record<string, boolean>>({});
 const localClaudeDisallowedTools = ref<string[]>([]);
 const localClaudeSelectedTools = ref<string[]>([]);
-const localClaudeToolsFilter = ref('');
 const initialClaudeSnapshot = ref<string>('');
 
 const claudeToolCandidates = computed<string[]>(() => {
@@ -578,18 +531,81 @@ const claudeToolCandidates = computed<string[]>(() => {
     for (const tool of disallowed) set.add(tool);
   }
 
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  const result = Array.from(set).sort((a, b) => a.localeCompare(b));
+  return result.length > 0 ? result : [...AGENT_BUILTIN_ALL_TOOLS];
 });
 
-const filteredClaudeToolCandidates = computed<string[]>(() => {
-  const filter = localClaudeToolsFilter.value.trim().toLowerCase();
-  if (!filter) return claudeToolCandidates.value;
-  return claudeToolCandidates.value.filter((tool) => tool.toLowerCase().includes(filter));
+const agentBuiltinGroupsWithTools = computed(() => {
+  const candidates = claudeToolCandidates.value;
+  const assigned = new Set(AGENT_BUILTIN_GROUPS.flatMap((g) => g.tools));
+  const groups = AGENT_BUILTIN_GROUPS.map((group) => ({
+    ...group,
+    tools: group.tools.filter((t) => candidates.includes(t)),
+  })).filter((g) => g.tools.length > 0);
+  const otherTools = candidates.filter((t) => !assigned.has(t));
+  if (otherTools.length > 0) {
+    groups.push({ id: 'other', label: 'Other', tools: otherTools });
+  }
+  return groups;
 });
+
+function isAgentGroupEnabled(groupId: string): boolean {
+  return localAgentGroupEnabled.value[groupId] !== false;
+}
+
+function handleToggleAgentGroup(groupId: string): void {
+  localAgentGroupEnabled.value = {
+    ...localAgentGroupEnabled.value,
+    [groupId]: !isAgentGroupEnabled(groupId),
+  };
+}
+
+function agentGroupEnabledCount(group: { id: string; tools: readonly string[] }): number {
+  if (!isAgentGroupEnabled(group.id)) return 0;
+  const toolsConfig = props.session?.optionsConfig?.tools;
+  if (Array.isArray(toolsConfig)) {
+    return group.tools.filter((t) => localClaudeSelectedTools.value.includes(t)).length;
+  }
+  return group.tools.filter((t) => !localClaudeDisallowedTools.value.includes(t)).length;
+}
+
+function isClaudeToolEnabled(tool: string): boolean {
+  const group = agentBuiltinGroupsWithTools.value.find((g) => g.tools.includes(tool));
+  if (!group || !isAgentGroupEnabled(group.id)) return false;
+  const toolsConfig = props.session?.optionsConfig?.tools;
+  if (Array.isArray(toolsConfig)) {
+    return localClaudeSelectedTools.value.includes(tool);
+  }
+  return !localClaudeDisallowedTools.value.includes(tool);
+}
+
+function handleToggleClaudeTool(tool: string): void {
+  const normalized = String(tool || '').trim();
+  if (!normalized) return;
+
+  const toolsConfig = props.session?.optionsConfig?.tools;
+  if (Array.isArray(toolsConfig)) {
+    const current = new Set(localClaudeSelectedTools.value);
+    if (current.has(normalized)) {
+      current.delete(normalized);
+    } else {
+      current.add(normalized);
+    }
+    localClaudeSelectedTools.value = Array.from(current).sort((a, b) => a.localeCompare(b));
+  } else {
+    const current = new Set(localClaudeDisallowedTools.value);
+    if (current.has(normalized)) {
+      current.delete(normalized);
+    } else {
+      current.add(normalized);
+    }
+    localClaudeDisallowedTools.value = Array.from(current).sort((a, b) => a.localeCompare(b));
+  }
+}
 
 function captureClaudeSnapshot(): void {
   initialClaudeSnapshot.value = JSON.stringify({
-    mode: localClaudeToolsMode.value,
+    groupEnabled: localAgentGroupEnabled.value,
     disallowed: localClaudeDisallowedTools.value,
     selected: localClaudeSelectedTools.value,
   });
@@ -598,7 +614,7 @@ function captureClaudeSnapshot(): void {
 const isClaudeDirty = computed(() => {
   if (!isClaudeEngine.value) return false;
   const current = JSON.stringify({
-    mode: localClaudeToolsMode.value,
+    groupEnabled: localAgentGroupEnabled.value,
     disallowed: localClaudeDisallowedTools.value,
     selected: localClaudeSelectedTools.value,
   });
@@ -606,52 +622,18 @@ const isClaudeDirty = computed(() => {
 });
 
 function handleRestoreClaudeTools(): void {
-  localClaudeToolsMode.value = 'preset';
+  localAgentGroupEnabled.value = {};
   localClaudeDisallowedTools.value = [];
   localClaudeSelectedTools.value = [];
-  localClaudeToolsFilter.value = '';
-}
-
-function handleToggleClaudeToolDisabled(tool: string): void {
-  const normalized = String(tool || '').trim();
-  if (!normalized) return;
-
-  const current = new Set(localClaudeDisallowedTools.value);
-  if (current.has(normalized)) {
-    current.delete(normalized);
-  } else {
-    current.add(normalized);
-  }
-
-  localClaudeDisallowedTools.value = Array.from(current).sort((a, b) => a.localeCompare(b));
-}
-
-function handleToggleClaudeToolSelected(tool: string): void {
-  const normalized = String(tool || '').trim();
-  if (!normalized) return;
-
-  const current = new Set(localClaudeSelectedTools.value);
-  if (current.has(normalized)) {
-    current.delete(normalized);
-  } else {
-    current.add(normalized);
-  }
-
-  localClaudeSelectedTools.value = Array.from(current).sort((a, b) => a.localeCompare(b));
-}
-
-function handleSelectAllClaudeTools(): void {
-  localClaudeSelectedTools.value = claudeToolCandidates.value;
 }
 
 watch(
-  () => props.session,
-  (session) => {
+  () => [props.session, agentBuiltinGroupsWithTools.value] as const,
+  ([session, groups]) => {
     if (!session || session.engineName !== 'claude') {
-      localClaudeToolsMode.value = 'preset';
+      localAgentGroupEnabled.value = {};
       localClaudeDisallowedTools.value = [];
       localClaudeSelectedTools.value = [];
-      localClaudeToolsFilter.value = '';
       initialClaudeSnapshot.value = '';
       return;
     }
@@ -660,26 +642,33 @@ watch(
     const toolsConfig = options.tools;
 
     if (Array.isArray(toolsConfig)) {
-      localClaudeToolsMode.value = 'custom';
-      localClaudeSelectedTools.value = Array.from(new Set(toolsConfig)).sort((a, b) =>
-        a.localeCompare(b),
-      );
+      const selected = new Set(toolsConfig);
+      localAgentGroupEnabled.value = {};
+      for (const g of groups) {
+        localAgentGroupEnabled.value[g.id] = g.tools.some((t) => selected.has(t));
+      }
+      localClaudeSelectedTools.value = Array.from(selected).sort((a, b) => a.localeCompare(b));
       localClaudeDisallowedTools.value = [];
     } else if (Array.isArray(options.allowedTools)) {
-      localClaudeToolsMode.value = 'custom';
-      localClaudeSelectedTools.value = Array.from(new Set(options.allowedTools)).sort((a, b) =>
-        a.localeCompare(b),
-      );
+      const allowed = new Set(options.allowedTools);
+      localAgentGroupEnabled.value = {};
+      for (const g of groups) {
+        localAgentGroupEnabled.value[g.id] = g.tools.some((t) => allowed.has(t));
+      }
+      localClaudeSelectedTools.value = Array.from(allowed).sort((a, b) => a.localeCompare(b));
       localClaudeDisallowedTools.value = [];
     } else {
-      localClaudeToolsMode.value = 'preset';
+      const disallowed = new Set(
+        Array.isArray(options.disallowedTools) ? options.disallowedTools : [],
+      );
+      localAgentGroupEnabled.value = {};
+      for (const g of groups) {
+        localAgentGroupEnabled.value[g.id] = g.tools.some((t) => !disallowed.has(t));
+      }
       localClaudeSelectedTools.value = [];
-      localClaudeDisallowedTools.value = Array.isArray(options.disallowedTools)
-        ? Array.from(new Set(options.disallowedTools)).sort((a, b) => a.localeCompare(b))
-        : [];
+      localClaudeDisallowedTools.value = Array.from(disallowed).sort((a, b) => a.localeCompare(b));
     }
 
-    localClaudeToolsFilter.value = '';
     captureClaudeSnapshot();
   },
   { immediate: true },
@@ -692,6 +681,33 @@ function handleClose(): void {
 function handleSave(): void {
   if (!props.session || props.session.engineName !== 'claude') return;
 
+  const groups = agentBuiltinGroupsWithTools.value;
+  const toolsConfig = props.session?.optionsConfig?.tools;
+
+  const effectiveDisabled = new Set<string>();
+  const effectiveSelected = new Set<string>();
+  for (const g of groups) {
+    if (!isAgentGroupEnabled(g.id)) {
+      for (const t of g.tools) effectiveDisabled.add(t);
+    } else if (Array.isArray(toolsConfig)) {
+      for (const t of g.tools) {
+        if (localClaudeSelectedTools.value.includes(t)) effectiveSelected.add(t);
+      }
+    } else {
+      for (const t of g.tools) {
+        if (!localClaudeDisallowedTools.value.includes(t)) effectiveSelected.add(t);
+        else effectiveDisabled.add(t);
+      }
+    }
+  }
+
+  const allDisabled = groups.every((g) => !isAgentGroupEnabled(g.id));
+  if (allDisabled) {
+    emit('save', { ...(props.session.optionsConfig ?? {}), tools: [] });
+    captureClaudeSnapshot();
+    return;
+  }
+
   const existingOptions = props.session.optionsConfig ?? {};
   const {
     allowedTools: _allowedTools,
@@ -700,19 +716,15 @@ function handleSave(): void {
     ...rest
   } = existingOptions;
 
-  const optionsConfig: AgentSessionOptionsConfig =
-    localClaudeToolsMode.value === 'custom'
-      ? {
-          ...rest,
-          tools: localClaudeSelectedTools.value,
-        }
-      : {
-          ...rest,
-          tools: { type: 'preset', preset: 'claude_code' },
-          ...(localClaudeDisallowedTools.value.length > 0
-            ? { disallowedTools: localClaudeDisallowedTools.value }
-            : {}),
-        };
+  const optionsConfig: AgentSessionOptionsConfig = Array.isArray(toolsConfig)
+    ? { ...rest, tools: Array.from(effectiveSelected).sort((a, b) => a.localeCompare(b)) }
+    : {
+        ...rest,
+        tools: { type: 'preset', preset: 'claude_code' },
+        ...(effectiveDisabled.size > 0
+          ? { disallowedTools: Array.from(effectiveDisabled).sort((a, b) => a.localeCompare(b)) }
+          : {}),
+      };
 
   emit('save', optionsConfig);
   captureClaudeSnapshot();

@@ -30,13 +30,17 @@ export {
   type EmosConnectionSettings,
 } from './openclaw-settings';
 export {
+  buildToolGroupRestrictionText,
+  clearIndividualToolOverrides,
   getDefaultToolGroupState,
+  getIndividualToolState,
   getToolGroupState,
+  setIndividualToolOverride,
   setToolGroupState,
   setToolGroupEnabled,
   isToolGroupEnabled,
   getDisabledToolGroups,
-  buildToolGroupRestrictionText,
+  type IndividualToolState,
   type ToolGroupId,
   type ToolGroupState,
 } from './tool-groups';
