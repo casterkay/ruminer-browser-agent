@@ -1,0 +1,414 @@
+packages/
+├── shared
+│   ├── package.json
+│   ├── src
+│   │   ├── agent-types.ts
+│   │   ├── constants.ts
+│   │   ├── index.ts
+│   │   ├── labels.ts
+│   │   ├── node-spec-registry.ts
+│   │   ├── node-spec.ts
+│   │   ├── node-specs-builtin.ts
+│   │   ├── rr-graph.ts
+│   │   ├── step-types.ts
+│   │   ├── tools.ts
+│   │   └── types.ts
+│   └── tsconfig.json
+└── wasm-simd
+    ├── BUILD.md
+    ├── Cargo.toml
+    ├── package.json
+    ├── README.md
+    └── src
+        └── lib.rs
+
+5 directories, 18 files
+app/
+├── chrome-extension
+│   ├── _locales
+│   │   ├── de
+│   │   │   └── messages.json
+│   │   ├── en
+│   │   │   └── messages.json
+│   │   ├── ja
+│   │   │   └── messages.json
+│   │   ├── ko
+│   │   │   └── messages.json
+│   │   ├── zh_CN
+│   │   │   └── messages.json
+│   │   └── zh_TW
+│   │       └── messages.json
+│   ├── assets
+│   │   └── vue.svg
+│   ├── common
+│   │   ├── agent-models.ts
+│   │   ├── constants.ts
+│   │   ├── element-marker-types.ts
+│   │   ├── message-types.ts
+│   │   ├── node-types.ts
+│   │   ├── rr-v3-keepalive-protocol.ts
+│   │   ├── step-types.ts
+│   │   ├── tool-handler.ts
+│   │   └── web-editor-types.ts
+│   ├── entrypoints
+│   │   ├── background
+│   │   │   ├── element-marker
+│   │   │   │   ├── element-marker-storage.ts
+│   │   │   │   └── index.ts
+│   │   │   ├── index.ts
+│   │   │   ├── keepalive-manager.ts
+│   │   │   ├── native-host.ts
+│   │   │   ├── openclaw
+│   │   │   ├── quick-panel
+│   │   │   │   ├── agent-handler.ts
+│   │   │   │   ├── commands.ts
+│   │   │   │   └── tabs-handler.ts
+│   │   │   ├── record-replay
+│   │   │   │   ├── actions
+│   │   │   │   ├── engine
+│   │   │   │   ├── flow-runner.ts
+│   │   │   │   ├── flow-store.ts
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── legacy-types.ts
+│   │   │   │   ├── nodes
+│   │   │   │   ├── recording
+│   │   │   │   ├── rr-utils.ts
+│   │   │   │   ├── selector-engine.ts
+│   │   │   │   ├── storage
+│   │   │   │   ├── trigger-store.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── record-replay-v3
+│   │   │   │   ├── bootstrap.ts
+│   │   │   │   ├── domain
+│   │   │   │   ├── engine
+│   │   │   │   ├── index.ts
+│   │   │   │   └── storage
+│   │   │   ├── ruminer
+│   │   │   │   ├── emos-client.ts
+│   │   │   │   ├── hash.ts
+│   │   │   │   ├── ingestion-ledger.ts
+│   │   │   │   └── ledger-policy.ts
+│   │   │   ├── semantic-similarity.ts
+│   │   │   ├── storage-manager.ts
+│   │   │   ├── tools
+│   │   │   │   ├── base-browser.ts
+│   │   │   │   ├── browser
+│   │   │   │   ├── flow-learn.ts
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── record-replay.ts
+│   │   │   │   └── step-supplement.ts
+│   │   │   ├── utils
+│   │   │   │   └── sidepanel.ts
+│   │   │   └── web-editor
+│   │   │       └── index.ts
+│   │   ├── builder
+│   │   │   ├── App.vue
+│   │   │   ├── index.html
+│   │   │   └── main.ts
+│   │   ├── content.ts
+│   │   ├── element-picker.content.ts
+│   │   ├── offscreen
+│   │   │   ├── gif-encoder.ts
+│   │   │   ├── index.html
+│   │   │   ├── main.ts
+│   │   │   └── rr-keepalive.ts
+│   │   ├── options
+│   │   │   ├── App.vue
+│   │   │   ├── index.html
+│   │   │   └── main.ts
+│   │   ├── popup
+│   │   │   ├── App.vue
+│   │   │   ├── components
+│   │   │   │   ├── builder
+│   │   │   │   ├── ConfirmDialog.vue
+│   │   │   │   ├── ElementMarkerManagement.vue
+│   │   │   │   ├── icons
+│   │   │   │   ├── LocalModelPage.vue
+│   │   │   │   ├── ModelCacheManagement.vue
+│   │   │   │   ├── ProgressIndicator.vue
+│   │   │   │   └── ScheduleDialog.vue
+│   │   │   ├── index.html
+│   │   │   ├── main.ts
+│   │   │   └── style.css
+│   │   ├── quick-panel.content.ts
+│   │   ├── shared
+│   │   │   ├── components
+│   │   │   │   └── SystemSettingsForm.vue
+│   │   │   ├── composables
+│   │   │   │   ├── index.ts
+│   │   │   │   └── useRRV3Rpc.ts
+│   │   │   └── utils
+│   │   │       ├── index.ts
+│   │   │       ├── openclaw-device-auth.ts
+│   │   │       ├── openclaw-settings.ts
+│   │   │       ├── rr-flow-convert.ts
+│   │   │       ├── system-settings.ts
+│   │   │       └── tool-groups.ts
+│   │   ├── sidepanel
+│   │   │   ├── App.vue
+│   │   │   ├── components
+│   │   │   │   ├── agent
+│   │   │   │   ├── agent-chat
+│   │   │   │   ├── AgentChat.vue
+│   │   │   │   ├── memory
+│   │   │   │   ├── rr-v3
+│   │   │   │   ├── SidepanelNavigator.vue
+│   │   │   │   └── workflows
+│   │   │   ├── composables
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── useAgentChat.ts
+│   │   │   │   ├── useAgentChatViewRoute.ts
+│   │   │   │   ├── useAgentInputPreferences.ts
+│   │   │   │   ├── useAgentProjects.ts
+│   │   │   │   ├── useAgentServer.ts
+│   │   │   │   ├── useAgentSessions.ts
+│   │   │   │   ├── useAgentTheme.ts
+│   │   │   │   ├── useAgentThreads.ts
+│   │   │   │   ├── useAttachments.ts
+│   │   │   │   ├── useChatBackendPreference.ts
+│   │   │   │   ├── useEmosSearch.ts
+│   │   │   │   ├── useEmosSuggestions.ts
+│   │   │   │   ├── useFakeCaret.ts
+│   │   │   │   ├── useFloatingDrag.ts
+│   │   │   │   ├── useFloatingIconPreference.ts
+│   │   │   │   ├── useOpenClawChat.ts
+│   │   │   │   ├── useOpenClawGateway.ts
+│   │   │   │   ├── useOpenProjectPreference.ts
+│   │   │   │   ├── useRRV3Debugger.ts
+│   │   │   │   ├── useRRV3Rpc.ts
+│   │   │   │   ├── useTextareaAutoResize.ts
+│   │   │   │   ├── useWebEditorTxState.ts
+│   │   │   │   └── useWorkflowsV3.ts
+│   │   │   ├── index.html
+│   │   │   ├── main.ts
+│   │   │   ├── styles
+│   │   │   │   └── agent-chat.css
+│   │   │   └── utils
+│   │   │       └── loading-texts.ts
+│   │   ├── styles
+│   │   │   └── tailwind.css
+│   │   ├── web-editor-v2
+│   │   │   ├── attr-ui-refactor.md
+│   │   │   ├── constants.ts
+│   │   │   ├── core
+│   │   │   │   ├── css-compare.ts
+│   │   │   │   ├── cssom-styles-collector.ts
+│   │   │   │   ├── debug-source.ts
+│   │   │   │   ├── design-tokens
+│   │   │   │   ├── editor.ts
+│   │   │   │   ├── element-key.ts
+│   │   │   │   ├── event-controller.ts
+│   │   │   │   ├── execution-tracker.ts
+│   │   │   │   ├── hmr-consistency.ts
+│   │   │   │   ├── locator.ts
+│   │   │   │   ├── message-listener.ts
+│   │   │   │   ├── payload-builder.ts
+│   │   │   │   ├── perf-monitor.ts
+│   │   │   │   ├── position-tracker.ts
+│   │   │   │   ├── props-bridge.ts
+│   │   │   │   ├── snap-engine.ts
+│   │   │   │   ├── transaction-aggregator.ts
+│   │   │   │   └── transaction-manager.ts
+│   │   │   ├── drag
+│   │   │   │   └── drag-reorder-controller.ts
+│   │   │   ├── overlay
+│   │   │   │   ├── canvas-overlay.ts
+│   │   │   │   └── handles-controller.ts
+│   │   │   ├── selection
+│   │   │   │   └── selection-engine.ts
+│   │   │   ├── ui
+│   │   │   │   ├── breadcrumbs.ts
+│   │   │   │   ├── floating-drag.ts
+│   │   │   │   ├── icons.ts
+│   │   │   │   ├── property-panel
+│   │   │   │   ├── shadow-host.ts
+│   │   │   │   └── toolbar.ts
+│   │   │   └── utils
+│   │   │       └── disposables.ts
+│   │   ├── web-editor-v2.ts
+│   │   └── welcome
+│   │       ├── App.vue
+│   │       ├── index.html
+│   │       └── main.ts
+│   ├── env.d.ts
+│   ├── eslint.config.js
+│   ├── inject-scripts
+│   │   ├── accessibility-tree-helper.js
+│   │   ├── click-helper.js
+│   │   ├── dom-observer.js
+│   │   ├── element-marker.js
+│   │   ├── element-picker.js
+│   │   ├── fill-helper.js
+│   │   ├── inject-bridge.js
+│   │   ├── interactive-elements-helper.js
+│   │   ├── keyboard-helper.js
+│   │   ├── network-helper.js
+│   │   ├── props-agent.js
+│   │   ├── recorder.js
+│   │   ├── screenshot-helper.js
+│   │   ├── wait-helper.js
+│   │   ├── web-editor.js
+│   │   └── web-fetcher-helper.js
+│   ├── LICENSE
+│   ├── package.json
+│   ├── public
+│   │   ├── icon
+│   │   │   ├── 128.png
+│   │   │   ├── 16.png
+│   │   │   ├── 32.png
+│   │   │   ├── 48.png
+│   │   │   ├── 64.png
+│   │   │   └── 96.png
+│   │   └── libs
+│   │       └── ort.min.js
+│   ├── README.md
+│   ├── shared
+│   │   ├── element-picker
+│   │   │   ├── controller.ts
+│   │   │   └── index.ts
+│   │   ├── quick-panel
+│   │   │   ├── core
+│   │   │   │   ├── agent-bridge.ts
+│   │   │   │   ├── search-engine.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── index.ts
+│   │   │   ├── providers
+│   │   │   │   ├── index.ts
+│   │   │   │   └── tabs-provider.ts
+│   │   │   └── ui
+│   │   │       ├── ai-chat-panel.ts
+│   │   │       ├── floating-icon.ts
+│   │   │       ├── index.ts
+│   │   │       ├── markdown-renderer.ts
+│   │   │       ├── message-renderer.ts
+│   │   │       ├── panel-shell.ts
+│   │   │       ├── quick-entries.ts
+│   │   │       ├── search-input.ts
+│   │   │       ├── shadow-host.ts
+│   │   │       ├── styles.ts
+│   │   │       └── system-settings-modal.ts
+│   │   └── selector
+│   │       ├── dom-path.ts
+│   │       ├── fingerprint.ts
+│   │       ├── generator.ts
+│   │       ├── index.ts
+│   │       ├── locator.ts
+│   │       ├── shadow-dom.ts
+│   │       ├── stability.ts
+│   │       ├── strategies
+│   │       │   ├── anchor-relpath.ts
+│   │       │   ├── aria.ts
+│   │       │   ├── css-path.ts
+│   │       │   ├── css-unique.ts
+│   │       │   ├── index.ts
+│   │       │   ├── testid.ts
+│   │       │   └── text.ts
+│   │       └── types.ts
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   ├── types
+│   │   ├── gifenc.d.ts
+│   │   └── icons.d.ts
+│   ├── utils
+│   │   ├── cdp-session-manager.ts
+│   │   ├── content-indexer.ts
+│   │   ├── i18n.ts
+│   │   ├── image-utils.ts
+│   │   ├── indexeddb-client.ts
+│   │   ├── lru-cache.ts
+│   │   ├── model-cache-manager.ts
+│   │   ├── offscreen-manager.ts
+│   │   ├── output-sanitizer.ts
+│   │   ├── screenshot-context.ts
+│   │   ├── semantic-similarity-engine.ts
+│   │   ├── simd-math-engine.ts
+│   │   ├── text-chunker.ts
+│   │   └── vector-database.ts
+│   ├── vitest.config.ts
+│   ├── workers
+│   │   ├── ort-wasm-simd-threaded.jsep.mjs
+│   │   ├── ort-wasm-simd-threaded.jsep.wasm
+│   │   ├── ort-wasm-simd-threaded.mjs
+│   │   ├── ort-wasm-simd-threaded.wasm
+│   │   ├── simd_math_bg.wasm
+│   │   ├── simd_math.js
+│   │   └── similarity.worker.js
+│   └── wxt.config.ts
+├── native-server
+│   ├── debug.sh
+│   ├── install.md
+│   ├── jest.config.js
+│   ├── package.json
+│   ├── README.md
+│   ├── src
+│   │   ├── agent
+│   │   │   ├── attachment-service.ts
+│   │   │   ├── ccr-detector.ts
+│   │   │   ├── chat-service.ts
+│   │   │   ├── db
+│   │   │   │   ├── client.ts
+│   │   │   │   ├── index.ts
+│   │   │   │   └── schema.ts
+│   │   │   ├── directory-picker.ts
+│   │   │   ├── engines
+│   │   │   │   ├── claude.ts
+│   │   │   │   ├── codex.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── message-service.ts
+│   │   │   ├── open-project.ts
+│   │   │   ├── project-service.ts
+│   │   │   ├── project-types.ts
+│   │   │   ├── session-service.ts
+│   │   │   ├── storage.ts
+│   │   │   ├── stream-manager.ts
+│   │   │   ├── tool-bridge.ts
+│   │   │   └── types.ts
+│   │   ├── cli.ts
+│   │   ├── constant
+│   │   │   └── index.ts
+│   │   ├── file-handler.ts
+│   │   ├── index.ts
+│   │   ├── mcp
+│   │   │   ├── mcp-server-stdio.ts
+│   │   │   ├── mcp-server.ts
+│   │   │   ├── register-tools.ts
+│   │   │   └── stdio-config.json
+│   │   ├── native-messaging-host.ts
+│   │   ├── scripts
+│   │   │   ├── browser-config.ts
+│   │   │   ├── build.ts
+│   │   │   ├── constant.ts
+│   │   │   ├── doctor.ts
+│   │   │   ├── postinstall.ts
+│   │   │   ├── register-dev.ts
+│   │   │   ├── register.ts
+│   │   │   ├── report.ts
+│   │   │   ├── run_host.bat
+│   │   │   ├── run_host.sh
+│   │   │   └── utils.ts
+│   │   ├── server
+│   │   │   ├── index.ts
+│   │   │   ├── routes
+│   │   │   │   ├── agent.ts
+│   │   │   │   └── index.ts
+│   │   │   └── server.test.ts
+│   │   ├── shims
+│   │   │   └── devtools.d.ts
+│   │   ├── trace-analyzer.ts
+│   │   ├── types
+│   │   │   └── devtools-frontend.d.ts
+│   │   └── util
+│   │       └── logger.ts
+│   └── tsconfig.json
+└── openclaw-extensions
+    ├── evermemos
+    │   ├── index.ts
+    │   ├── openclaw.plugin.json
+    │   ├── queue.ts
+    │   ├── tsconfig.json
+    │   └── types.ts
+    └── mcp-client
+        ├── index.ts
+        └── openclaw.plugin.json
+
+94 directories, 293 files
