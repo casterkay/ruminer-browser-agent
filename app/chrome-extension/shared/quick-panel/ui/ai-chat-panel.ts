@@ -26,6 +26,7 @@ import {
   createQuickPanelMessageRenderer,
   type QuickPanelMessageRenderer,
 } from './message-renderer';
+import { createSystemSettingsModal } from './system-settings-modal';
 
 // ============================================================
 // Types
@@ -98,6 +99,7 @@ const ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_SEND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>`;
 const ICON_STOP = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>`;
 const ICON_SIDEPANEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>`;
+const ICON_SETTINGS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
 
 // ============================================================
 // Utility Functions
@@ -202,6 +204,7 @@ interface PanelDOMElements {
   streamIndicator: HTMLDivElement;
   streamText: HTMLSpanElement;
   closeBtn: HTMLButtonElement;
+  settingsBtn: HTMLButtonElement;
   sidepanelBtn: HTMLButtonElement;
   contentEl: HTMLDivElement;
   emptyEl: HTMLDivElement;
@@ -275,13 +278,19 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
   closeBtn.innerHTML = ICON_CLOSE;
   closeBtn.setAttribute('aria-label', 'Close Quick Panel');
 
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'qp-icon-btn ac-focus-ring';
+  settingsBtn.innerHTML = ICON_SETTINGS;
+  settingsBtn.setAttribute('aria-label', 'Open Settings');
+
   const sidepanelBtn = document.createElement('button');
   sidepanelBtn.type = 'button';
   sidepanelBtn.className = 'qp-icon-btn ac-focus-ring';
   sidepanelBtn.innerHTML = ICON_SIDEPANEL;
   sidepanelBtn.setAttribute('aria-label', 'Open in Sidepanel');
 
-  headerRight.append(streamIndicator, sidepanelBtn, closeBtn);
+  headerRight.append(streamIndicator, settingsBtn, sidepanelBtn, closeBtn);
   header.append(headerLeft, headerRight);
 
   // ---- Content ----
@@ -369,6 +378,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
     streamIndicator,
     streamText,
     closeBtn,
+    settingsBtn,
     sidepanelBtn,
     contentEl,
     emptyEl,
@@ -443,6 +453,9 @@ export function mountQuickPanelAiChatPanel(
   const dom = buildPanelDOM(options);
   mount.append(dom.overlay);
   disposer.add(() => dom.overlay.remove());
+
+  const systemSettingsModal = createSystemSettingsModal(dom.overlay);
+  disposer.add(() => systemSettingsModal.dispose());
 
   // Message renderer
   const renderer: QuickPanelMessageRenderer = createQuickPanelMessageRenderer({
@@ -867,6 +880,12 @@ export function mountQuickPanelAiChatPanel(
   });
 
   disposer.listen(dom.closeBtn, 'click', () => close());
+
+  // Settings button handler: show System Settings modal (same content as options page)
+  disposer.listen(dom.settingsBtn, 'click', () => {
+    if (disposed) return;
+    systemSettingsModal.show();
+  });
 
   // Sidepanel button handler: open sidepanel and close quick panel
   disposer.listen(dom.sidepanelBtn, 'click', async () => {

@@ -442,5 +442,13 @@
   "pagesUnit": {
     "message": "페이지",
     "description": "페이지 수 단위"
+  },
+  "chatPlaceholderEmpty": {
+    "message": "입력하여 메모리를 검색하거나 어시스턴트와 채팅...",
+    "description": "채팅이 비어 있을 때 입력란 플레이스홀더"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "어시스턴트에게 메시지 보내기...",
+    "description": "채팅에 메시지가 있을 때 입력란 플레이스홀더"
   }
 }

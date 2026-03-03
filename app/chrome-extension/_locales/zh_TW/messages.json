@@ -442,5 +442,13 @@
   "pagesUnit": {
     "message": "頁面",
     "description": "頁面計數單位"
+  },
+  "chatPlaceholderEmpty": {
+    "message": "輸入以搜尋記憶或與助手聊天...",
+    "description": "聊天為空時的輸入框佔位符"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "傳送訊息給助手...",
+    "description": "聊天有訊息時的輸入框佔位符"
   }
 }

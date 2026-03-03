@@ -488,5 +488,13 @@
     "description": "匹配示例占位符"
   },
   "placeholderScriptHint": { "message": "在此粘贴 JS/CSS/TM", "description": "脚本文本域占位符" },
-  "placeholderDomainHint": { "message": "example.com", "description": "域名筛选占位符" }
+  "placeholderDomainHint": { "message": "example.com", "description": "域名筛选占位符" },
+  "chatPlaceholderEmpty": {
+    "message": "输入以搜索记忆或与助手聊天...",
+    "description": "聊天为空时的输入框占位符"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "发送消息给助手...",
+    "description": "聊天有消息时的输入框占位符"
+  }
 }

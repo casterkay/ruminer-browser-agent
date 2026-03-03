@@ -225,6 +225,10 @@ const fallbackMessages: Record<string, string> = {
   clearAllCache: 'Clear All Cache',
   expired: 'Expired',
   bookmarksBar: 'Bookmarks Bar',
+
+  // Chat composer placeholders
+  chatPlaceholderEmpty: 'Type to search memory or chat with assistant...',
+  chatPlaceholderNonempty: 'Send a message to assistant...',
 };
 
 /**

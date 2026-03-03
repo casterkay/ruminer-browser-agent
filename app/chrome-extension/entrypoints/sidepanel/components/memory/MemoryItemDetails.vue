@@ -1,6 +1,45 @@
 <template>
   <aside class="details-panel" :style="panelStyle">
-    <h3 class="panel-title">Memory Details</h3>
+    <header class="panel-header">
+      <h3 class="panel-title">Memory Details</h3>
+
+      <div class="panel-actions">
+        <button
+          class="icon-btn ac-btn ac-focus-ring"
+          :style="iconBtnStyle"
+          :disabled="!item?.canonical_url"
+          title="Open canonical URL"
+          aria-label="Open canonical URL"
+          @click="handleOpen"
+        >
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn ac-btn ac-focus-ring"
+          :style="iconBtnStyle"
+          title="Close details"
+          aria-label="Close details"
+          @click="$emit('close')"
+        >
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
 
     <p v-if="!item" class="panel-empty">Select an item to inspect details.</p>
 
@@ -15,34 +54,15 @@
       </div>
       <div class="detail-row">
         <span class="detail-label">Group</span>
-        <span class="detail-value">{{ item.group_name || item.group_id || '-' }}</span>
+        <span class="detail-value">{{ formatGroupName(item) }}</span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Created</span>
-        <span class="detail-value">{{ item.create_time || '-' }}</span>
+        <span class="detail-value">{{ formatTimestamp(item.create_time) }}</span>
       </div>
 
       <div class="content-block ac-scroll" :style="contentBlockStyle">
         {{ item.content }}
-      </div>
-
-      <div class="actions">
-        <button
-          class="open-btn ac-btn ac-focus-ring"
-          :style="openBtnStyle"
-          :disabled="!item.canonical_url"
-          @click="$emit('open', item)"
-        >
-          <svg class="open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-            />
-          </svg>
-          Open URL
-        </button>
       </div>
     </template>
   </aside>
@@ -52,12 +72,13 @@
 import { computed } from 'vue';
 import type { MemoryItem } from '../../composables/useEmosSearch';
 
-defineProps<{
+const props = defineProps<{
   item: MemoryItem | null;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'open', item: MemoryItem): void;
+  (e: 'close'): void;
 }>();
 
 const panelStyle = computed(() => ({
@@ -74,12 +95,42 @@ const contentBlockStyle = computed(() => ({
   color: 'var(--ac-text)',
 }));
 
-const openBtnStyle = computed(() => ({
+const iconBtnStyle = computed(() => ({
   backgroundColor: 'var(--ac-surface-muted)',
   color: 'var(--ac-text)',
   border: 'var(--ac-border-width) solid var(--ac-border)',
   borderRadius: 'var(--ac-radius-button)',
 }));
+
+function formatTimestamp(value?: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function handleOpen(): void {
+  if (!props.item?.canonical_url) {
+    return;
+  }
+  emit('open', props.item);
+}
+
+function formatGroupName(item: MemoryItem): string {
+  const metadataGroupName =
+    item.metadata && typeof item.metadata.group_name === 'string' ? item.metadata.group_name : null;
+  const metadataTitle =
+    item.metadata && typeof item.metadata.title === 'string' ? item.metadata.title : null;
+  return item.group_name || metadataGroupName || metadataTitle || '-';
+}
 </script>
 
 <style scoped>
@@ -90,12 +141,25 @@ const openBtnStyle = computed(() => ({
   align-content: start;
 }
 
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .panel-title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--ac-text);
   font-family: var(--ac-font-heading);
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .panel-empty {
@@ -138,34 +202,27 @@ const openBtnStyle = computed(() => ({
   line-height: 1.5;
 }
 
-.actions {
-  display: flex;
-  gap: 8px;
-}
-
-.open-btn {
+.icon-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 12px;
+  justify-content: center;
+  padding: 6px;
   cursor: pointer;
-  font-family: var(--ac-font-body);
   transition:
     background-color var(--ac-motion-fast),
     transform var(--ac-motion-fast);
 }
 
-.open-btn:hover:not(:disabled) {
+.icon-btn:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-.open-btn:disabled {
+.icon-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.open-icon {
+.icon {
   width: 14px;
   height: 14px;
 }

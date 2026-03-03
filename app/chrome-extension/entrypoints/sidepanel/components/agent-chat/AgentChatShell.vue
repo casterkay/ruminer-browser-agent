@@ -104,14 +104,20 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import type { AgentUsageStats } from 'chrome-mcp-shared';
 
-defineProps<{
-  errorMessage?: string | null;
-  usage?: AgentUsageStats | null;
-  footerLabel?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    errorMessage?: string | null;
+    usage?: AgentUsageStats | null;
+    footerLabel?: string;
+    autoScrollEnabled?: boolean;
+  }>(),
+  {
+    autoScrollEnabled: true,
+  },
+);
 
 const emit = defineEmits<{
   /** Emitted when user clicks dismiss button on error banner */
@@ -181,7 +187,7 @@ let scrollScheduled = false;
  * Uses requestAnimationFrame to debounce rapid updates during streaming
  */
 function maybeAutoScroll(): void {
-  if (scrollScheduled || isUserScrolledUp.value || !contentRef.value) {
+  if (!props.autoScrollEnabled || scrollScheduled || isUserScrolledUp.value || !contentRef.value) {
     return;
   }
   scrollScheduled = true;
@@ -215,6 +221,18 @@ onMounted(() => {
     contentResizeObserver.observe(contentSlotRef.value);
   }
 });
+
+watch(
+  () => props.autoScrollEnabled,
+  (enabled) => {
+    if (enabled || !contentRef.value) {
+      return;
+    }
+    contentRef.value.scrollTo({ top: 0, behavior: 'auto' });
+    isUserScrolledUp.value = false;
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   composerResizeObserver?.disconnect();

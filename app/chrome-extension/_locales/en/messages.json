@@ -500,5 +500,13 @@
     "message": "Paste JS/CSS/TM here",
     "description": "script textarea placeholder"
   },
-  "placeholderDomainHint": { "message": "example.com", "description": "domain filter placeholder" }
+  "placeholderDomainHint": { "message": "example.com", "description": "domain filter placeholder" },
+  "chatPlaceholderEmpty": {
+    "message": "Type to search memory or chat with assistant...",
+    "description": "Chat composer placeholder when chat is empty"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "Send a message to assistant...",
+    "description": "Chat composer placeholder when chat has messages"
+  }
 }

@@ -442,5 +442,13 @@
   "pagesUnit": {
     "message": "Seiten",
     "description": "Seiten Zähleinheit"
+  },
+  "chatPlaceholderEmpty": {
+    "message": "Eingeben, um Speicher zu durchsuchen oder mit dem Assistenten zu chatten...",
+    "description": "Platzhalter wenn Chat leer ist"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "Nachricht an den Assistenten senden...",
+    "description": "Platzhalter wenn Chat Nachrichten hat"
   }
 }

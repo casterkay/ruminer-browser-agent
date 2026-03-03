@@ -9,7 +9,7 @@
       @update:platform="filters.platform = $event"
       @update:startDate="filters.startDate = $event"
       @update:endDate="filters.endDate = $event"
-      @search="runSearch"
+      @search="refreshSearch"
     />
 
     <div v-if="!memory.isConfigured.value" class="status-banner warning-banner">
@@ -44,7 +44,7 @@
             class="refresh-btn ac-btn ac-focus-ring"
             :style="refreshBtnStyle"
             :disabled="memory.loading.value"
-            @click="runSearch"
+            @click="refreshSearch"
           >
             <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path
@@ -58,11 +58,14 @@
         </div>
 
         <div class="memory-list-body ac-scroll">
-          <div v-if="memory.loading.value" class="placeholder">
+          <div v-if="memory.loading.value && memory.items.value.length === 0" class="placeholder">
             <span class="ac-pulse">Loading memory...</span>
           </div>
           <div v-else-if="memory.items.value.length === 0" class="placeholder">
-            No items found.
+            {{ noResultsMessage }}
+          </div>
+          <div v-if="memory.loading.value && memory.items.value.length > 0" class="loading-hint">
+            Updating results...
           </div>
 
           <button
@@ -71,35 +74,59 @@
             class="memory-item ac-btn"
             :class="{ active: memory.selectedItem.value?.id === item.id }"
             :style="memory.selectedItem.value?.id === item.id ? activeItemStyle : inactiveItemStyle"
-            @click="memory.selectItem(item)"
+            @click="handleSelectItem(item)"
           >
-            <div class="memory-item-title">
-              {{ item.group_name || item.group_id || 'No Group' }}
+            <div class="memory-item-top">
+              <div class="memory-item-title">
+                <span class="memory-item-title-text">{{ formatGroupTitle(item) }}</span>
+              </div>
+              <span class="platform-badge">{{ formatPlatform(item) }}</span>
             </div>
-            <div class="memory-item-meta">
-              {{ item.sender || 'unknown' }} · {{ item.create_time || '-' }}
+            <div class="memory-item-meta" :title="formatAbsoluteTime(item.create_time)">
+              {{ formatSender(item.sender) }} · {{ formatRelativeTime(item.create_time) }}
             </div>
-            <div class="memory-item-snippet">{{ item.content }}</div>
+            <div class="memory-item-snippet">{{ buildSnippet(item.content) }}</div>
           </button>
         </div>
       </section>
+    </div>
 
-      <MemoryItemDetails :item="memory.selectedItem.value" @open="openCanonicalUrl" />
+    <div v-if="detailsVisible" class="details-overlay" @click.self="closeDetails">
+      <div class="details-modal" :style="detailsModalStyle">
+        <MemoryItemDetails
+          :item="memory.selectedItem.value"
+          @open="openCanonicalUrl"
+          @close="closeDetails"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import MemoryFilters from './MemoryFilters.vue';
 import MemoryItemDetails from './MemoryItemDetails.vue';
 import { useEmosSearch, type MemoryItem } from '../../composables/useEmosSearch';
 
 const memory = useEmosSearch();
+const detailsOpen = ref(false);
+const ALL_PLATFORMS = ['agent', 'chatgpt', 'gemini', 'claude', 'deepseek'] as const;
+
+const LIVE_SEARCH_DEBOUNCE_MS = 250;
+const KNOWN_PLATFORM_LABELS: Record<string, string> = {
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  claude: 'Claude',
+  deepseek: 'DeepSeek',
+  agent: 'OpenClaw',
+};
+const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const filters = reactive({
   query: '',
-  platform: '',
+  platform: [...ALL_PLATFORMS] as string[],
   startDate: '',
   endDate: '',
 });
@@ -132,15 +159,73 @@ const inactiveItemStyle = computed(() => ({
   backgroundColor: 'transparent',
 }));
 
+const detailsModalStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface)',
+  border: 'var(--ac-border-width) solid var(--ac-border)',
+  borderRadius: 'var(--ac-radius-card)',
+  boxShadow: 'var(--ac-shadow-float)',
+}));
+
+const hasActiveFilters = computed(
+  () =>
+    filters.query.trim().length > 0 ||
+    filters.platform.length !== ALL_PLATFORMS.length ||
+    filters.startDate.trim().length > 0 ||
+    filters.endDate.trim().length > 0,
+);
+
+const noResultsMessage = computed(() =>
+  filters.platform.length === 0
+    ? 'No platforms selected. Use the top-right toggle to select all.'
+    : hasActiveFilters.value
+      ? 'No items match the current filters.'
+      : 'No items found yet. Run ingestion to populate memory.',
+);
+
+const detailsVisible = computed(() => detailsOpen.value && !!memory.selectedItem.value);
+
 // ---- Methods ----
 
 async function runSearch(): Promise<void> {
+  const selectedPlatforms =
+    filters.platform.length === ALL_PLATFORMS.length ? undefined : [...filters.platform];
   await memory.search({
     query: filters.query,
-    platform: filters.platform.trim() || undefined,
+    platform: selectedPlatforms,
     startDate: filters.startDate || undefined,
     endDate: filters.endDate || undefined,
   });
+}
+
+function scheduleSearch(immediate = false): void {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+
+  if (immediate) {
+    void runSearch();
+    return;
+  }
+
+  searchDebounceTimer = setTimeout(() => {
+    void runSearch();
+    searchDebounceTimer = null;
+  }, LIVE_SEARCH_DEBOUNCE_MS);
+}
+
+function refreshSearch(): void {
+  scheduleSearch(true);
+}
+
+function handleSelectItem(item: MemoryItem): void {
+  memory.selectItem(item);
+  detailsOpen.value = true;
+}
+
+function closeDetails(): void {
+  detailsOpen.value = false;
+  memory.selectItem(null);
 }
 
 function openCanonicalUrl(item: MemoryItem): void {
@@ -148,7 +233,98 @@ function openCanonicalUrl(item: MemoryItem): void {
   void chrome.tabs.create({ url: item.canonical_url });
 }
 
-void runSearch();
+function formatSender(sender?: string): string {
+  if (!sender) return 'Unknown';
+  if (sender === 'me') return 'Me';
+  return KNOWN_PLATFORM_LABELS[sender.toLowerCase()] || sender;
+}
+
+function getPlatformKey(item: MemoryItem): string {
+  const group = item.group_id || '';
+  if (group.includes(':')) {
+    return group.split(':')[0].trim().toLowerCase();
+  }
+
+  const sender = item.sender?.trim().toLowerCase() || '';
+  if (KNOWN_PLATFORM_LABELS[sender]) {
+    return sender;
+  }
+
+  return 'unknown';
+}
+
+function formatPlatform(item: MemoryItem): string {
+  const key = getPlatformKey(item);
+  if (KNOWN_PLATFORM_LABELS[key]) {
+    return KNOWN_PLATFORM_LABELS[key];
+  }
+  return key === 'unknown' ? 'Unknown' : key;
+}
+
+function formatGroupTitle(item: MemoryItem): string {
+  const metadataGroupName =
+    item.metadata && typeof item.metadata.group_name === 'string' ? item.metadata.group_name : null;
+  const metadataTitle =
+    item.metadata && typeof item.metadata.title === 'string' ? item.metadata.title : null;
+  const preferred = item.group_name || metadataGroupName || metadataTitle;
+  if (preferred && preferred.trim().length > 0) {
+    return preferred.replace(/\s+/g, ' ').trim();
+  }
+  return 'Untitled Conversation';
+}
+
+function formatAbsoluteTime(value?: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatRelativeTime(value?: string): string {
+  if (!value) return '-';
+  const created = new Date(value).getTime();
+  if (!Number.isFinite(created)) return value;
+
+  const secondsDiff = Math.round((created - Date.now()) / 1000);
+  const absSeconds = Math.abs(secondsDiff);
+
+  if (absSeconds < 60) return relativeTimeFormatter.format(secondsDiff, 'second');
+  if (absSeconds < 3600)
+    return relativeTimeFormatter.format(Math.round(secondsDiff / 60), 'minute');
+  if (absSeconds < 86400)
+    return relativeTimeFormatter.format(Math.round(secondsDiff / 3600), 'hour');
+  return relativeTimeFormatter.format(Math.round(secondsDiff / 86400), 'day');
+}
+
+function buildSnippet(content: string): string {
+  return content.replace(/\s+/g, ' ').trim();
+}
+
+watch(
+  [() => filters.query, () => filters.platform, () => filters.startDate, () => filters.endDate],
+  () => {
+    scheduleSearch(false);
+  },
+);
+
+onMounted(() => {
+  scheduleSearch(true);
+});
+
+onUnmounted(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -158,6 +334,7 @@ void runSearch();
   grid-template-rows: auto auto 1fr;
   gap: 10px;
   padding: 12px;
+  position: relative;
 }
 
 /* Status Banners */
@@ -201,15 +378,16 @@ void runSearch();
 /* Content Layout */
 .memory-content {
   min-height: 0;
+  height: 100%;
   display: grid;
-  grid-template-columns: 1fr minmax(260px, 40%);
-  gap: 10px;
+  grid-template-columns: 1fr;
 }
 
 /* List */
 .memory-list {
   display: grid;
   grid-template-rows: auto 1fr;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -220,6 +398,10 @@ void runSearch();
   align-items: center;
   padding: 10px 12px;
   font-size: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--ac-surface);
 }
 
 .refresh-btn {
@@ -236,6 +418,7 @@ void runSearch();
 }
 
 .memory-list-body {
+  height: 100%;
   overflow-y: auto;
   min-height: 0;
 }
@@ -247,9 +430,22 @@ void runSearch();
   font-family: var(--ac-font-body);
 }
 
+.loading-hint {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--ac-text-subtle);
+  font-family: var(--ac-font-body);
+  border-bottom: var(--ac-border-width) solid var(--ac-border);
+  background-color: color-mix(in srgb, var(--ac-surface) 92%, transparent);
+}
+
 /* Items */
 .memory-item {
   width: 100%;
+  min-width: 0;
   text-align: left;
   border: 0;
   border-bottom: var(--ac-border-width) solid var(--ac-border);
@@ -265,10 +461,47 @@ void runSearch();
   background-color: var(--ac-hover-bg) !important;
 }
 
+.memory-item-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .memory-item-title {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.memory-item-title-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   font-size: 12px;
   font-weight: 600;
   color: var(--ac-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: var(--ac-border-width) solid var(--ac-border);
+  background-color: var(--ac-surface-muted);
+  color: var(--ac-text-subtle);
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .memory-item-meta {
@@ -286,10 +519,27 @@ void runSearch();
   -webkit-box-orient: vertical;
 }
 
+.details-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--ac-bg) 56%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  backdrop-filter: blur(2px);
+}
+
+.details-modal {
+  width: min(760px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
   .memory-content {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
+    display: block;
   }
 }
 </style>

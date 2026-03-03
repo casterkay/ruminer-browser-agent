@@ -1,5 +1,6 @@
 import { computed, ref, type Ref } from 'vue';
 import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
 
 export interface MemoryItem {
   id: string;
@@ -15,7 +16,7 @@ export interface MemoryItem {
 
 export interface MemoryFilters {
   query: string;
-  platform?: string;
+  platform?: string | string[];
   startDate?: string;
   endDate?: string;
 }
@@ -62,7 +63,15 @@ function normalizeItem(raw: any): MemoryItem {
         ? raw.group_name
         : typeof raw?.group?.name === 'string'
           ? raw.group.name
-          : undefined,
+          : raw?.metadata &&
+              typeof raw.metadata === 'object' &&
+              typeof raw.metadata.group_name === 'string'
+            ? raw.metadata.group_name
+            : raw?.metadata &&
+                typeof raw.metadata === 'object' &&
+                typeof raw.metadata.title === 'string'
+              ? raw.metadata.title
+              : undefined,
     canonical_url:
       typeof raw?.canonical_url === 'string'
         ? raw.canonical_url
@@ -79,10 +88,6 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
     throw new Error('EMOS is not configured');
   }
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${settings.apiKey}`,
-  };
-
   const userIds = Array.from(
     new Set([settings.userId.trim(), 'me'].filter((value) => value.length > 0)),
   );
@@ -91,30 +96,11 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
   }
 
   const requests = userIds.map(async (userId) => {
-    const params = new URLSearchParams();
-    params.append('user_id', userId);
-    Object.entries(body).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        params.append(key, String(value));
-      }
+    return emosSearchMemories({
+      ...body,
+      query: String(body.query || ''),
+      user_id: userId,
     });
-
-    const response = await fetch(
-      `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search?${params.toString()}`,
-      {
-        method: 'GET',
-        headers,
-      },
-    );
-
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(
-        `EMOS search failed for user_id="${userId}" (${response.status}) ${JSON.stringify(json)}`,
-      );
-    }
-
-    return json;
   });
 
   const settled = await Promise.allSettled(requests);
@@ -278,12 +264,22 @@ export function useEmosSearch(): UseEmosSearch {
         new Map(normalized.map((item) => [item.message_id || item.id, item])).values(),
       );
 
-      const platformPrefix = filters.platform?.trim().toLowerCase();
-      const filteredByPlatform = platformPrefix
-        ? deduped.filter((item) =>
-            (item.group_id || '').toLowerCase().startsWith(`${platformPrefix}:`),
-          )
-        : deduped;
+      const explicitPlatformArray = Array.isArray(filters.platform);
+      const platformFilters = (
+        Array.isArray(filters.platform) ? filters.platform : [filters.platform || '']
+      )
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0);
+
+      const filteredByPlatform =
+        explicitPlatformArray && platformFilters.length === 0
+          ? []
+          : platformFilters.length > 0
+            ? deduped.filter((item) => {
+                const groupId = (item.group_id || '').toLowerCase();
+                return platformFilters.some((platform) => groupId.startsWith(`${platform}:`));
+              })
+            : deduped;
 
       const startMs = filters.startDate ? safeParseDate(`${filters.startDate}T00:00:00Z`) : null;
       const endMs = filters.endDate ? safeParseDate(`${filters.endDate}T23:59:59Z`) : null;

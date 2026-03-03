@@ -334,5 +334,13 @@
   },
   "pagesUnit": {
     "message": "ページ"
+  },
+  "chatPlaceholderEmpty": {
+    "message": "入力してメモリを検索するか、アシスタントとチャット...",
+    "description": "チャットが空のときの入力欄プレースホルダー"
+  },
+  "chatPlaceholderNonempty": {
+    "message": "アシスタントにメッセージを送信...",
+    "description": "チャットにメッセージがあるときの入力欄プレースホルダー"
   }
 }

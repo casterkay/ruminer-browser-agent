@@ -243,20 +243,6 @@
         >
           Close
         </button>
-
-        <button
-          v-if="isClaudeEngine"
-          class="px-3 py-1.5 text-xs ac-btn"
-          :style="{
-            backgroundColor: 'var(--ac-accent, #c87941)',
-            color: 'var(--ac-accent-contrast, #ffffff)',
-            borderRadius: 'var(--ac-radius-button, 8px)',
-          }"
-          :disabled="isSaving || !isClaudeDirty"
-          @click="handleSave"
-        >
-          {{ isSaving ? 'Saving...' : isClaudeDirty ? 'Save' : 'Saved' }}
-        </button>
       </div>
     </div>
   </div>
@@ -316,6 +302,9 @@ const AGENT_BUILTIN_GROUPS = [
 ] as const;
 
 const AGENT_BUILTIN_ALL_TOOLS = AGENT_BUILTIN_GROUPS.flatMap((g) => g.tools);
+
+/** Runtime tools disabled by default */
+const RUNTIME_TOOLS = AGENT_BUILTIN_GROUPS.find((g) => g.id === 'runtime')?.tools ?? [];
 
 const props = defineProps<{
   open: boolean;
@@ -558,6 +547,7 @@ function handleToggleAgentGroup(groupId: string): void {
     ...localAgentGroupEnabled.value,
     [groupId]: !isAgentGroupEnabled(groupId),
   };
+  performSave();
 }
 
 function agentGroupEnabledCount(group: { id: string; tools: readonly string[] }): number {
@@ -601,6 +591,7 @@ function handleToggleClaudeTool(tool: string): void {
     }
     localClaudeDisallowedTools.value = Array.from(current).sort((a, b) => a.localeCompare(b));
   }
+  performSave();
 }
 
 function captureClaudeSnapshot(): void {
@@ -622,9 +613,10 @@ const isClaudeDirty = computed(() => {
 });
 
 function handleRestoreClaudeTools(): void {
-  localAgentGroupEnabled.value = {};
-  localClaudeDisallowedTools.value = [];
+  localAgentGroupEnabled.value = { runtime: false };
+  localClaudeDisallowedTools.value = [...RUNTIME_TOOLS];
   localClaudeSelectedTools.value = [];
+  performSave();
 }
 
 watch(
@@ -661,12 +653,19 @@ watch(
       const disallowed = new Set(
         Array.isArray(options.disallowedTools) ? options.disallowedTools : [],
       );
-      localAgentGroupEnabled.value = {};
-      for (const g of groups) {
-        localAgentGroupEnabled.value[g.id] = g.tools.some((t) => !disallowed.has(t));
+      if (disallowed.size === 0) {
+        localAgentGroupEnabled.value = { runtime: false };
+        localClaudeDisallowedTools.value = [...RUNTIME_TOOLS];
+      } else {
+        localAgentGroupEnabled.value = {};
+        for (const g of groups) {
+          localAgentGroupEnabled.value[g.id] = g.tools.some((t) => !disallowed.has(t));
+        }
+        localClaudeDisallowedTools.value = Array.from(disallowed).sort((a, b) =>
+          a.localeCompare(b),
+        );
       }
       localClaudeSelectedTools.value = [];
-      localClaudeDisallowedTools.value = Array.from(disallowed).sort((a, b) => a.localeCompare(b));
     }
 
     captureClaudeSnapshot();
@@ -676,6 +675,10 @@ watch(
 
 function handleClose(): void {
   emit('close');
+}
+
+function performSave(): void {
+  handleSave();
 }
 
 function handleSave(): void {

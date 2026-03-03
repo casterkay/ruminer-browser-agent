@@ -1,10 +1,6 @@
 <template>
   <div class="agent-theme sidepanel-root" :data-agent-theme="theme.theme.value">
-    <SidepanelNavigator
-      :active-tab="activeTab"
-      @change="setActiveTab"
-      @settings="settingsOpen = true"
-    />
+    <SidepanelNavigator :active-tab="activeTab" @change="setActiveTab" />
 
     <div class="sidepanel-content">
       <AgentChat v-show="activeTab === 'chat'" />
@@ -54,7 +50,6 @@ const activeTab = ref<TabId>('chat');
 const onlyBound = ref(false);
 const openRunId = ref<string | null>(null);
 const activeHostname = ref<string>('');
-const settingsOpen = ref(false);
 
 const workflows = useWorkflowsV3({
   autoConnect: true,

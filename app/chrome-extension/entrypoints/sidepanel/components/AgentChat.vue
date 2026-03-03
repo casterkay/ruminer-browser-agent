@@ -24,6 +24,7 @@
         :error-message="chat.errorMessage.value"
         :usage="chat.lastUsage.value"
         :footer-label="`${engineDisplayName} Preview`"
+        :auto-scroll-enabled="threadState.threads.value.length > 0"
         @error:dismiss="chat.errorMessage.value = null"
       >
         <!-- Header -->
@@ -45,7 +46,13 @@
 
         <!-- Content -->
         <template #content>
-          <AgentConversation :threads="threadState.threads.value" />
+          <AgentConversation
+            :threads="threadState.threads.value"
+            :search-query="chat.input.value"
+            :memory-suggestions="emosSuggestions.suggestions.value"
+            :memory-loading="emosSuggestions.loading.value"
+            :memory-error="emosSuggestions.error.value"
+          />
         </template>
 
         <!-- Composer -->
@@ -64,7 +71,7 @@
             :cancelling="chat.cancelling.value"
             :can-cancel="!!chat.currentRequestId.value"
             :can-send="chat.canSend.value"
-            placeholder="Ask Claude to write code..."
+            :placeholder="composerPlaceholder"
             :engine-name="currentEngineName"
             :selected-model="currentSessionModel"
             :available-models="currentAvailableModels"
@@ -202,6 +209,7 @@ import {
   useOpenProjectPreference,
   useAgentInputPreferences,
   useFloatingIconPreference,
+  useEmosSuggestions,
   WEB_EDITOR_TX_STATE_INJECTION_KEY,
   AGENT_SERVER_PORT_KEY,
   type AgentThemeId,
@@ -233,6 +241,7 @@ import {
   getDefaultModelForCli,
 } from '@/common/agent-models';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { getMessage } from '@/utils/i18n';
 
 // Local UI state
 const selectedCli = ref('');
@@ -391,6 +400,16 @@ const threadState = useAgentThreads({
   requestState: chat.requestState,
   currentRequestId: chat.currentRequestId,
 });
+const emosSuggestions = useEmosSuggestions();
+const isSearchMode = computed(
+  () => viewRoute.isChatView.value && threadState.threads.value.length === 0,
+);
+
+const composerPlaceholder = computed(() =>
+  threadState.threads.value.length === 0
+    ? getMessage('chatPlaceholderEmpty')
+    : getMessage('chatPlaceholderNonempty'),
+);
 
 // Computed values
 const projectLabel = computed(() => {
@@ -883,8 +902,6 @@ async function handleSaveToolSelection(optionsConfig: AgentSessionOptionsConfig)
   toolSelectionSaving.value = true;
   try {
     await sessions.updateSession(sessionId, { optionsConfig });
-    toolSelectionOpen.value = false;
-    currentManagementInfo.value = null;
   } finally {
     toolSelectionSaving.value = false;
   }
@@ -1463,6 +1480,18 @@ watch(
   },
 );
 
+watch(
+  [() => chat.input.value, isSearchMode],
+  ([input, searchMode]) => {
+    if (!searchMode) {
+      emosSuggestions.clear();
+      return;
+    }
+    emosSuggestions.updateQuery(input);
+  },
+  { immediate: true },
+);
+
 // Close menus on Escape key
 const handleEscape = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
@@ -1476,5 +1505,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscape);
+  emosSuggestions.clear();
 });
 </script>

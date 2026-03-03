@@ -14,6 +14,7 @@ export interface EmosSingleMessage {
 
 export interface EmosSearchRequest {
   query: string;
+  user_id?: string;
   group_id?: string;
   limit?: number;
   retrieve_method?: string;
@@ -86,9 +87,13 @@ export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosS
   if (body.group_id) params.append('group_id', body.group_id);
   if (body.limit) params.append('limit', String(body.limit));
   if (body.retrieve_method) params.append('retrieve_method', body.retrieve_method);
-  // Always include user_id from settings (required by API)
-  if (settings.userId.trim()) {
-    params.append('user_id', settings.userId.trim());
+  // user_id priority: explicit request value, otherwise EMOS settings.
+  const requestedUserId =
+    typeof body.user_id === 'string' && body.user_id.trim() ? body.user_id.trim() : '';
+  const fallbackUserId = settings.userId.trim();
+  const effectiveUserId = requestedUserId || fallbackUserId;
+  if (effectiveUserId) {
+    params.append('user_id', effectiveUserId);
   }
   // Add any additional params from body
   Object.entries(body).forEach(([key, value]) => {
