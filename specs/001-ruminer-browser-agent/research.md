@@ -11,28 +11,32 @@ artifacts and implementation tasks.
     and exposes tool execution via `NativeMessageType.CALL_TOOL`.
   - Sidepanel “agent chat” currently talks to `http://127.0.0.1:<port>/agent/...` and streams via SSE
     (`EventSource`) in `app/chrome-extension/entrypoints/sidepanel/composables/useAgentServer.ts`.
-- There is **no OpenClaw Gateway WebSocket client** in the extension yet (no `chat.*`, no `node.invoke`).
-- The repo already includes an OpenClaw plugin module for EverMemOS:
+- The extension already includes an **OpenClaw Gateway WebSocket operator client** for chat (`chat.*`):
+  - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawGateway.ts`
+  - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
+- The repo includes OpenClaw plugin modules:
   - `app/openclaw-extensions/evermemos/openclaw.plugin.json` + `index.ts`
   - Uses `registerGatewayMethod('evermemos.addMemory'|'evermemos.searchMemory'|...)`.
-- `app/openclaw-extensions/browser-ext/` exists but is currently **empty** (needs implementation).
+- `app/openclaw-extensions/mcp-client/index.ts` implements **OpenClaw → MCP client → Ruminer MCP server**
+  forwarding and can register `TOOL_SCHEMAS` into OpenClaw.
 - RR-V3 runtime already exists in the extension and is enabled via feature flag:
   - Bootstrapped from `app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`.
 
-## Decision 1 — Primary transport: OpenClaw Gateway WebSocket (node)
+## Decision 1 — Primary tool transport: Native MCP server (core)
 
-- **Decision**: Replace the native-host/MCP/SSE agent-server path with a Gateway WS connection from
-  the extension background service worker, using `role: "node"` and `caps: ["browser"]`.
+- **Decision**: Keep the native server (`app/native-server`) + Native Messaging as the primary tool
+  transport between the browser extension and the local MCP server. For OpenClaw-initiated tool
+  calls, the end-to-end flow is: **OpenClaw → `mcp-client` plugin → Ruminer MCP server (native
+  host) → Native Messaging → Extension (background/sidepanel)**.
 - **Rationale**:
-  - Matches the blueprint/spec architecture and reduces moving parts (no native host install).
-  - OpenClaw’s Gateway is already the system control plane (chat + tools + nodes).
-  - MV3 reliability improves by consolidating state/transport into one connection with explicit
-    reconnection logic.
+  - The native server is the stable integration point for multiple “backends” (Claude Code, Codex,
+    OpenClaw via `mcp-client`).
+  - The extension remains the browser-side executor (via Native Messaging), which is MV3-friendly.
 - **Alternatives considered**:
-  - Keep the native server (Fastify + SSE) and bridge Gateway → MCP: rejected because blueprint
-    explicitly removes this layer and it duplicates routing/auth concepts.
+  - Implement a Gateway WS _node_ client (`node.invoke`) for tool calls: deferred; not required when
+    OpenClaw can call MCP tools via `mcp-client`.
 
-## Decision 2 — Gateway protocol framing and handshake
+## Decision 2 — Gateway protocol framing and handshake (chat UI)
 
 - **Decision**: Implement the Gateway WS protocol as described in `docs/knowledge/openclaw-chat-ui.md`:
   - First frame is a request: `{ type: "req", id, method: "connect", params: { ... } }`
@@ -40,7 +44,7 @@ artifacts and implementation tasks.
   - Listen for push events (event frames) and sequence gaps.
 - **Rationale**:
   - Keeps the extension aligned with the documented Gateway schemas (the Gateway validates frames).
-  - Enables both node tool handling (`node.invoke`) and chat UI (`chat.*`) over one socket.
+  - Sidepanel chat only requires `chat.*` methods + events as an operator client.
 
 ## Decision 3 — Sidepanel chat session strategy
 
@@ -52,36 +56,21 @@ artifacts and implementation tasks.
   - Per-tab sessions or per-project sessions: rejected for MVP due to user confusion and state
     explosion; can be layered later.
 
-## Decision 4 — `browser.proxy` superset dispatcher contract
-
-- **Decision**: Implement a route dispatcher in background SW that accepts “proxy” requests shaped as:
-  - `{ method: string, path: string, query?: Record<string, string>, body?: unknown }`
-
-  …and routes to:
-  - **Standard browser routes** expected by OpenClaw’s built-in `browser` tool (snapshot/act/navigate/tabs).
-  - **Extension-specific routes** (bookmarks/history/network/flows/ledger/element selection).
-
-- **Rationale**:
-  - Matches blueprint’s “one protocol: `browser.proxy`” and allows plugins/tools to reuse a single
-    routing surface.
-
-## Decision 5 — Tool groups: dual-layer enforcement owned by extension
+## Decision 4 — Tool groups: prompt-layer enforcement in chat UI
 
 - **Decision**: Implement tool groups fully inside the extension:
   - **Prompt layer**: prepend a system instruction to `chat.send` describing disabled groups/tools.
-  - **Runtime layer**: reject `browser.proxy` routes that fall into disabled groups with a clear error.
 - **Rationale**:
-  - Blueprint/spec require the `browser-ext` plugin to be unaware of tool groups.
-  - Runtime rejection is the only hard safety boundary; prompt layer improves model compliance.
+  - Prompt-layer restriction is implemented today and improves model compliance.
+  - If runtime rejection is required, it must be enforced where tools are executed (native-server and/or
+    extension tool handlers).
 
-## Decision 6 — OpenClaw plugin packaging for `browser-ext`
+## Decision 5 — OpenClaw tool exposure via `mcp-client`
 
-- **Decision**: Implement `browser-ext` as an OpenClaw plugin module mirroring `evermemos`:
-  - `app/openclaw-extensions/browser-ext/openclaw.plugin.json`
-  - `app/openclaw-extensions/browser-ext/index.ts`
+- **Decision**: Use `app/openclaw-extensions/mcp-client` to register `TOOL_SCHEMAS` into OpenClaw and
+  forward tool calls to Ruminer’s local MCP server.
 - **Rationale**:
-  - Consistent with existing plugin module structure already used in-repo.
-  - Keeps the plugin logic minimal: action → `browser.request` route mapping only.
+  - Keeps a single canonical tool execution surface (MCP) across Claude Code/Codex/OpenClaw.
 
 ## Decision 7 — EMOS integration split remains intentional
 
@@ -95,17 +84,9 @@ artifacts and implementation tasks.
 
 ## Implementation Implications (what changes where)
 
-- **Remove/disable** native-host/MCP assumptions in UI and background:
-  - Replace `useAgentServer` (SSE + port) and `useAgentChat` (HTTP POST /act) with a Gateway WS-based
-    transport.
-  - Remove welcome/popup surfaces that instruct users to install a native host.
-- **Add**:
-  - Gateway WS client module in background, reconnection + pairing UX hooks.
-  - `node.invoke` handler that dispatches `browser.proxy` calls.
-  - Sidepanel chat transport around `chat.history`, `chat.send`, `chat.abort`, streaming via `chat`
-    and `agent` events.
-  - `browser-ext` OpenClaw plugin module and route mapping definitions.
-  - Add welcome/popup surfaces that instruct users to install the openclaw plugins.
+- **Keep** native-host/native-server as core plumbing (Native Messaging + MCP).
+- **Ensure** sidepanel chat uses Gateway WS operator flow (`chat.history`, `chat.send`, `chat.abort`).
+- **Ensure** OpenClaw plugins are installed/enabled (`evermemos`, `mcp-client`).
 
 ## Open Questions (resolved enough for planning)
 

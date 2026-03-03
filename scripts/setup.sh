@@ -65,10 +65,6 @@ install_openclaw_plugins() {
   openclaw plugins install "${mcp_client_path}" || true
   openclaw plugins enable mcp-client || true
 
-  # Best-effort cleanup if you previously used the old bridge plugin.
-  # These commands may not exist in all OpenClaw versions.
-  openclaw plugins disable browser-ext >/dev/null 2>&1 || true
-
   log "OpenClaw plugins installed/enabled (best-effort)."
   log ""
   log "OpenClaw plugin config reminders:"

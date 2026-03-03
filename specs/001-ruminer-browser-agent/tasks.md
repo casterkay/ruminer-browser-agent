@@ -7,16 +7,16 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Ensure repo surfaces + extension UI copy align to Ruminer/OpenClaw (remove native-host/MCP onboarding assumptions).
+**Purpose**: Ensure repo surfaces + extension UI copy align to Ruminer/OpenClaw (native-server/native-host is core; OpenClaw uses plugins).
 
 - [x] T001 Update extension branding strings in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/wxt.config.ts` (name, description, titles) for "Ruminer"
-- [x] T002 [P] Update welcome page copy to remove native-host install instructions in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/welcome/App.vue`
-- [x] T003 [P] Update popup copy to remove MCP server URL instructions in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/popup/App.vue`
+- [ ] T002 [P] Update welcome page copy to include native-host/native-server setup guidance in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/welcome/App.vue`
+- [ ] T003 [P] Update popup copy to explain MCP server URL + status in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/popup/App.vue`
 - [x] T004 [P] Update locales for rebrand ("Chrome MCP Server" → "Ruminer") in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/_locales/en/messages.json`
 - [x] T005 [P] Update locales for rebrand in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/_locales/zh_CN/messages.json`
 - [x] T006 [P] Update locales for rebrand in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/_locales/ko/messages.json`
 - [x] T007 [P] Update locales for rebrand in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/_locales/de/messages.json`
-- [x] T008 Add OpenClaw plugin install guidance to `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/README.md` (point to `app/openclaw-extensions/evermemos` + `browser-ext`)
+- [x] T008 Add OpenClaw plugin install guidance to `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/README.md` (point to `app/openclaw-extensions/evermemos` + `mcp-client`)
 
 ---
 
@@ -32,35 +32,20 @@
 - [x] T010 [P] Add typed settings accessors in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/` (new file: `openclaw-settings.ts`)
 - [x] T011 [P] [FR-006] Add typed tool-group state helpers in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/` (new file: `tool-groups.ts`)
 
-### B) Background: OpenClaw Gateway WS client (node role)
+### B) OpenClaw integration: sidepanel Gateway WS operator client
 
-- [x] T012 [FR-014] Create Gateway WS protocol types (req/res/evt frames) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/protocol.ts`
-- [x] T013 [FR-014] Create resilient WS connection manager (connect/hello-ok/reconnect/backoff) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/connection.ts`
-- [x] T014 [FR-014] Implement node handshake (`role:"node"`, `caps:["browser"]`, auth token, device id) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/node-client.ts`
-- [x] T015 Implement event fanout (broadcast Gateway connection status to UI) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/common/message-types.ts`
-- [x] T016 Wire background startup to initialize Gateway node client in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/index.ts`
+- [x] T012 Implement sidepanel Gateway WS operator client (connect + events) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawGateway.ts`
+- [x] T013 Implement sidepanel chat (`chat.history`, `chat.send`, `chat.abort`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
 
-### C) Background: `browser.proxy` dispatcher skeleton + tool-group runtime gate
+### C) OpenClaw integration: expose tools via `mcp-client`
 
-- [x] T017 [FR-030] Implement tool-group runtime gate (route → group mapping; reject disabled) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/tool-group-gate.ts`
-- [x] T018 [FR-014] Implement `browser.proxy` request router (`{method,path,query,body}`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts`
-- [x] T019 Map minimal Observe/Navigate/Interact/Execute routes to existing tool implementations under `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tools/browser/` from `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts`
-- [x] T020 [FR-014] Handle `node.invoke` → `browser.proxy` dispatch + response framing in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/node-invoke-handler.ts`
-- [x] T021 [FR-030] Ensure dispatcher returns clear `tool_group_disabled` errors per `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/contracts/tool-groups.md` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/openclaw/browser-proxy-dispatcher.ts`
+- [x] T014 Ensure `app/openclaw-extensions/mcp-client` forwards tool calls to Ruminer MCP server (`http://127.0.0.1:12306/mcp`) and registers `TOOL_SCHEMAS`.
 
-### D) Remove native-host/MCP server assumptions (core cleanup)
+### D) Keep native-host/native-server plumbing intact
 
-- [x] T022 Disable native host listener boot in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/index.ts` (stop calling `initNativeHostListener()`; keep code temporarily but no longer used)
-- [x] T023 [P] Gate/remove native host auto-connect pings from `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/main.ts`
-- [x] T024 [P] Gate/remove native host auto-connect pings from `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/popup/main.ts`
-- [x] T025 Deprecate UI connection model based on `/agent/...` HTTP + SSE by replacing `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useAgentServer.ts` with a Gateway WS transport (keep file but route to new implementation to avoid widespread imports)
-- [x] T026 Deprecate `/agent/chat/.../act` HTTP posting by replacing `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useAgentChat.ts` with a Gateway WS transport
-
-### E) OpenClaw plugin: `browser-ext` (repo module)
-
-- [x] T027 [FR-014] Create OpenClaw plugin manifest in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/openclaw-extensions/browser-ext/openclaw.plugin.json`
-- [x] T028 [FR-014] Implement plugin entrypoint registering one tool that maps actions → `browser.request` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/openclaw-extensions/browser-ext/index.ts`
-- [x] T029 Add plugin TypeScript config in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/openclaw-extensions/browser-ext/tsconfig.json`
+- [ ] T022 Ensure native host listener remains enabled and wired via `initNativeHostListener()` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/index.ts`, preserving existing native-host/native-server behavior alongside OpenClaw.
+- [ ] T023 Ensure sidepanel and popup read native-host server status (online/offline + port) from the existing background/native-host plumbing and surface it in their UIs, so users can see native-server connectivity alongside OpenClaw status.
+- [ ] T024 Keep existing `/agent/...` HTTP + SSE chat surfaces fully supported in parallel with the OpenClaw chat UI, and update routing/docs so OpenClaw is the default experience while `/agent/...` remains a backwards-compatible option.
 
 ### F) Background: Extension direct EMOS client + ingestion ledger primitives
 

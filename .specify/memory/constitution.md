@@ -2,7 +2,7 @@
 Sync Impact Report
 ===================
 Version change: 1.0.0 → 1.0.1 (terminology alignment for v0.8 architecture)
-Modified principles: I, II, III, VI (remove MCP/native host references)
+Modified principles: I, II, III, VI (architecture terminology alignment)
 Added sections:
   - Core Principles (6): Code Quality, Pattern Consistency,
     Best Practices, User Experience, Visual Aesthetics,
@@ -62,8 +62,7 @@ to it rather than inventing alternatives.
   established in the monorepo: kebab-case for files, PascalCase for
   Vue/UI components, barrel exports where the package already uses
   them.
-- New tools and routes (OpenClaw plugin tools, Gateway methods, and
-  `browser.proxy` routes) MUST follow the registration, validation, and
+- New tools and routes MUST follow the registration, validation, and
   response patterns of existing implementations. Copy the structure of
   a working one as a starting point.
 

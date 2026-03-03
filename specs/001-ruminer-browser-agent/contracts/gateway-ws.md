@@ -1,10 +1,13 @@
 # Contract — OpenClaw Gateway WebSocket (subset for Ruminer)
 
 This contract documents the subset of the OpenClaw Gateway WebSocket protocol that Ruminer’s
-extension must implement as:
+extension must implement as an **Operator/UI client** (sidepanel): uses `chat.*` methods and
+subscribes to push events.
 
-- **Node client** (background service worker): handles `node.invoke` for `browser.proxy`
-- **Operator/UI client** (sidepanel): uses `chat.*` methods and subscribes to push events
+Tool calls are not routed via `node.invoke` in Ruminer’s current architecture. Instead, OpenClaw
+calls Ruminer’s browser tools through the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP
+server at `http://127.0.0.1:12306/mcp`). The MCP server then bridges execution to the extension via
+Native Messaging.
 
 Authoritative references in this repo:
 
@@ -26,7 +29,7 @@ Authoritative references in this repo:
 {
   "type": "req",
   "id": "uuid-or-random",
-  "method": "connect|chat.send|chat.history|chat.abort|node.invoke|browser.request|...",
+  "method": "connect|chat.send|chat.history|chat.abort|chat.inject|...",
   "params": {}
 }
 ```
@@ -58,25 +61,18 @@ If `ok=false`, `payload` contains an error object/string (implementation-defined
 Sequence gaps may be reported; the client should treat them as a hint to refresh state (e.g.,
 re-fetch `chat.history` and/or re-sync pending tool calls).
 
-## 3) Connect handshake (node)
+## 3) Connect handshake (operator)
 
 ### 3.1 Client requirements
 
-The extension background service worker connects as:
+The Ruminer sidepanel connects as:
 
-- **role**: `"node"`
-- **caps**: `["browser"]`
-- **auth**: `{ token: "<gateway-auth-token>" }`
-- **device identity**: stable `device.id` derived from a persisted keypair fingerprint (preferred)
+- **role**: `"operator"`
+- **auth**: `{ token: "<gateway-auth-token>" }` (or password, depending on local config)
 
 ### 3.2 Success criteria
 
 - Gateway responds with `hello-ok`.
-- The node becomes visible to the Gateway as a browser-capable node.
-
-### 3.3 Pairing requirements
-
-The Gateway may require first-time device pairing approval if OpenClaw is not served on localhost. Out of MVP scope.
 
 ## 4) Chat methods (sidepanel)
 
@@ -107,15 +103,6 @@ Ruminer sidepanel (Chat tab) uses these Gateway RPCs:
 ### 4.4 `chat.inject(sessionKey, message)`
 
 - Append a note without running the agent (useful for UI-only status notes).
-
-## 5) Node invocation (browser)
-
-The extension node must handle `node.invoke` calls that target browser automation:
-
-- The Gateway’s built-in browser tool (and the `browser-ext` plugin) ultimately route to the node as
-  `browser.proxy` calls (see `contracts/browser-proxy.md`).
-
-**Contractual requirement**: The node returns a JSON result object and never hangs.
 
 ## 6) Reliability / reconnection
 

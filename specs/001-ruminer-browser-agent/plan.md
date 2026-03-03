@@ -8,9 +8,13 @@
 ## Summary
 
 Build a sidepanel-first Chrome MV3 extension that connects to the OpenClaw Gateway over localhost
-WebSocket (as a `node` with `caps: ["browser"]`), implements a superset `browser.proxy` dispatcher,
-enforces tool groups (prompt + runtime), runs RR-V3 for reliable workflows, and ingests AI chat
-history (ChatGPT first, then Gemini/Claude/DeepSeek) into EverMemOS via two paths:
+WebSocket as an **operator/UI client** for chat (`chat.*`), and exposes browser automation via a
+local MCP server (`app/native-server`). OpenClaw calls those MCP tools via the `mcp-client` plugin
+(OpenClaw → MCP client → Ruminer MCP server), and the native server bridges execution to the
+extension via Native Messaging.
+
+Ruminer enforces tool groups (prompt-layer in chat UI), runs RR-V3 for reliable workflows, and
+ingests AI chat history (ChatGPT first, then Gemini/Claude/DeepSeek) into EverMemOS via two paths:
 
 - Extension direct EMOS client: autonomous ingestion workflows (RR-V3 triggered) run within the extension and convert message elements in DOM into standard EMOS message JSON.
 - OpenClaw `evermemos` plugin: memory search + auto-ingest of the user's sidepanel chat with the agent.
@@ -77,7 +81,7 @@ app/
 │
 └── openclaw-extensions/
     ├── evermemos/                    # OpenClaw plugin (existing): add/search memory
-    └── browser-ext/                  # OpenClaw plugin (to implement): extension routes mapping
+  └── mcp-client/                   # OpenClaw plugin (existing): OpenClaw → MCP client → /mcp
 
 packages/
 ├── shared/                           # Shared TS types/constants (legacy MCP tool schemas, etc.)
@@ -85,29 +89,29 @@ packages/
 ```
 
 **Structure Decision**: Keep the existing pnpm monorepo. Implement the new architecture primarily in
-`app/chrome-extension/entrypoints/background/` (Gateway WS node + `browser.proxy` dispatcher) and
-`app/chrome-extension/entrypoints/sidepanel/` (chat UI + tool group toggles + workflows UI), plus
-add the missing `app/openclaw-extensions/browser-ext` plugin module.
+`app/chrome-extension/entrypoints/background/` (Native Messaging tool executor + RR-V3 runtime) and
+`app/chrome-extension/entrypoints/sidepanel/` (Gateway WS chat UI + tool group toggles + workflows UI),
+and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw.
 
 ## Phase Plan (high-level)
 
 ### Phase 0 — Research & Interface Decisions
 
-- Confirm OpenClaw Gateway WS frame shapes + relevant `chat.*`, `node.invoke`, `browser.request` usage.
+- Confirm OpenClaw Gateway WS frame shapes + relevant `chat.*` usage for UI.
 - Decide session strategy for sidepanel (MVP: deterministic `sessionKey = "main"`).
-- Map current “native server + SSE chat” surfaces to new Gateway WS transport.
+- Align sidepanel chat transport: native-server SSE vs Gateway WS (prefer Gateway WS for OpenClaw chat).
 
 ### Phase 1 — Design Artifacts (contracts + data model)
 
 - Define contracts for:
   - Gateway WS handshake + event framing (subset used by extension)
-  - `browser.proxy` superset dispatcher routes + tool group gating
+  - MCP tool call semantics + tool group policy (prompt-layer now; runtime layer optional)
   - Standard EMOS message JSON + ingestion ledger entry + EMOS API mapping
 - Produce data model for settings, tool groups, ledger, and RR-V3 workflow entities.
 
 ### Phase 2 — Implementation Planning (ready for `/speckit.tasks`)
 
-- Replace native-host/MCP path with Gateway WS node client in background SW.
+- Ensure OpenClaw tool calls work via `mcp-client` → local MCP server (`app/native-server`).
 - Update sidepanel Chat tab to use `chat.*` Gateway methods and render tool events.
-- Implement tool group toggles + dual enforcement (prompt injection + runtime rejection).
+- Implement tool group toggles + prompt-layer enforcement; decide runtime enforcement location.
 - Implement autonomous ingestion workflow nodes (ChatGPT pack first) + ledger + EMOS direct client.

@@ -57,35 +57,36 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 | └──────────────┘  │   network, history, etc. │  |
 |                    │ - RECORD_REPLAY tools:   │  |
 |                    │   flow record/run/save   │  |
-|                    │ - invokes extension node │  |
-|                    │   via node.invoke        │  |
+|                    │ mcp-client plugin        │  |
+|                    │ - registers TOOL_SCHEMAS │  |
+|                    │ - calls Ruminer MCP      │  |
+|                    │   server (/mcp)          │  |
 |                    └────────────────────────┘  |
 |                                               |
 | Agent runtime (calls registered tools)        |
 |                                               |
-| Connected nodes:                              |
-|   Chrome Extension SW (role: "node",          |
-|     caps: ["browser"])                        |
 +-------------------+---------------------------+
                     |
-                    | Gateway WebSocket
+                    | Gateway WebSocket (operator)
                     |
 +-------------------v----------------------------------------------+
 | Chrome Extension (Manifest V3)                                   |
 | - UI: sidepanel (chat + memory + workflows) / options            |
 | - Background SW:                                                 |
-|   - Gateway WS client (role: "node", caps: ["browser"])          |
-|   - Action handler (node.invoke commands):                       |
-|     - BROWSER tools: navigate, screenshot, tabs, click, fill,    |
-|       network, history, bookmarks, console, file upload, etc.    |
-|     - RECORD_REPLAY tools: record_start/stop, flow_save/list/run |
-|   - Tool group enforcement (both layers, see §4.3)               |
-|   - Sidepanel chat via chat.* methods                            |
+|   - Native Messaging tool executor (called by native server)     |
+|   - Sidepanel chat via Gateway `chat.*` methods                  |
 |   - RR-V3 runtime + Ruminer services                             |
 |   - EMOS client (direct API for autonomous ingestion)            |
 | - Content scripts: DOM read/write + record/observe               |
 | - Offscreen doc (optional): heavy compute / parsing              |
 +------------------------------------------------------------------+
+          |
+          | Native Messaging (tool execution)
+          v
++-------------------+
+| Ruminer Native     |
+| Server (MCP /mcp)  |
++-------------------+
           |
           | Direct EMOS API (for autonomous ingestion)
           v
@@ -96,29 +97,26 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 **Key architectural principles**:
 
-1. **`browser-ext` plugin invokes extension directly.** The Chrome extension connects to the OpenClaw Gateway via WebSocket as a **node** (role: `"node"`, caps: `["browser"]`). The `browser-ext` plugin invokes the extension node **directly** via `node.invoke` with `command: "browser-ext.request"` and tool params (e.g., `{ name: "chrome_navigate", args: { url: "..." } }`). All browser automation and workflow tools flow through this single path.
+1. **OpenClaw calls Ruminer tools via MCP.** OpenClaw registers and calls Ruminer’s browser tools via the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server at `http://127.0.0.1:12306/mcp`). The MCP server bridges execution to the extension background service worker via Native Messaging.
 2. **Dual EMOS integration paths.** OpenClaw's `evermemos` plugin auto-ingests OpenClaw conversations and exposes `addMemory`/`searchMemory` to the agent. The Chrome extension has its own **direct EMOS client** for autonomous ingestion workflows (RR-V3 triggers extraction and writes to EMOS without OpenClaw involvement).
 3. **Extension owns tool group enforcement.** Both prompt-layer restriction (injected when the extension sends `chat.send` to OpenClaw) and runtime-layer rejection (action handler rejects disabled actions) live entirely in the extension. The `browser-ext` plugin has no knowledge of tool groups.
 
 ### 4.2 Responsibility Boundaries
 
 1. **OpenClaw Gateway + Plugins**
-   - Primary LLM orchestrator. The extension connects via Gateway WebSocket.
+   - Primary LLM orchestrator. The extension connects via Gateway WebSocket for **chat UI**.
    - **`evermemos` plugin**: auto-ingests all OpenClaw conversations into EMOS; exposes `evermemos.addMemory` and `evermemos.searchMemory` as gateway methods callable by the agent. Persistent queue with retry for reliability.
-   - **`browser-ext` plugin**: registers tools from shared `TOOL_SCHEMAS` and invokes the extension node **directly** via `node.invoke` (`command: "browser-ext.request"`) for all browser automation and workflow tools. Covers `BROWSER.*` tools (navigate, screenshot, tabs, click, fill, network, history, bookmarks, console, file upload, etc.) and `RECORD_REPLAY.*` tools (flow recording and execution). The plugin is a pure tool name→`node.invoke` mapping with no logic, no hooks, and no knowledge of tool groups.
+   - **`mcp-client` plugin**: registers tools from shared `TOOL_SCHEMAS` into OpenClaw and forwards tool calls to Ruminer’s local MCP server.
    - OpenClaw is used to **author and repair** ingestion workflows (e.g., generate/iterate on extraction JavaScript). Autonomous ingestion runs are deterministic inside the extension and do not route extracted content through OpenClaw.
    - Responds to user commands from the sidepanel chat.
 
 2. **Extension background service worker**
-   - **Gateway WS client**: connects with `role: "node"`, declares `caps: ["browser"]`. Handles `node.invoke` commands from the `browser-ext` plugin.
-   - **Action handler**: dispatches incoming `node.invoke` commands to appropriate handlers based on tool name:
-     - **BROWSER tools**: `get_windows_and_tabs`, `chrome_navigate`, `chrome_screenshot`, `chrome_close_tabs`, `chrome_switch_tab`, `chrome_get_web_content`, `chrome_click_element`, `chrome_fill_or_select`, `chrome_request_element_selection`, `chrome_get_interactive_elements`, `chrome_network_capture`, `chrome_network_request`, `chrome_history`, `chrome_bookmark_search`, `chrome_bookmark_add`, `chrome_bookmark_delete`, `chrome_javascript`, `chrome_console`, `chrome_upload_file`, `chrome_read_page`, `chrome_computer`, `chrome_handle_dialog`, `chrome_handle_download`, `chrome_keyboard`, `performance_start_trace`, `performance_stop_trace`, `performance_analyze_insight`, `chrome_gif_recorder`
-     - **RECORD_REPLAY tools**: `flow_record_start`, `flow_record_stop`, `flow_save`, `flow_list`, `flow_run`
+   - **Native Messaging tool executor**: executes browser tools invoked by the native server.
    - **Sidepanel chat**: sends/receives messages via Gateway WS `chat.*` methods. Injects tool group restrictions into the system prompt when sending `chat.send` (prompt-layer enforcement).
    - **EMOS client (direct)**: calls the EverMemOS API directly for autonomous ingestion workflows. EMOS credentials are configured in the extension's Options page.
    - Owns the **RR-V3 runtime** (queue, leasing, triggers, crash recovery, event log).
    - Owns Ruminer local services: ingestion normalization + idempotency ledger.
-   - **Tool group enforcement (both layers)**: (1) prompt layer — when sending chat messages to OpenClaw, the extension prepends instructions listing disabled tools; (2) runtime layer — the action handler rejects `node.invoke` requests for actions in disabled groups.
+   - **Tool group enforcement**: prompt-layer restriction is implemented in the chat client, and **runtime enforcement is mandatory** in the tool execution path; the executor must reject any tool invocation that is disabled by the current tool group configuration.
    - Emits events to UI for observability.
 
 3. **Content scripts**
@@ -139,9 +137,9 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 Ruminer treats "who is asking the browser to do things" as a first-class concept:
 
-1. **Gateway WS is the only external interface**
-   - The extension connects to the OpenClaw Gateway via WebSocket (localhost). The Gateway authenticates the connection with a WS auth token. No separate MCP endpoint, no Native Messaging, no additional auth mechanism.
-   - Tool calls arrive via authenticated `node.invoke` from the Gateway through the `browser-ext` plugin.
+1. **Gateway WS is the chat interface**
+   - The extension connects to the OpenClaw Gateway via WebSocket (localhost) for sidepanel chat.
+   - Browser tool calls do not arrive via Gateway WS in the current architecture; they arrive via MCP calls to the native server.
 2. **Tool groups enforced at two layers — both in the extension**
    - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools. This tells the LLM not to call them.
    - **Runtime layer (extension action handler)**: the action handler rejects requests for actions in disabled groups. This is the hard enforcement — even if the LLM ignores the prompt restriction, the extension refuses.
@@ -364,10 +362,8 @@ Browser tools are divided into groups by side-effect level. Users can toggle ent
 
 Notes:
 
-- When a tool group is disabled, two enforcement layers activate (both in the extension):
-  1. **Prompt layer**: when the extension sends a chat message to OpenClaw via `chat.send`, it prepends a system instruction listing disabled tools. The LLM sees these restrictions as part of the conversation context.
-  2. **Runtime layer**: the extension's action handler rejects `node.invoke` requests for actions in disabled groups, returning an error to the agent.
-- The `browser-ext` plugin has no knowledge of tool groups. All enforcement is self-contained in the extension — no callback or sync needed.
+- When a tool group is disabled, the extension prepends a system instruction to `chat.send` describing disabled groups/tools (prompt-layer enforcement).
+- If hard runtime enforcement is required, it must be implemented in the tool execution path (native-server/tool router and/or extension tool handlers).
 - Workflows have a fixed set of tools defined at authoring time. They execute independently of the tool groups currently selected in the chat panel.
 - Tool group state is persisted in `chrome.storage.local`.
 
@@ -452,7 +448,8 @@ OpenClaw is the authoring assistant. It can:
 
 ### 9.2 Tool Surface
 
-The `browser-ext` plugin registers tools from shared `TOOL_SCHEMAS` and invokes the extension node **directly** via `node.invoke` (`command: "browser-ext.request"`, `{ name, args }`). It covers:
+OpenClaw can call Ruminer browser tools via the `mcp-client` plugin (OpenClaw → MCP client → Ruminer
+MCP server). The MCP server exposes tools from shared `TOOL_SCHEMAS` and covers:
 
 **BROWSER tools:**
 
@@ -530,9 +527,9 @@ When extraction fails repeatedly:
 
 ### Phase 1 -- Foundation + Sidepanel + First Platform Pack
 
-1. Fork `mcp-chrome` and rebrand UI copy/IA for Ruminer. **Deprecate `app/native-server`** — it is no longer used.
-2. Implement **Gateway WS client** in the extension background SW: connect as `role: "node"` with `caps: ["browser"]`, implement action handler for `node.invoke` commands, implement `chat.*` methods for sidepanel.
-3. Implement the **`browser-ext` OpenClaw plugin**: register the `browser-ext` tool that invokes the extension node directly via `node.invoke` for all browser actions (standard automation + extension-specific). Pure action→`node.invoke` mapping, no hooks, no logic.
+1. Keep the native server (`app/native-server`) + Native Messaging as the core tool execution path.
+2. Implement/maintain the sidepanel’s **Gateway WS operator client** for `chat.*`.
+3. Use the **`mcp-client` OpenClaw plugin** to expose Ruminer MCP tools inside OpenClaw.
 4. Configure the extension button to open the Sidepanel with three tabs (Chat, Memory, Workflows).
 5. Implement sidepanel Chat tab: text input, live EMOS search (via OpenClaw), send message to OpenClaw (with tool group restriction prompt), chat mode with inline tool call display.
 6. Implement tool group system: divide browser tools into groups, add toggle UI in sidepanel, implement dual enforcement in the extension (prompt injection in `chat.send` + runtime rejection in action handler).
@@ -549,7 +546,7 @@ When extraction fails repeatedly:
 
 ### Phase 3 -- AI Authoring + Repair
 
-1. Expose RR-V3 management APIs as direct action handlers (flow/trigger/run CRUD), accessible via the `browser-ext` plugin's `browser-ext` tool through direct `node.invoke`.
+1. Expose RR-V3 management APIs as MCP tools (flow/trigger/run CRUD) callable via OpenClaw’s `mcp-client` plugin.
 2. Guided authoring flow in UI (record -> generalize -> test -> schedule -> publish).
 3. Drift repair workflow + run artifacts viewer.
 4. Extractor regression tests from saved HTML snippets for platform packs.
@@ -557,11 +554,11 @@ When extraction fails repeatedly:
 ## 13. MVP Acceptance Criteria
 
 1. User can configure OpenClaw Gateway connection (WS URL + token) and EMOS connection (base URL + API key) in Options. Both show connection test results.
-2. Extension connects to Gateway as a node and handles `node.invoke` for browser tool calls.
+2. Sidepanel connects to Gateway as an operator client and supports `chat.*` methods.
 3. Sidepanel opens on extension button click with Chat, Memory, and Workflows tabs.
 4. Chat tab supports live EMOS search while typing (in empty state), transitions to chat mode on Enter, and shows inline tool call results. Chat messages are ingested into EMOS via OpenClaw's `evermemos` plugin.
-5. Tool group toggles are accessible in the chat UI. Disabled groups are enforced at both prompt level (extension injects restriction prompt into `chat.send`) and runtime level (extension action handler rejects disabled actions).
-6. `browser-ext` tool supports extension-specific tools needed for workflows and debugging (at minimum: RR-V3 workflows, bookmarks search, history search, element selection) via direct `node.invoke` and they are properly gated by tool groups.
+5. Tool group toggles are accessible in the chat UI and are applied at prompt level (extension injects restriction prompt into `chat.send`).
+6. OpenClaw can call Ruminer MCP tools via the `mcp-client` plugin; the MCP server bridges execution to the extension via Native Messaging.
 7. ChatGPT ingestion workflow runs end-to-end autonomously (extension extracts via Chrome APIs, writes to EMOS via direct API) and is idempotent (no duplicates on rerun).
 8. RR-V3 run history and event timeline is visible in the Workflows tab for debugging.
 9. Tool groups default to safe settings (Observe + Navigate on, Interact + Execute off). Workflows can request elevation with user approval.

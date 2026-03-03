@@ -5,14 +5,18 @@
 **Updated**: 2026-02-27
 **Status**: Draft
 **Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
-that connects to the OpenClaw Gateway via localhost WebSocket (as a node
-with `caps: ["browser"]`), implements a superset `browser.proxy` dispatcher,
-runs RR-V3 ingestion workflows, enforces tool groups at both prompt and
-runtime layers, and ingests AI chat history (ChatGPT, Gemini, Claude,
-DeepSeek) into EverMemOS via two independent paths: OpenClaw's `evermemos`
-plugin (sidepanel chat) and the extension's direct EMOS client (autonomous
-ingestion workflows). The MCP server and native messaging host from
-`mcp-chrome` are deprecated.
+that connects to the OpenClaw Gateway via localhost WebSocket as an
+**operator/UI client** (sidepanel chat uses `chat.*`), and exposes browser
+automation through a **local MCP server** (`app/native-server`).
+
+OpenClaw calls browser tools via the `mcp-client` plugin (OpenClaw → MCP
+client → Ruminer MCP server). The native server bridges tool execution to
+the extension via Native Messaging (native host ↔ extension background).
+
+Ruminer runs RR-V3 ingestion workflows and ingests AI chat history
+(ChatGPT, Gemini, Claude, DeepSeek) into EverMemOS via two independent
+paths: OpenClaw's `evermemos` plugin (sidepanel chat) and the extension's
+direct EMOS client (autonomous ingestion workflows).
 
 ## Clarifications
 
@@ -28,14 +32,15 @@ ingestion workflows). The MCP server and native messaging host from
 - Q: What is the separation of concerns between OpenClaw, the
   extension, and EMOS? → A: OpenClaw is the LLM orchestrator and tool
   runtime. The extension connects to the OpenClaw Gateway (localhost
-  WebSocket) as a `node` (role: "node", caps: ["browser"]) and implements
-  a superset `browser.proxy` route dispatcher that handles both standard
-  browser automation routes (snapshot, act, navigate, tabs) and
-  extension-specific routes (bookmarks, history, network, flows, ledger,
-  element selection). EMOS is integrated in two independent paths:
+  WebSocket) as an **operator/UI client** for sidepanel chat (`chat.*`).
+  Browser automation tools are exposed via the local MCP server
+  (`app/native-server`), and OpenClaw accesses them through the
+  `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server). The
+  native server bridges tool execution to the extension via Native
+  Messaging. EMOS is integrated in two independent paths:
   (1) OpenClaw's `evermemos` plugin (memory search + auto-ingest OpenClaw
   chats) and (2) the extension's direct EMOS client (autonomous ingestion
-  workflows). The MCP server and native messaging host are deprecated.
+  workflows).
 
 ### Session 2026-02-26
 
@@ -516,12 +521,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   connection (WS URL + auth token) and an EMOS connection (base URL +
   API key + tenant/space IDs) in the Options page, with connection
   tests and clear error messages. The extension MUST connect to the
-  Gateway as a node (role: "node", caps: ["browser"]) and implement a
-  superset `browser.proxy` route dispatcher that handles both standard
-  browser automation routes and extension-specific routes. The
-  `browser-ext` OpenClaw plugin MUST register a single `browser-ext`
-  tool that maps extension-specific actions (flows, bookmarks, history,
-  network, element selection, ledger) to `browser.request` gateway calls.
+  Gateway as an **operator/UI client** for sidepanel chat (`chat.*`).
+  OpenClaw MUST be able to call Ruminer’s browser automation tools via
+  the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server at
+  `http://127.0.0.1:12306/mcp`). The MCP server MUST bridge tool
+  execution to the extension via Native Messaging.
 - **FR-014a**: On first connect to the Gateway, the extension MUST
   auto-pair silently (no explicit pairing approval step). Since the
   Gateway is localhost-only, the localhost trust boundary is sufficient.
@@ -760,11 +764,12 @@ a flow, run the flow, and verify it executes the recorded actions.
 ### Assumptions
 
 - **OpenClaw** is the primary LLM orchestrator. The extension connects
-  to the OpenClaw Gateway via localhost WebSocket as a node (role:
-  "node", caps: ["browser"]) and implements a superset `browser.proxy`
-  route dispatcher. The `browser-ext` OpenClaw plugin registers a single
-  tool that maps extension-specific actions to `browser.request` gateway
-  calls. There is no separate MCP server or native messaging host.
+  to the OpenClaw Gateway via localhost WebSocket as an **operator** for
+  sidepanel chat (`chat.*`). Browser automation tools are exposed via
+  Ruminer’s local MCP server (`app/native-server`), and OpenClaw calls
+  them through the `mcp-client` plugin (OpenClaw → MCP client → Ruminer
+  MCP server). The MCP server bridges execution to the extension via
+  Native Messaging.
 - **EverMemOS** is the central memory system for all of a human's
   conversations with any AI chatbot (OpenClaw, ChatGPT, Gemini, etc.).
   EMOS is configured in two places: OpenClaw's `evermemos` plugin
