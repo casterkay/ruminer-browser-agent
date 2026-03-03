@@ -29,21 +29,8 @@
           @edit-trigger="openBuilder('trigger', $event)"
           @remove-trigger="deleteTrigger"
         />
-        <div v-if="!emosConfigured" class="workflow-warning">
-          <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
-            />
-          </svg>
-          Configure EverMemOS in Options before running ingestion workflows.
-        </div>
       </div>
     </div>
-
-    <SidepanelSettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
@@ -52,7 +39,6 @@ import { computed, onMounted, ref } from 'vue';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
-import SidepanelSettingsPanel from './components/SidepanelSettingsPanel.vue';
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useChatBackendPreference } from './composables/useChatBackendPreference';

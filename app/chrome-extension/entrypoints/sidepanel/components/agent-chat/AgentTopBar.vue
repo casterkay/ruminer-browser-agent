@@ -10,7 +10,7 @@
           color: 'var(--ac-text-muted)',
           borderRadius: 'var(--ac-radius-button)',
         }"
-        data-tooltip="Back to sessions"
+        data-tooltip="Back"
         @click="$emit('back')"
       >
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
