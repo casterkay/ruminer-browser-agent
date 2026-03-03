@@ -79,37 +79,29 @@
       }"
     />
 
-    <!-- Storage Section -->
+    <!-- Floating Icon Section -->
     <div
       class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
       :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
     >
-      Storage
+      Quick Panel
     </div>
 
     <button
-      class="w-full px-3 py-2 text-left text-sm ac-menu-item"
+      class="w-full px-3 py-2 text-left text-sm flex items-center justify-between ac-menu-item"
       :style="{ color: 'var(--ac-text, #1a1a1a)' }"
-      @click="$emit('attachments:open')"
+      @click="$emit('floatingIcon:toggle', !floatingIconEnabled)"
     >
-      Clear Attachment Cache
-    </button>
-
-    <!-- Divider -->
-    <div
-      class="my-2"
-      :style="{
-        borderTop: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
-      }"
-    />
-
-    <!-- Reconnect -->
-    <button
-      class="w-full px-3 py-2 text-left text-sm ac-menu-item"
-      :style="{ color: 'var(--ac-text, #1a1a1a)' }"
-      @click="$emit('reconnect')"
-    >
-      Reconnect Server
+      <span>Show in-page button</span>
+      <svg
+        v-if="floatingIconEnabled"
+        class="w-4 h-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      </svg>
     </button>
   </div>
 </template>
@@ -122,6 +114,8 @@ defineProps<{
   theme: AgentThemeId;
   /** Fake caret (comet effect) enabled state */
   fakeCaretEnabled?: boolean;
+  /** Floating icon (page button) enabled state */
+  floatingIconEnabled?: boolean;
 }>();
 
 defineEmits<{
@@ -129,6 +123,7 @@ defineEmits<{
   reconnect: [];
   'attachments:open': [];
   'fakeCaret:toggle': [enabled: boolean];
+  'floatingIcon:toggle': [enabled: boolean];
 }>();
 
 const themes: { id: AgentThemeId; label: string }[] = [

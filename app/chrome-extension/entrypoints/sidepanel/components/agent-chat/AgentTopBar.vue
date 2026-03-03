@@ -33,65 +33,6 @@
       >
         {{ brandLabel || 'Agent' }}
       </h1>
-
-      <!-- Divider -->
-      <div
-        class="h-4 w-[1px] flex-shrink-0"
-        :style="{ backgroundColor: 'var(--ac-border-strong)' }"
-      />
-
-      <!-- Project Breadcrumb -->
-      <button
-        class="flex items-center gap-1.5 text-xs px-2 py-1 truncate group ac-btn"
-        :style="{
-          fontFamily: 'var(--ac-font-mono)',
-          color: 'var(--ac-text-muted)',
-          borderRadius: 'var(--ac-radius-button)',
-        }"
-        @click="$emit('toggle:projectMenu')"
-      >
-        <span class="truncate">{{ projectLabel }}</span>
-        <svg
-          class="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
-
-      <!-- Session Breadcrumb -->
-      <div class="h-3 w-[1px] flex-shrink-0" :style="{ backgroundColor: 'var(--ac-border)' }" />
-      <button
-        class="flex items-center gap-1.5 text-xs px-2 py-1 truncate group ac-btn"
-        :style="{
-          fontFamily: 'var(--ac-font-mono)',
-          color: 'var(--ac-text-subtle)',
-          borderRadius: 'var(--ac-radius-button)',
-        }"
-        @click="$emit('toggle:sessionMenu')"
-      >
-        <span class="truncate">{{ sessionLabel }}</span>
-        <svg
-          class="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
     </div>
 
     <!-- Connection / Status / Settings -->

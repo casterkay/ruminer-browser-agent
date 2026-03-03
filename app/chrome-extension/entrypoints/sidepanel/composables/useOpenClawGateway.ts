@@ -55,6 +55,21 @@ export interface UseOpenClawGateway {
 const REQUEST_TIMEOUT_MS = 12_000;
 const CONNECT_CHALLENGE_TIMEOUT_MS = 6_000;
 
+function isLocalhostGatewayUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname === '127.0.0.1' ||
+      hostname === 'localhost' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function useOpenClawGateway(): UseOpenClawGateway {
   const connected = ref(false);
   const connecting = ref(false);
@@ -148,9 +163,6 @@ export function useOpenClawGateway(): UseOpenClawGateway {
     if (!settings.gatewayWsUrl.trim()) {
       throw new Error('Gateway WebSocket URL is empty');
     }
-    if (!settings.gatewayAuthToken.trim()) {
-      throw new Error('Gateway auth token is empty');
-    }
 
     if (ws) {
       ws.close();
@@ -158,6 +170,10 @@ export function useOpenClawGateway(): UseOpenClawGateway {
     }
 
     const wsUrl = settings.gatewayWsUrl.trim();
+    const authToken = settings.gatewayAuthToken.trim();
+    if (!authToken && !isLocalhostGatewayUrl(wsUrl)) {
+      throw new Error('Gateway auth token is empty');
+    }
 
     let resolveChallenge: ((nonce: string | null) => void) | null = null;
     const challengePromise = new Promise<string | null>((resolve) => {
@@ -220,7 +236,7 @@ export function useOpenClawGateway(): UseOpenClawGateway {
 
       const connectParams = await buildSignedConnectParams({
         role: 'operator',
-        authToken: settings.gatewayAuthToken.trim(),
+        authToken,
         client: {
           id: OPENCLAW_CLIENT_IDS.CONTROL_UI,
           version: chrome.runtime.getManifest().version || '0.1.0',

@@ -4,7 +4,12 @@
 
 The Memory API provides RESTful endpoints for storing, retrieving, searching, and managing conversational memories.
 
-**Base URL:** `http://localhost:1995/api/v1/memories`
+**Base URL:**
+
+- **Local EverMemOS** (`localhost:1995`): `/api/v1/memories`
+- **Cloud EverMemOS** (`api.evermind.ai`): `/api/v0/memories`
+
+> **Note:** This documentation describes the local API (v1). The cloud API uses v0 paths.
 
 ## API Endpoints
 

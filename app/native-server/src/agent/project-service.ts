@@ -10,10 +10,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { eq, desc } from 'drizzle-orm';
 import type { AgentProject } from 'chrome-mcp-shared';
 import type { CreateOrUpdateProjectInput } from './project-types';
-import { getDb, projects, type ProjectRow } from './db';
+import { getDb, type ProjectRow } from './db';
 
 // ============================================================
 // Security Configuration
@@ -180,7 +179,23 @@ function rowToProject(row: ProjectRow): AgentProject {
  */
 export async function listProjects(): Promise<AgentProject[]> {
   const db = getDb();
-  const rows = await db.select().from(projects).orderBy(desc(projects.lastActiveAt));
+  const rows = db.all<ProjectRow>(
+    `SELECT
+      id,
+      name,
+      description,
+      root_path AS rootPath,
+      preferred_cli AS preferredCli,
+      selected_model AS selectedModel,
+      active_claude_session_id AS activeClaudeSessionId,
+      use_ccr AS useCcr,
+      enable_chrome_mcp AS enableChromeMcp,
+      created_at AS createdAt,
+      updated_at AS updatedAt,
+      last_active_at AS lastActiveAt
+    FROM projects
+    ORDER BY last_active_at DESC`,
+  );
   return rows.map(rowToProject);
 }
 
@@ -189,8 +204,26 @@ export async function listProjects(): Promise<AgentProject[]> {
  */
 export async function getProject(id: string): Promise<AgentProject | undefined> {
   const db = getDb();
-  const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-  return rows.length > 0 ? rowToProject(rows[0]) : undefined;
+  const row = db.get<ProjectRow>(
+    `SELECT
+      id,
+      name,
+      description,
+      root_path AS rootPath,
+      preferred_cli AS preferredCli,
+      selected_model AS selectedModel,
+      active_claude_session_id AS activeClaudeSessionId,
+      use_ccr AS useCcr,
+      enable_chrome_mcp AS enableChromeMcp,
+      created_at AS createdAt,
+      updated_at AS updatedAt,
+      last_active_at AS lastActiveAt
+    FROM projects
+    WHERE id = ?
+    LIMIT 1`,
+    [id],
+  );
+  return row ? rowToProject(row) : undefined;
 }
 
 /**
@@ -235,10 +268,67 @@ export async function upsertProject(input: CreateOrUpdateProjectInput): Promise<
 
   if (existing) {
     // Update existing project
-    await db.update(projects).set(projectData).where(eq(projects.id, id));
+    db.run(
+      `UPDATE projects SET
+        name = ?,
+        description = ?,
+        root_path = ?,
+        preferred_cli = ?,
+        selected_model = ?,
+        active_claude_session_id = ?,
+        use_ccr = ?,
+        enable_chrome_mcp = ?,
+        created_at = ?,
+        updated_at = ?,
+        last_active_at = ?
+      WHERE id = ?`,
+      [
+        projectData.name,
+        projectData.description,
+        projectData.rootPath,
+        projectData.preferredCli,
+        projectData.selectedModel,
+        projectData.activeClaudeSessionId,
+        projectData.useCcr,
+        projectData.enableChromeMcp,
+        projectData.createdAt,
+        projectData.updatedAt,
+        projectData.lastActiveAt,
+        projectData.id,
+      ],
+    );
   } else {
     // Insert new project
-    await db.insert(projects).values(projectData);
+    db.run(
+      `INSERT INTO projects (
+        id,
+        name,
+        description,
+        root_path,
+        preferred_cli,
+        selected_model,
+        active_claude_session_id,
+        use_ccr,
+        enable_chrome_mcp,
+        created_at,
+        updated_at,
+        last_active_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectData.id,
+        projectData.name,
+        projectData.description,
+        projectData.rootPath,
+        projectData.preferredCli,
+        projectData.selectedModel,
+        projectData.activeClaudeSessionId,
+        projectData.useCcr,
+        projectData.enableChromeMcp,
+        projectData.createdAt,
+        projectData.updatedAt,
+        projectData.lastActiveAt,
+      ],
+    );
   }
 
   return rowToProject(projectData as ProjectRow);
@@ -250,7 +340,7 @@ export async function upsertProject(input: CreateOrUpdateProjectInput): Promise<
  */
 export async function deleteProject(id: string): Promise<void> {
   const db = getDb();
-  await db.delete(projects).where(eq(projects.id, id));
+  db.run('DELETE FROM projects WHERE id = ?', [id]);
 }
 
 /**
@@ -259,7 +349,7 @@ export async function deleteProject(id: string): Promise<void> {
 export async function touchProjectActivity(id: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db.update(projects).set({ lastActiveAt: now, updatedAt: now }).where(eq(projects.id, id));
+  db.run('UPDATE projects SET last_active_at = ?, updated_at = ? WHERE id = ?', [now, now, id]);
 }
 
 /**
@@ -273,12 +363,9 @@ export async function updateProjectClaudeSessionId(
 ): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db
-    .update(projects)
-    .set({
-      // Store null if empty string is passed (to clear the session)
-      activeClaudeSessionId: claudeSessionId?.trim() || null,
-      updatedAt: now,
-    })
-    .where(eq(projects.id, id));
+  db.run('UPDATE projects SET active_claude_session_id = ?, updated_at = ? WHERE id = ?', [
+    claudeSessionId?.trim() || null,
+    now,
+    id,
+  ]);
 }

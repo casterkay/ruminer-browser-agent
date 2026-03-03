@@ -7,9 +7,9 @@
  * - JSON config and management info caching
  */
 import { randomUUID } from 'node:crypto';
-import { eq, desc, and, asc } from 'drizzle-orm';
-import { getDb, sessions, messages, type SessionRow } from './db';
+import { getDb, type SessionRow } from './db';
 import type { EngineName } from './engines/types';
+import type { SQLInputValue } from 'node:sqlite';
 
 // ============================================================
 // Types
@@ -225,7 +225,38 @@ export async function createSession(
     updatedAt: now,
   };
 
-  await db.insert(sessions).values(sessionData);
+  db.run(
+    `INSERT INTO sessions (
+      id,
+      project_id,
+      engine_name,
+      engine_session_id,
+      name,
+      model,
+      permission_mode,
+      allow_dangerously_skip_permissions,
+      system_prompt_config,
+      options_config,
+      management_info,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      sessionData.id,
+      sessionData.projectId,
+      sessionData.engineName,
+      sessionData.engineSessionId,
+      sessionData.name,
+      sessionData.model,
+      sessionData.permissionMode,
+      sessionData.allowDangerouslySkipPermissions,
+      sessionData.systemPromptConfig,
+      sessionData.optionsConfig,
+      sessionData.managementInfo,
+      sessionData.createdAt,
+      sessionData.updatedAt,
+    ],
+  );
   return rowToSession(sessionData as SessionRow);
 }
 
@@ -234,8 +265,27 @@ export async function createSession(
  */
 export async function getSession(sessionId: string): Promise<AgentSession | undefined> {
   const db = getDb();
-  const rows = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
-  return rows.length > 0 ? rowToSession(rows[0]) : undefined;
+  const row = db.get<SessionRow>(
+    `SELECT
+      id,
+      project_id AS projectId,
+      engine_name AS engineName,
+      engine_session_id AS engineSessionId,
+      name,
+      model,
+      permission_mode AS permissionMode,
+      allow_dangerously_skip_permissions AS allowDangerouslySkipPermissions,
+      system_prompt_config AS systemPromptConfig,
+      options_config AS optionsConfig,
+      management_info AS managementInfo,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM sessions
+    WHERE id = ?
+    LIMIT 1`,
+    [sessionId],
+  );
+  return row ? rowToSession(row) : undefined;
 }
 
 /** Maximum length for preview text */
@@ -262,16 +312,18 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
       const session = rowToSession(row);
 
       // Query first user message for this session (include metadata for special rendering)
-      const firstUserMessages = await db
-        .select({ content: messages.content, metadata: messages.metadata })
-        .from(messages)
-        .where(and(eq(messages.sessionId, row.id), eq(messages.role, 'user')))
-        .orderBy(asc(messages.createdAt))
-        .limit(1);
+      const firstUserMessage = db.get<{ content: string; metadata: string | null }>(
+        `SELECT content, metadata
+        FROM messages
+        WHERE session_id = ? AND role = 'user'
+        ORDER BY created_at ASC
+        LIMIT 1`,
+        [row.id],
+      );
 
-      if (firstUserMessages.length > 0 && firstUserMessages[0].content) {
-        const content = firstUserMessages[0].content;
-        const metadataJson = firstUserMessages[0].metadata;
+      if (firstUserMessage?.content) {
+        const content = firstUserMessage.content;
+        const metadataJson = firstUserMessage.metadata;
 
         session.preview = truncatePreview(content);
 
@@ -323,11 +375,26 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
  */
 export async function getSessionsByProject(projectId: string): Promise<AgentSession[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.projectId, projectId))
-    .orderBy(desc(sessions.updatedAt));
+  const rows = db.all<SessionRow>(
+    `SELECT
+      id,
+      project_id AS projectId,
+      engine_name AS engineName,
+      engine_session_id AS engineSessionId,
+      name,
+      model,
+      permission_mode AS permissionMode,
+      allow_dangerously_skip_permissions AS allowDangerouslySkipPermissions,
+      system_prompt_config AS systemPromptConfig,
+      options_config AS optionsConfig,
+      management_info AS managementInfo,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM sessions
+    WHERE project_id = ?
+    ORDER BY updated_at DESC`,
+    [projectId],
+  );
 
   return addPreviewsToSessions(rows);
 }
@@ -338,7 +405,24 @@ export async function getSessionsByProject(projectId: string): Promise<AgentSess
  */
 export async function getAllSessions(): Promise<AgentSession[]> {
   const db = getDb();
-  const rows = await db.select().from(sessions).orderBy(desc(sessions.updatedAt));
+  const rows = db.all<SessionRow>(
+    `SELECT
+      id,
+      project_id AS projectId,
+      engine_name AS engineName,
+      engine_session_id AS engineSessionId,
+      name,
+      model,
+      permission_mode AS permissionMode,
+      allow_dangerously_skip_permissions AS allowDangerouslySkipPermissions,
+      system_prompt_config AS systemPromptConfig,
+      options_config AS optionsConfig,
+      management_info AS managementInfo,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM sessions
+    ORDER BY updated_at DESC`,
+  );
 
   return addPreviewsToSessions(rows);
 }
@@ -351,11 +435,26 @@ export async function getSessionsByProjectAndEngine(
   engineName: EngineName,
 ): Promise<AgentSession[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(sessions)
-    .where(and(eq(sessions.projectId, projectId), eq(sessions.engineName, engineName)))
-    .orderBy(desc(sessions.updatedAt));
+  const rows = db.all<SessionRow>(
+    `SELECT
+      id,
+      project_id AS projectId,
+      engine_name AS engineName,
+      engine_session_id AS engineSessionId,
+      name,
+      model,
+      permission_mode AS permissionMode,
+      allow_dangerously_skip_permissions AS allowDangerouslySkipPermissions,
+      system_prompt_config AS systemPromptConfig,
+      options_config AS optionsConfig,
+      management_info AS managementInfo,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM sessions
+    WHERE project_id = ? AND engine_name = ?
+    ORDER BY updated_at DESC`,
+    [projectId, engineName],
+  );
   return rows.map(rowToSession);
 }
 
@@ -366,45 +465,50 @@ export async function updateSession(sessionId: string, updates: UpdateSessionInp
   const db = getDb();
   const now = new Date().toISOString();
 
-  const updateData: Record<string, unknown> = {
-    updatedAt: now,
-  };
+  const sets: string[] = ['updated_at = ?'];
+  const params: SQLInputValue[] = [now];
 
   if (updates.engineSessionId !== undefined) {
-    updateData.engineSessionId = updates.engineSessionId?.trim() || null;
+    sets.push('engine_session_id = ?');
+    params.push(updates.engineSessionId?.trim() || null);
   }
 
   if (updates.name !== undefined) {
-    updateData.name = updates.name?.trim() || null;
+    sets.push('name = ?');
+    params.push(updates.name?.trim() || null);
   }
 
   if (updates.model !== undefined) {
-    updateData.model = updates.model?.trim() || null;
+    sets.push('model = ?');
+    params.push(updates.model?.trim() || null);
   }
 
   if (updates.permissionMode !== undefined) {
-    updateData.permissionMode = updates.permissionMode?.trim() || 'bypassPermissions';
+    sets.push('permission_mode = ?');
+    params.push(updates.permissionMode?.trim() || 'bypassPermissions');
   }
 
   if (updates.allowDangerouslySkipPermissions !== undefined) {
-    updateData.allowDangerouslySkipPermissions = updates.allowDangerouslySkipPermissions
-      ? '1'
-      : null;
+    sets.push('allow_dangerously_skip_permissions = ?');
+    params.push(updates.allowDangerouslySkipPermissions ? '1' : null);
   }
 
   if (updates.systemPromptConfig !== undefined) {
-    updateData.systemPromptConfig = stringifyJson(updates.systemPromptConfig);
+    sets.push('system_prompt_config = ?');
+    params.push(stringifyJson(updates.systemPromptConfig));
   }
 
   if (updates.optionsConfig !== undefined) {
-    updateData.optionsConfig = stringifyJson(updates.optionsConfig);
+    sets.push('options_config = ?');
+    params.push(stringifyJson(updates.optionsConfig));
   }
 
   if (updates.managementInfo !== undefined) {
-    updateData.managementInfo = stringifyJson(updates.managementInfo);
+    sets.push('management_info = ?');
+    params.push(stringifyJson(updates.managementInfo));
   }
 
-  await db.update(sessions).set(updateData).where(eq(sessions.id, sessionId));
+  db.run(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, [...params, sessionId]);
 }
 
 /**
@@ -414,7 +518,7 @@ export async function updateSession(sessionId: string, updates: UpdateSessionInp
  */
 export async function deleteSession(sessionId: string): Promise<void> {
   const db = getDb();
-  await db.delete(sessions).where(eq(sessions.id, sessionId));
+  db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
 }
 
 /**
@@ -434,7 +538,7 @@ export async function updateEngineSessionId(
 export async function touchSessionActivity(sessionId: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db.update(sessions).set({ updatedAt: now }).where(eq(sessions.id, sessionId));
+  db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', [now, sessionId]);
 }
 
 /**

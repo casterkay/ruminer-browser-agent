@@ -17,7 +17,7 @@
         />
       </label>
       <label class="field">
-        <span class="field-label">Auth Token</span>
+        <span class="field-label">Auth Token (optional on localhost)</span>
         <input
           v-model="gateway.gatewayAuthToken"
           type="password"
@@ -86,6 +86,16 @@
           :style="inputStyle"
         />
       </label>
+      <label class="field">
+        <span class="field-label">User ID</span>
+        <input
+          v-model="emos.userId"
+          type="text"
+          placeholder="your user identifier for memory storage"
+          class="field-input"
+          :style="inputStyle"
+        />
+      </label>
       <div class="row">
         <button class="btn-primary ac-focus-ring" :style="primaryBtnStyle" @click="saveEmos">
           Save
@@ -127,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import {
   getGatewaySettings,
   getEmosSettings,
@@ -152,6 +162,7 @@ const gateway = reactive({
 const emos = reactive({
   baseUrl: 'https://api.evermind.ai',
   apiKey: '',
+  userId: '',
 });
 
 const testingGateway = ref(false);
@@ -201,6 +212,7 @@ async function loadSettings(): Promise<void> {
   const emosSettings = await getEmosSettings();
   emos.baseUrl = emosSettings.baseUrl;
   emos.apiKey = emosSettings.apiKey;
+  emos.userId = emosSettings.userId;
 }
 
 async function saveGateway(): Promise<void> {
@@ -216,6 +228,7 @@ async function saveEmos(): Promise<void> {
   await setEmosSettings({
     baseUrl: emos.baseUrl.trim(),
     apiKey: emos.apiKey.trim(),
+    userId: emos.userId.trim(),
   });
   emosStatus.ok = true;
   emosStatus.message = 'EverMemOS settings saved.';
@@ -327,31 +340,60 @@ async function testEmos(): Promise<void> {
   testingEmos.value = true;
   emosStatus.message = '';
 
+  const baseUrl = emos.baseUrl.trim().replace(/\/$/, '');
+  const apiKey = emos.apiKey.trim();
+  const userId = emos.userId.trim();
+
+  if (!userId) {
+    emosStatus.ok = false;
+    emosStatus.message = 'User ID is required for EverMemOS connection.';
+    testingEmos.value = false;
+    return;
+  }
+
+  // Use GET with query params for cloud API - user_id is required
+  const endpoint = `${baseUrl}/api/v0/memories/search?query=ping&user_id=${encodeURIComponent(userId)}&limit=1`;
+
+  console.log('[EMOS Test] Base URL:', baseUrl);
+  console.log('[EMOS Test] Endpoint:', endpoint);
+  console.log('[EMOS Test] User ID:', userId);
+  console.log(
+    '[EMOS Test] API Key (first 8 chars):',
+    apiKey ? `${apiKey.slice(0, 8)}...` : '(empty)',
+  );
+
   try {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${emos.apiKey.trim()}`,
+      Authorization: `Bearer ${apiKey}`,
     };
 
-    const response = await fetch(
-      `${emos.baseUrl.trim().replace(/\/$/, '')}/api/v0/memories/search`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query: 'ping', limit: 1 }),
-      },
-    );
+    console.log('[EMOS Test] Using GET method');
+
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    console.log('[EMOS Test] Response status:', response.status);
+    console.log('[EMOS Test] Response headers:', Object.fromEntries(response.headers.entries()));
+
+    const responseText = await response.text();
+    console.log('[EMOS Test] Response body:', responseText);
 
     if (!response.ok) {
-      const payload = await response.text();
-      throw new Error(`EverMemOS test failed (${response.status}): ${payload}`);
+      throw new Error(`EverMemOS test failed (${response.status}): ${responseText}`);
     }
 
     emosStatus.ok = true;
     emosStatus.message = 'EverMemOS connection test passed.';
   } catch (reason) {
+    console.error('[EMOS Test] Error:', reason);
     emosStatus.ok = false;
-    emosStatus.message = reason instanceof Error ? reason.message : String(reason);
+    const debugInfo = `Endpoint: ${endpoint}`;
+    emosStatus.message =
+      reason instanceof Error
+        ? `${reason.message}\n\n${debugInfo}`
+        : `${String(reason)}\n\n${debugInfo}`;
   } finally {
     testingEmos.value = false;
   }
@@ -361,6 +403,42 @@ onMounted(async () => {
   await theme.initTheme();
   await loadSettings();
 });
+
+// Auto-save settings when they change
+watch(
+  () => emos.baseUrl,
+  async () => {
+    await saveEmos();
+  },
+);
+
+watch(
+  () => emos.apiKey,
+  async () => {
+    await saveEmos();
+  },
+);
+
+watch(
+  () => emos.userId,
+  async () => {
+    await saveEmos();
+  },
+);
+
+watch(
+  () => gateway.gatewayWsUrl,
+  async () => {
+    await saveGateway();
+  },
+);
+
+watch(
+  () => gateway.gatewayAuthToken,
+  async () => {
+    await saveGateway();
+  },
+);
 </script>
 
 <style scoped>

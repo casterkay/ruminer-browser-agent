@@ -51,22 +51,39 @@ async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
     throw new Error('EMOS is not configured');
   }
 
+  if (!settings.userId.trim()) {
+    throw new Error('EMOS User ID is not configured');
+  }
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     Authorization: `Bearer ${settings.apiKey}`,
   };
 
-  const response = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
+  // Build query string from body params - always include user_id (required by API)
+  const params = new URLSearchParams();
+  params.append('user_id', settings.userId.trim());
+  Object.entries(body).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      params.append(key, String(value));
+    }
   });
 
+  const response = await fetch(
+    `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/search?${params.toString()}`,
+    {
+      method: 'GET',
+      headers,
+    },
+  );
+
   const json = await response.json().catch(() => ({}));
+  console.log('[EMOS Search] Response:', { status: response.status, json });
+
   if (!response.ok) {
     throw new Error(`EMOS search failed (${response.status}) ${JSON.stringify(json)}`);
   }
 
+  console.log('[EMOS Search] Memories count:', json?.memories?.length ?? json?.items?.length ?? 0);
   return json;
 }
 
@@ -107,7 +124,15 @@ export function useEmosSearch(): UseEmosSearch {
 
     try {
       const settings = await getEmosSettings();
-      isConfigured.value = !!settings.baseUrl.trim() && !!settings.apiKey.trim();
+      console.log('[EMOS Search] Settings:', {
+        baseUrl: settings.baseUrl ? '(set)' : '(empty)',
+        apiKey: settings.apiKey ? '(set)' : '(empty)',
+        userId: settings.userId || '(empty)',
+      });
+      isConfigured.value =
+        !!settings.baseUrl.trim() && !!settings.apiKey.trim() && !!settings.userId.trim();
+
+      console.log('[EMOS Search] isConfigured:', isConfigured.value);
 
       if (!isConfigured.value) {
         items.value = [];
@@ -130,15 +155,40 @@ export function useEmosSearch(): UseEmosSearch {
       }
 
       const response = await fetchSearchResult(body);
-      const list = Array.isArray(response.memories)
-        ? response.memories
-        : Array.isArray(response.items)
-          ? response.items
-          : Array.isArray(response.data)
-            ? response.data
-            : [];
+      console.log('[EMOS Search] Raw response:', response);
+      console.log('[EMOS Search] Response data:', JSON.stringify(response, null, 2));
 
-      items.value = list.map((raw) => normalizeItem(raw));
+      // Extract items from response - check multiple possible locations
+      let rawList: any[] = [];
+
+      // Check for memories array
+      if (Array.isArray(response.memories)) {
+        rawList = response.memories;
+      }
+      // Check for items array
+      else if (Array.isArray(response.items)) {
+        rawList = response.items;
+      }
+      // Check for data.memories array
+      else if (Array.isArray(response.data?.memories)) {
+        rawList = response.data.memories;
+      }
+      // Check for data.items array
+      else if (Array.isArray(response.data?.items)) {
+        rawList = response.data.items;
+      }
+      // Check for data array (assuming it might be nested)
+      else if (Array.isArray(response.data)) {
+        rawList = response.data;
+      }
+
+      console.log(
+        '[EMOS Search] Extracted',
+        rawList.length,
+        'items from',
+        rawList.length,
+        ' items',
+      );
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : String(reason);
       items.value = [];

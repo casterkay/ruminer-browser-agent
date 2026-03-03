@@ -2,7 +2,7 @@
   <div ref="shellRef" class="h-full flex flex-col overflow-hidden relative">
     <!-- Header -->
     <header
-      class="flex-none px-5 py-3 flex items-center justify-between z-20"
+      class="agent-chat-header flex-none px-5 py-3 flex items-center justify-between z-20"
       :style="{
         backgroundColor: 'var(--ac-header-bg)',
         borderBottom: 'var(--ac-border-width) solid var(--ac-header-border)',
@@ -98,7 +98,6 @@
           </span>
           <span class="opacity-50">·</span>
         </template>
-        <span>{{ footerLabel || 'Agent Preview' }}</span>
       </div>
     </footer>
   </div>
@@ -111,7 +110,6 @@ import type { AgentUsageStats } from 'chrome-mcp-shared';
 defineProps<{
   errorMessage?: string | null;
   usage?: AgentUsageStats | null;
-  /** Footer label to display (e.g., "Claude Code Preview", "Codex Preview") */
   footerLabel?: string;
 }>();
 

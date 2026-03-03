@@ -13,7 +13,18 @@
  * - Collects page context (URL, selection) automatically
  */
 
-import { createQuickPanelController, type QuickPanelController } from '@/shared/quick-panel';
+import {
+  createQuickPanelController,
+  type QuickPanelController,
+  createFloatingIcon,
+  type FloatingIconManager,
+} from '@/shared/quick-panel';
+
+/** Storage key for floating icon preference */
+const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
+
+/** Default value when none is set */
+const DEFAULT_FLOATING_ICON_ENABLED = true;
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -22,6 +33,19 @@ export default defineContentScript({
   main() {
     console.log('[QuickPanelContentScript] Content script loaded on:', window.location.href);
     let controller: QuickPanelController | null = null;
+    let floatingIcon: FloatingIconManager | null = null;
+
+    /**
+     * Check if floating icon is enabled
+     */
+    async function isFloatingIconEnabled(): Promise<boolean> {
+      try {
+        const result = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON);
+        return result[STORAGE_KEY_FLOATING_ICON] ?? DEFAULT_FLOATING_ICON_ENABLED;
+      } catch {
+        return DEFAULT_FLOATING_ICON_ENABLED;
+      }
+    }
 
     /**
      * Ensure controller is initialized (lazy initialization)
@@ -36,6 +60,66 @@ export default defineContentScript({
       }
       return controller;
     }
+
+    /**
+     * Initialize floating icon
+     */
+    async function initFloatingIcon(): Promise<void> {
+      // Check if enabled
+      const enabled = await isFloatingIconEnabled();
+      if (!enabled) {
+        console.log('[QuickPanelContentScript] Floating icon disabled');
+        return;
+      }
+
+      if (floatingIcon) return;
+
+      floatingIcon = createFloatingIcon({
+        initialBottom: 24,
+        initialRight: 24,
+        onClick: () => {
+          const ctrl = ensureController();
+          ctrl.toggle();
+        },
+        onPositionChange: (position) => {
+          console.log('[QuickPanelContentScript] Icon moved to:', position);
+        },
+      });
+
+      // Show the floating icon
+      floatingIcon.show();
+
+      // Initial pulse after a delay to draw attention
+      setTimeout(() => {
+        floatingIcon?.pulse();
+      }, 2000);
+    }
+
+    /**
+     * Handle storage changes (for toggling floating icon)
+     */
+    function handleStorageChange(changes: { [key: string]: chrome.storage.StorageChange }): void {
+      if (STORAGE_KEY_FLOATING_ICON in changes) {
+        const enabled =
+          changes[STORAGE_KEY_FLOATING_ICON].newValue ?? DEFAULT_FLOATING_ICON_ENABLED;
+        if (enabled) {
+          if (!floatingIcon) {
+            initFloatingIcon();
+          }
+        } else {
+          if (floatingIcon) {
+            floatingIcon.dispose();
+            floatingIcon = null;
+          }
+        }
+      }
+    }
+
+    // Initialize floating icon on load
+    initFloatingIcon();
+
+    // Listen for storage changes
+    chrome.storage.onChanged.addListener(handleStorageChange);
 
     /**
      * Handle messages from background script
@@ -106,9 +190,14 @@ export default defineContentScript({
     // Cleanup when the document is being unloaded (policy-safe on modern pages)
     window.addEventListener('pagehide', () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
+      chrome.storage.onChanged.removeListener(handleStorageChange);
       if (controller) {
         controller.dispose();
         controller = null;
+      }
+      if (floatingIcon) {
+        floatingIcon.dispose();
+        floatingIcon = null;
       }
     });
   },

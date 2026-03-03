@@ -7,9 +7,9 @@
  * - Consistent with AgentStoredMessage interface from shared types
  */
 import { randomUUID } from 'node:crypto';
-import { eq, asc, and, count } from 'drizzle-orm';
 import type { AgentRole, AgentStoredMessage } from 'chrome-mcp-shared';
-import { getDb, messages, type MessageRow } from './db';
+import { getDb, type MessageRow } from './db';
+import type { SQLInputValue } from 'node:sqlite';
 
 // ============================================================
 // Types
@@ -69,21 +69,34 @@ export async function getMessagesByProjectId(
 ): Promise<AgentStoredMessage[]> {
   const db = getDb();
 
-  const query = db
-    .select()
-    .from(messages)
-    .where(eq(messages.projectId, projectId))
-    .orderBy(asc(messages.createdAt));
+  const params: SQLInputValue[] = [projectId];
+  let sql = `SELECT
+      id,
+      project_id AS projectId,
+      session_id AS sessionId,
+      conversation_id AS conversationId,
+      role,
+      content,
+      message_type AS messageType,
+      metadata,
+      cli_source AS cliSource,
+      request_id AS requestId,
+      created_at AS createdAt
+    FROM messages
+    WHERE project_id = ?
+    ORDER BY created_at ASC`;
 
   // Apply pagination if specified
   if (limit > 0) {
-    query.limit(limit);
+    sql += ' LIMIT ?';
+    params.push(limit);
   }
   if (offset > 0) {
-    query.offset(offset);
+    sql += ' OFFSET ?';
+    params.push(offset);
   }
 
-  const rows = await query;
+  const rows = db.all<MessageRow>(sql, params);
   return rows.map(rowToMessage);
 }
 
@@ -92,11 +105,11 @@ export async function getMessagesByProjectId(
  */
 export async function getMessagesCountByProjectId(projectId: string): Promise<number> {
   const db = getDb();
-  const result = await db
-    .select({ count: count() })
-    .from(messages)
-    .where(eq(messages.projectId, projectId));
-  return result[0]?.count ?? 0;
+  const row = db.get<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM messages WHERE project_id = ?',
+    [projectId],
+  );
+  return row?.count ?? 0;
 }
 
 /**
@@ -122,22 +135,43 @@ export async function createMessage(
     createdAt: input.createdAt || now,
   };
 
-  await db
-    .insert(messages)
-    .values(messageData)
-    .onConflictDoUpdate({
-      target: messages.id,
-      set: {
-        role: messageData.role,
-        messageType: messageData.messageType,
-        content: messageData.content,
-        metadata: messageData.metadata,
-        sessionId: messageData.sessionId,
-        conversationId: messageData.conversationId,
-        cliSource: messageData.cliSource,
-        requestId: messageData.requestId,
-      },
-    });
+  db.run(
+    `INSERT INTO messages (
+      id,
+      project_id,
+      session_id,
+      conversation_id,
+      role,
+      content,
+      message_type,
+      metadata,
+      cli_source,
+      request_id,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      role = excluded.role,
+      message_type = excluded.message_type,
+      content = excluded.content,
+      metadata = excluded.metadata,
+      session_id = excluded.session_id,
+      conversation_id = excluded.conversation_id,
+      cli_source = excluded.cli_source,
+      request_id = excluded.request_id`,
+    [
+      messageData.id,
+      messageData.projectId,
+      messageData.sessionId,
+      messageData.conversationId,
+      messageData.role,
+      messageData.content,
+      messageData.messageType,
+      messageData.metadata,
+      messageData.cliSource,
+      messageData.requestId,
+      messageData.createdAt,
+    ],
+  );
 
   return rowToMessage(messageData);
 }
@@ -157,11 +191,12 @@ export async function deleteMessagesByProjectId(
   const beforeCount = await getMessagesCountByProjectId(projectId);
 
   if (conversationId) {
-    await db
-      .delete(messages)
-      .where(and(eq(messages.projectId, projectId), eq(messages.conversationId, conversationId)));
+    db.run('DELETE FROM messages WHERE project_id = ? AND conversation_id = ?', [
+      projectId,
+      conversationId,
+    ]);
   } else {
-    await db.delete(messages).where(eq(messages.projectId, projectId));
+    db.run('DELETE FROM messages WHERE project_id = ?', [projectId]);
   }
 
   // Get count after deletion to calculate deleted count
@@ -184,20 +219,33 @@ export async function getMessagesBySessionId(
 ): Promise<AgentStoredMessage[]> {
   const db = getDb();
 
-  const query = db
-    .select()
-    .from(messages)
-    .where(eq(messages.sessionId, sessionId))
-    .orderBy(asc(messages.createdAt));
+  const params: SQLInputValue[] = [sessionId];
+  let sql = `SELECT
+      id,
+      project_id AS projectId,
+      session_id AS sessionId,
+      conversation_id AS conversationId,
+      role,
+      content,
+      message_type AS messageType,
+      metadata,
+      cli_source AS cliSource,
+      request_id AS requestId,
+      created_at AS createdAt
+    FROM messages
+    WHERE session_id = ?
+    ORDER BY created_at ASC`;
 
   if (limit > 0) {
-    query.limit(limit);
+    sql += ' LIMIT ?';
+    params.push(limit);
   }
   if (offset > 0) {
-    query.offset(offset);
+    sql += ' OFFSET ?';
+    params.push(offset);
   }
 
-  const rows = await query;
+  const rows = db.all<MessageRow>(sql, params);
   return rows.map(rowToMessage);
 }
 
@@ -206,11 +254,11 @@ export async function getMessagesBySessionId(
  */
 export async function getMessagesCountBySessionId(sessionId: string): Promise<number> {
   const db = getDb();
-  const result = await db
-    .select({ count: count() })
-    .from(messages)
-    .where(eq(messages.sessionId, sessionId));
-  return result[0]?.count ?? 0;
+  const row = db.get<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM messages WHERE session_id = ?',
+    [sessionId],
+  );
+  return row?.count ?? 0;
 }
 
 /**
@@ -221,7 +269,7 @@ export async function deleteMessagesBySessionId(sessionId: string): Promise<numb
   const db = getDb();
 
   const beforeCount = await getMessagesCountBySessionId(sessionId);
-  await db.delete(messages).where(eq(messages.sessionId, sessionId));
+  db.run('DELETE FROM messages WHERE session_id = ?', [sessionId]);
   const afterCount = await getMessagesCountBySessionId(sessionId);
 
   return beforeCount - afterCount;
@@ -232,10 +280,23 @@ export async function deleteMessagesBySessionId(sessionId: string): Promise<numb
  */
 export async function getMessagesByRequestId(requestId: string): Promise<AgentStoredMessage[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(messages)
-    .where(eq(messages.requestId, requestId))
-    .orderBy(asc(messages.createdAt));
+  const rows = db.all<MessageRow>(
+    `SELECT
+      id,
+      project_id AS projectId,
+      session_id AS sessionId,
+      conversation_id AS conversationId,
+      role,
+      content,
+      message_type AS messageType,
+      metadata,
+      cli_source AS cliSource,
+      request_id AS requestId,
+      created_at AS createdAt
+    FROM messages
+    WHERE request_id = ?
+    ORDER BY created_at ASC`,
+    [requestId],
+  );
   return rows.map(rowToMessage);
 }

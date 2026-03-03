@@ -6,6 +6,8 @@ export { useOpenClawGateway } from './useOpenClawGateway';
 export { useOpenClawChat } from './useOpenClawChat';
 export { useEmosSuggestions } from './useEmosSuggestions';
 export { useEmosSearch } from './useEmosSearch';
+export { useAgentServer } from './useAgentServer';
+export { useAgentChat } from './useAgentChat';
 export { useAgentProjects } from './useAgentProjects';
 export { useAgentSessions } from './useAgentSessions';
 export { useAttachments, type AttachmentWithPreview } from './useAttachments';
@@ -18,6 +20,8 @@ export type { UseOpenClawGateway, GatewayEvent } from './useOpenClawGateway';
 export type { UseOpenClawChat, ChatMessage, ChatRole } from './useOpenClawChat';
 export type { UseEmosSuggestions, MemorySuggestion } from './useEmosSuggestions';
 export type { UseEmosSearch, MemoryItem, MemoryFilters } from './useEmosSearch';
+export type { UseAgentServerOptions } from './useAgentServer';
+export type { UseAgentChatOptions, RequestState } from './useAgentChat';
 export type { UseAgentProjectsOptions } from './useAgentProjects';
 export type { UseAgentSessionsOptions } from './useAgentSessions';
 export type { AgentThemeId, UseAgentTheme } from './useAgentTheme';
@@ -67,3 +71,7 @@ export type {
 // Agent Input Preferences (fake caret, etc.)
 export { useAgentInputPreferences } from './useAgentInputPreferences';
 export type { UseAgentInputPreferences } from './useAgentInputPreferences';
+
+// Floating Icon Preference
+export { useFloatingIconPreference } from './useFloatingIconPreference';
+export type { UseFloatingIconPreference } from './useFloatingIconPreference';

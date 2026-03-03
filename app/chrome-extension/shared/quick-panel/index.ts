@@ -338,3 +338,7 @@ export type {
 // Search Providers
 export { createTabsProvider } from './providers';
 export type { TabsProviderOptions, TabsSearchResultData } from './providers';
+
+// Floating Icon
+export { createFloatingIcon } from './ui/floating-icon';
+export type { FloatingIconOptions, FloatingIconManager } from './ui/floating-icon';

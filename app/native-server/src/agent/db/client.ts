@@ -1,47 +1,23 @@
 /**
- * Database client singleton for Agent storage.
+ * Database client singleton for Agent storage (SQLite).
  *
- * Design principles:
- * - Lazy initialization - only connect when first accessed
- * - Singleton pattern - single connection throughout the app lifecycle
- * - Auto-create tables on first run (no migration tool needed)
- * - Configurable path via environment variable
+ * Uses Node's built-in `node:sqlite` (DatabaseSync) to avoid native addon binding issues
+ * from packages like `better-sqlite3`.
  */
-import Database from 'better-sqlite3';
-import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { sql } from 'drizzle-orm';
-import * as schema from './schema';
-import { getAgentDataDir } from '../storage';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
+import { getAgentDataDir, getDatabasePath } from '../storage';
 
 // ============================================================
 // Types
 // ============================================================
 
-export type DrizzleDB = BetterSQLite3Database<typeof schema>;
-
-// ============================================================
-// Singleton State
-// ============================================================
-
-let dbInstance: DrizzleDB | null = null;
-let sqliteInstance: Database.Database | null = null;
-
-// ============================================================
-// Database Path Resolution
-// ============================================================
-
-/**
- * Get the database file path.
- * Environment: CHROME_MCP_AGENT_DB_FILE overrides the default path.
- */
-export function getDatabasePath(): string {
-  const envPath = process.env.CHROME_MCP_AGENT_DB_FILE;
-  if (envPath && envPath.trim()) {
-    return path.resolve(envPath.trim());
-  }
-  return path.join(getAgentDataDir(), 'agent.db');
+export interface AgentDb {
+  exec: (sql: string) => void;
+  run: (sql: string, params?: SQLInputValue[]) => void;
+  get: <T = Record<string, unknown>>(sql: string, params?: SQLInputValue[]) => T | undefined;
+  all: <T = Record<string, unknown>>(sql: string, params?: SQLInputValue[]) => T[];
 }
 
 // ============================================================
@@ -58,6 +34,8 @@ CREATE TABLE IF NOT EXISTS projects (
   preferred_cli TEXT,
   selected_model TEXT,
   active_claude_session_id TEXT,
+  use_ccr TEXT,
+  enable_chrome_mcp TEXT NOT NULL DEFAULT '1',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_active_at TEXT
@@ -104,37 +82,25 @@ CREATE INDEX IF NOT EXISTS messages_project_id_idx ON messages(project_id);
 CREATE INDEX IF NOT EXISTS messages_session_id_idx ON messages(session_id);
 CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages(created_at);
 CREATE INDEX IF NOT EXISTS messages_request_id_idx ON messages(request_id);
-
--- Enable foreign key enforcement
-PRAGMA foreign_keys = ON;
-`;
-
-/**
- * Migration SQL to add new columns to existing databases.
- * Each migration is idempotent - safe to run multiple times.
- */
-const MIGRATION_SQL = `
--- Add active_claude_session_id column if it doesn't exist (for existing databases)
--- SQLite doesn't support IF NOT EXISTS for columns, so we use a workaround
 `;
 
 // ============================================================
-// Database Initialization
+// Singleton State
 // ============================================================
 
-/**
- * Check if a column exists in a table.
- */
-function columnExists(sqlite: Database.Database, tableName: string, columnName: string): boolean {
-  const result = sqlite.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
-  return result.some((col) => col.name === columnName);
+let sqliteInstance: DatabaseSync | null = null;
+let dbInstance: AgentDb | null = null;
+
+// ============================================================
+// Migrations
+// ============================================================
+
+function columnExists(sqlite: DatabaseSync, tableName: string, columnName: string): boolean {
+  const rows = sqlite.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: unknown }>;
+  return rows.some((row) => row.name === columnName);
 }
 
-/**
- * Run migrations for existing databases.
- * Adds new columns that may be missing in older database versions.
- */
-function runMigrations(sqlite: Database.Database): void {
+function runMigrations(sqlite: DatabaseSync): void {
   // Migration 1: Add active_claude_session_id column to projects table
   if (!columnExists(sqlite, 'projects', 'active_claude_session_id')) {
     sqlite.exec('ALTER TABLE projects ADD COLUMN active_claude_session_id TEXT');
@@ -151,19 +117,6 @@ function runMigrations(sqlite: Database.Database): void {
   }
 }
 
-/**
- * Initialize the database schema.
- * Safe to call multiple times - uses IF NOT EXISTS.
- * Also runs migrations for existing databases.
- */
-function initializeSchema(sqlite: Database.Database): void {
-  sqlite.exec(CREATE_TABLES_SQL);
-  runMigrations(sqlite);
-}
-
-/**
- * Ensure the data directory exists.
- */
 function ensureDataDir(): void {
   const dataDir = getAgentDataDir();
   if (!existsSync(dataDir)) {
@@ -171,52 +124,71 @@ function ensureDataDir(): void {
   }
 }
 
+function createWrapper(sqlite: DatabaseSync): AgentDb {
+  const run = (sql: string, params: SQLInputValue[] = []): void => {
+    sqlite.prepare(sql).run(...params);
+  };
+
+  const get = <T = Record<string, unknown>>(
+    sql: string,
+    params: SQLInputValue[] = [],
+  ): T | undefined => {
+    const result = sqlite.prepare(sql).get(...params) as T | undefined;
+    return result;
+  };
+
+  const all = <T = Record<string, unknown>>(sql: string, params: SQLInputValue[] = []): T[] => {
+    const result = sqlite.prepare(sql).all(...params) as T[];
+    return result;
+  };
+
+  return {
+    exec: (sql: string) => sqlite.exec(sql),
+    run,
+    get,
+    all,
+  };
+}
+
 // ============================================================
 // Public API
 // ============================================================
 
-/**
- * Get the Drizzle database instance.
- * Lazily initializes the connection and schema on first call.
- */
-export function getDb(): DrizzleDB {
+export function getDb(): AgentDb {
   if (dbInstance) {
     return dbInstance;
   }
 
   ensureDataDir();
+
   const dbPath = getDatabasePath();
+  const dir = path.dirname(dbPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
 
-  // Create SQLite connection
-  sqliteInstance = new Database(dbPath);
+  sqliteInstance = new DatabaseSync(dbPath);
 
-  // Enable WAL mode for better concurrent read performance
-  sqliteInstance.pragma('journal_mode = WAL');
+  // Performance & safety pragmas
+  sqliteInstance.exec('PRAGMA foreign_keys = ON;');
+  sqliteInstance.exec('PRAGMA journal_mode = WAL;');
 
-  // Initialize schema
-  initializeSchema(sqliteInstance);
+  // Initialize schema and run migrations
+  sqliteInstance.exec(CREATE_TABLES_SQL);
+  runMigrations(sqliteInstance);
 
-  // Create Drizzle instance
-  dbInstance = drizzle(sqliteInstance, { schema });
-
+  dbInstance = createWrapper(sqliteInstance);
   return dbInstance;
 }
 
-/**
- * Close the database connection.
- * Should be called on graceful shutdown.
- */
 export function closeDb(): void {
   if (sqliteInstance) {
     sqliteInstance.close();
     sqliteInstance = null;
-    dbInstance = null;
   }
+  dbInstance = null;
 }
 
-/**
- * Check if database is initialized.
- */
 export function isDbInitialized(): boolean {
   return dbInstance !== null;
 }
@@ -226,7 +198,7 @@ export function isDbInitialized(): boolean {
  */
 export function execRawSql(sqlStr: string): void {
   if (!sqliteInstance) {
-    getDb(); // Initialize if not already
+    getDb();
   }
   sqliteInstance!.exec(sqlStr);
 }

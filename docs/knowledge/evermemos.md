@@ -195,6 +195,8 @@ Base URL: `http://localhost:1995`
 | `DELETE` | `/api/v1/memories`              | Delete memories                                        |
 | `POST`   | `/api/v1/conversation-metadata` | Store conversation metadata                            |
 
+> **Note:** Local EverMemOS uses `/api/v1/` paths. Cloud EverMemOS (`api.evermind.ai`) uses `/api/v0/` paths.
+
 ### Store a Memory
 
 ```bash

@@ -18,6 +18,7 @@ export interface GatewayConnectionStatus {
 export interface EmosConnectionSettings {
   baseUrl: string;
   apiKey: string;
+  userId: string;
   lastTestOkAt: string | null;
   lastTestError: string | null;
 }
@@ -33,6 +34,7 @@ const DEFAULT_GATEWAY_SETTINGS: GatewayConnectionSettings = {
 const DEFAULT_EMOS_SETTINGS: EmosConnectionSettings = {
   baseUrl: 'https://api.evermind.ai',
   apiKey: '',
+  userId: '',
   lastTestOkAt: null,
   lastTestError: null,
 };
@@ -133,7 +135,29 @@ export async function getOrCreateGatewayDeviceId(): Promise<string> {
 
 export async function isGatewayConfigured(): Promise<boolean> {
   const settings = await getGatewaySettings();
-  return settings.gatewayWsUrl.trim().length > 0 && settings.gatewayAuthToken.trim().length > 0;
+  const wsUrl = settings.gatewayWsUrl.trim();
+  if (wsUrl.length === 0) {
+    return false;
+  }
+
+  const token = settings.gatewayAuthToken.trim();
+  if (token.length > 0) {
+    return true;
+  }
+
+  // Auth token may be optional for localhost Gateway deployments.
+  try {
+    const url = new URL(wsUrl);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname === '127.0.0.1' ||
+      hostname === 'localhost' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0'
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function getEmosSettings(): Promise<EmosConnectionSettings> {
@@ -142,6 +166,7 @@ export async function getEmosSettings(): Promise<EmosConnectionSettings> {
   return {
     baseUrl: normalizeString(raw.baseUrl, DEFAULT_EMOS_SETTINGS.baseUrl),
     apiKey: normalizeString(raw.apiKey, ''),
+    userId: normalizeString(raw.userId, ''),
     lastTestOkAt: normalizeNullableString(raw.lastTestOkAt),
     lastTestError: normalizeNullableString(raw.lastTestError),
   };
@@ -156,6 +181,7 @@ export async function setEmosSettings(
     ...patch,
     baseUrl: patch.baseUrl ?? current.baseUrl,
     apiKey: patch.apiKey ?? current.apiKey,
+    userId: patch.userId ?? current.userId,
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.EMOS_SETTINGS]: next });
   return next;

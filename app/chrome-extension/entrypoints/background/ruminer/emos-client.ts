@@ -61,7 +61,7 @@ export async function emosUpsertMemory(message: EmosSingleMessage): Promise<unkn
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
-  const response = await fetch(`${baseUrl}/api/v1/memories`, {
+  const response = await fetch(`${baseUrl}/api/v0/memories`, {
     method: 'POST',
     headers,
     body: JSON.stringify(message),
@@ -76,13 +76,33 @@ export async function emosUpsertMemory(message: EmosSingleMessage): Promise<unkn
 }
 
 export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosSearchResponse> {
+  const settings = await getEmosSettings();
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
-  const response = await fetch(`${baseUrl}/api/v1/memories/search`, {
-    method: 'POST',
+  // Build query string from body params
+  const params = new URLSearchParams();
+  if (body.query) params.append('query', body.query);
+  if (body.group_id) params.append('group_id', body.group_id);
+  if (body.limit) params.append('limit', String(body.limit));
+  if (body.retrieve_method) params.append('retrieve_method', body.retrieve_method);
+  // Always include user_id from settings (required by API)
+  if (settings.userId.trim()) {
+    params.append('user_id', settings.userId.trim());
+  }
+  // Add any additional params from body
+  Object.entries(body).forEach(([key, value]) => {
+    if (
+      !['query', 'group_id', 'limit', 'retrieve_method', 'user_id'].includes(key) &&
+      value !== undefined
+    ) {
+      params.append(key, String(value));
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/api/v0/memories/search?${params.toString()}`, {
+    method: 'GET',
     headers,
-    body: JSON.stringify(body),
   });
 
   const payload = (await parseJsonResponse(response)) as EmosSearchResponse;
@@ -97,7 +117,7 @@ export async function emosDeleteMemory(messageId: string): Promise<unknown> {
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
-  const response = await fetch(`${baseUrl}/api/v1/memories/${encodeURIComponent(messageId)}`, {
+  const response = await fetch(`${baseUrl}/api/v0/memories/${encodeURIComponent(messageId)}`, {
     method: 'DELETE',
     headers,
   });

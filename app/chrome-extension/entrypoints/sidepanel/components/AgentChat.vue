@@ -1,1333 +1,1413 @@
 <template>
-  <div class="chat-shell">
-    <!-- Action Bar -->
-    <header class="chat-header" :style="headerStyle">
-      <div class="header-left">
-        <span
-          class="status-dot"
-          :class="gatewayStatusDotClass"
-          :data-tooltip="gatewayStatusTooltip"
-        />
-        <span class="status-label">{{ gatewayStatusLabel }}</span>
-      </div>
-      <div class="header-right">
-        <button
-          v-if="!gateway.connected.value"
-          class="header-btn ac-btn ac-focus-ring"
-          :style="btnStyle"
-          :disabled="gateway.connecting.value"
-          data-tooltip="Reconnect"
-          @click="gateway.reconnect"
-        >
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
-        <button
-          class="header-btn ac-btn ac-focus-ring"
-          :style="btnStyle"
-          data-tooltip="New Chat"
-          @click="chat.newChat"
-        >
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-        </button>
-      </div>
-    </header>
+  <div class="agent-theme relative h-full" :data-agent-theme="themeState.theme.value">
+    <!-- Sessions List View -->
+    <template v-if="viewRoute.isSessionsView.value">
+      <AgentSessionsView
+        :sessions="sessions.allSessions.value"
+        :selected-session-id="sessions.selectedSessionId.value"
+        :is-loading="sessions.isLoadingAllSessions.value"
+        :is-creating="sessions.isCreatingSession.value"
+        :error="sessions.sessionError.value"
+        :running-session-ids="runningSessionIds"
+        :projects-map="projectsMap"
+        @session:select="handleSessionSelectAndNavigate"
+        @session:new="handleNewSessionAndNavigate"
+        @session:delete="handleDeleteSession"
+        @session:rename="handleRenameSession"
+        @session:open-project="handleSessionOpenProject"
+      />
+    </template>
 
-    <!-- Scrollable Message Area -->
-    <main ref="contentRef" class="message-area ac-scroll" @scroll="handleScroll">
-      <div ref="contentSlotRef" class="message-content-wrap">
-        <!-- Loading -->
-        <div v-if="chat.loadingHistory.value" class="empty-state">
-          <div class="empty-icon ac-pulse" :style="{ color: 'var(--ac-text-subtle)' }">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-          </div>
-          <p class="empty-heading">Loading chat history...</p>
-        </div>
-
-        <!-- Empty State -->
-        <div v-else-if="chat.messages.value.length === 0" class="empty-state">
-          <div class="empty-icon" :style="{ color: 'var(--ac-text-subtle)' }">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.2"
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-          </div>
-          <p class="empty-heading">Start a conversation</p>
-        </div>
-
-        <!-- Messages -->
-        <template v-else>
-          <article
-            v-for="message in chat.messages.value"
-            :key="message.id"
-            class="message"
-            :class="`role-${message.role}`"
-            :style="messageStyle(message.role)"
-          >
-            <header class="message-meta">
-              <span class="message-role">{{ roleLabel(message.role) }}</span>
-              <span class="message-time">{{ formatRelativeTime(message.createdAt) }}</span>
-            </header>
-            <TimelineToolCallStep
-              v-if="isToolUseMessage(message)"
-              :item="toToolUseTimelineItem(message)"
-            />
-            <TimelineToolResultCardStep
-              v-else-if="isToolResultMessage(message)"
-              :item="toToolResultTimelineItem(message)"
-            />
-            <div v-else class="message-body">{{ message.content }}</div>
-          </article>
-        </template>
-      </div>
-    </main>
-
-    <!-- Footer: Suggestions + Composer + Tool Panel -->
-    <footer class="chat-footer" :style="footerGradientStyle">
-      <!-- Memory Suggestions -->
-      <div
-        v-if="suggestions.hasSuggestions.value"
-        class="suggestions-card"
-        :style="suggestionsStyle"
+    <!-- Chat Conversation View -->
+    <template v-else>
+      <AgentChatShell
+        :error-message="chat.errorMessage.value"
+        :usage="chat.lastUsage.value"
+        :footer-label="`${engineDisplayName} Preview`"
+        @error:dismiss="chat.errorMessage.value = null"
       >
-        <div class="suggestions-header">
-          <span class="suggestions-title">Memory Suggestions</span>
-          <button
-            class="tray-close ac-btn ac-focus-ring"
-            :style="btnStyle"
-            @click="suggestions.clear()"
-          >
-            <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-        <div class="suggestions-list ac-scroll">
-          <button
-            v-for="suggestion in suggestions.suggestions.value"
-            :key="suggestion.id"
-            class="suggestion-item ac-btn"
-            :style="suggestionItemStyle"
-            @click="insertSuggestion(suggestion.content)"
-          >
-            <span class="suggestion-text">{{ suggestion.content }}</span>
-            <span class="suggestion-meta">{{ suggestion.sender || 'memory' }}</span>
-          </button>
-        </div>
-      </div>
+        <!-- Header -->
+        <template #header>
+          <AgentTopBar
+            :project-label="projectLabel"
+            :session-label="sessionLabel"
+            :connection-state="connectionState"
+            :show-back-button="true"
+            :brand-label="engineDisplayName"
+            @toggle:project-menu="toggleProjectMenu"
+            @toggle:session-menu="toggleSessionMenu"
+            @toggle:settings-menu="toggleSettingsMenu"
+            @toggle:open-project-menu="toggleOpenProjectMenu"
+            @back="handleBackToSessions"
+          />
+        </template>
 
-      <!-- Error Banner -->
-      <div v-if="chat.error.value" class="error-banner" :style="errorBannerStyle">
-        <span>{{ chat.error.value }}</span>
-        <button
-          class="tray-close ac-btn ac-focus-ring"
-          :style="btnStyle"
-          @click="chat.error.value = null"
-        >
-          <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      </div>
+        <!-- Content -->
+        <template #content>
+          <AgentConversation :threads="threadState.threads.value" />
+        </template>
 
-      <!-- Floating Composer Card -->
-      <div class="composer-card" :style="composerCardStyle">
-        <textarea
-          ref="textareaRef"
-          v-model="chat.input.value"
-          class="composer-textarea"
-          :style="textareaStyle"
-          :disabled="!gateway.connected.value"
-          placeholder="Ask Ruminer to help with browser tasks..."
-          rows="1"
-          @input="handleTextareaInput"
-          @keydown.enter.exact.prevent="handleSend"
-        />
-        <div class="composer-bar">
-          <button
-            class="bar-btn ac-btn ac-focus-ring"
-            :style="btnStyle"
-            data-tooltip="Tools"
-            @click="toolGroupsOpen = !toolGroupsOpen"
-          >
-            <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-              />
-            </svg>
-          </button>
-          <div class="bar-spacer" />
-          <button
-            v-if="chat.activeRunId.value"
-            class="send-btn"
-            :style="stopBtnStyle"
-            @click="chat.abort"
-          >
-            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-          </button>
-          <button
-            v-else
-            class="send-btn"
-            :style="sendBtnStyle"
-            :disabled="!chat.canSend.value"
-            @click="handleSend"
-          >
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 10l7-7m0 0l7 7m-7-7v18"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
+        <!-- Composer -->
+        <template #composer>
+          <!-- Web Editor Changes Chips -->
+          <WebEditorChanges />
 
-      <!-- Tool Selection Panel (below composer) -->
-      <Transition name="tool-panel">
-        <div v-if="toolGroupsOpen" class="tool-panel" :style="toolPanelStyle">
-          <div class="tool-panel-header">
-            <span class="tool-panel-title">Tool Access</span>
-            <div class="tool-panel-actions">
-              <button class="tool-panel-btn" @click="enableAllGroups">Enable All</button>
-              <button class="tool-panel-btn" @click="disableAllGroups">Disable All</button>
-              <button
-                class="tray-close ac-btn ac-focus-ring"
-                :style="btnStyle"
-                @click="toolGroupsOpen = false"
-              >
-                <svg class="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
+          <AgentComposer
+            :model-value="chat.input.value"
+            :attachments="attachments.attachments.value"
+            :attachment-error="attachments.error.value"
+            :is-drag-over="attachments.isDragOver.value"
+            :is-streaming="chat.isStreaming.value"
+            :request-state="chat.requestState.value"
+            :sending="chat.sending.value"
+            :cancelling="chat.cancelling.value"
+            :can-cancel="!!chat.currentRequestId.value"
+            :can-send="chat.canSend.value"
+            placeholder="Ask Claude to write code..."
+            :engine-name="currentEngineName"
+            :selected-model="currentSessionModel"
+            :available-models="currentAvailableModels"
+            :reasoning-effort="currentReasoningEffort"
+            :available-reasoning-efforts="currentAvailableReasoningEfforts"
+            :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
+            @update:model-value="chat.input.value = $event"
+            @submit="handleSend"
+            @cancel="chat.cancelCurrentRequest()"
+            @attachment:add="handleAttachmentAdd"
+            @attachment:remove="attachments.removeAttachment"
+            @attachment:drop="attachments.handleDrop"
+            @attachment:paste="attachments.handlePaste"
+            @attachment:dragover="attachments.handleDragOver"
+            @attachment:dragleave="attachments.handleDragLeave"
+            @model:change="handleComposerModelChange"
+            @reasoning-effort:change="handleComposerReasoningEffortChange"
+            @session:settings="handleComposerOpenSettings"
+            @session:reset="handleComposerReset"
+          />
+        </template>
+      </AgentChatShell>
+    </template>
 
-          <div class="tool-panel-content ac-scroll">
-            <div v-for="group in toolGroupDefinitions" :key="group.id" class="tool-group-section">
-              <div class="tool-group-header" @click="toggleGroupExpand(group.id)">
-                <label class="tool-group-toggle" @click.stop>
-                  <input
-                    type="checkbox"
-                    :checked="toolGroups[group.id]"
-                    @change="toggleGroup(group.id, !toolGroups[group.id])"
-                  />
-                  <span class="toggle-track" />
-                </label>
-                <div class="tool-group-info">
-                  <span class="tool-group-label">{{ group.label }}</span>
-                  <span class="tool-group-desc">{{ group.description }}</span>
-                </div>
-                <svg
-                  class="expand-icon"
-                  :class="{ expanded: expandedGroups.has(group.id) }"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </div>
+    <!-- Click-outside handler for menus (z-40) -->
+    <div
+      v-if="projectMenuOpen || sessionMenuOpen || settingsMenuOpen || openProjectMenuOpen"
+      class="fixed inset-0 z-40"
+      @click="closeMenus"
+    />
 
-              <Transition name="tool-list">
-                <div v-if="expandedGroups.has(group.id)" class="tool-list">
-                  <div v-for="tool in group.tools" :key="tool.id" class="tool-row">
-                    <label class="tool-toggle">
-                      <input
-                        type="checkbox"
-                        :checked="isToolEnabled(group.id, tool.id)"
-                        @change="
-                          toggleIndividualTool(group.id, tool.id, !isToolEnabled(group.id, tool.id))
-                        "
-                      />
-                      <span class="toggle-track-sm" />
-                    </label>
-                    <div class="tool-info">
-                      <span class="tool-name">{{ tool.name }}</span>
-                      <span class="tool-desc">{{ tool.description }}</span>
-                    </div>
-                  </div>
-                </div>
-              </Transition>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </footer>
+    <!-- Dropdown menus (z-50, outside stacking context) -->
+    <AgentProjectMenu
+      :open="projectMenuOpen"
+      :projects="projects.projects.value"
+      :selected-project-id="projects.selectedProjectId.value"
+      :selected-cli="selectedCli"
+      :model="model"
+      :reasoning-effort="reasoningEffort"
+      :use-ccr="useCcr"
+      :enable-chrome-mcp="enableChromeMcp"
+      :engines="server.engines.value"
+      :is-picking="isPickingDirectory"
+      :is-saving="isSavingPreference"
+      :error="projects.projectError.value"
+      @project:select="handleProjectSelect"
+      @project:new="handleNewProject"
+      @cli:update="selectedCli = $event"
+      @model:update="model = $event"
+      @reasoning-effort:update="reasoningEffort = $event"
+      @ccr:update="useCcr = $event"
+      @chrome-mcp:update="enableChromeMcp = $event"
+      @save="handleSaveSettings"
+    />
+
+    <AgentSessionMenu
+      :open="sessionMenuOpen"
+      :sessions="sessions.sessions.value"
+      :selected-session-id="sessions.selectedSessionId.value"
+      :is-loading="sessions.isLoadingSessions.value"
+      :is-creating="sessions.isCreatingSession.value"
+      :error="sessions.sessionError.value"
+      @session:select="handleSessionSelect"
+      @session:new="handleNewSession"
+      @session:delete="handleDeleteSession"
+      @session:rename="handleRenameSession"
+    />
+
+    <AgentSettingsMenu
+      :open="settingsMenuOpen"
+      :theme="themeState.theme.value"
+      :fake-caret-enabled="inputPreferences.fakeCaretEnabled.value"
+      :floating-icon-enabled="floatingIconPreference.enabled.value"
+      @theme:set="handleThemeChange"
+      @reconnect="handleReconnect"
+      @attachments:open="handleOpenAttachmentCache"
+      @fake-caret:toggle="handleFakeCaretToggle"
+      @floatingIcon:toggle="handleFloatingIconToggle"
+    />
+
+    <AgentOpenProjectMenu
+      :open="openProjectMenuOpen"
+      :default-target="openProjectPreference.defaultTarget.value"
+      @select="handleOpenProjectSelect"
+      @close="closeOpenProjectMenu"
+    />
+
+    <!-- Session Settings Panel -->
+    <AgentSessionSettingsPanel
+      :open="sessionSettingsOpen"
+      :session="sessions.selectedSession.value"
+      :management-info="currentManagementInfo"
+      :is-loading="sessionSettingsLoading"
+      :is-saving="sessionSettingsSaving"
+      @close="handleCloseSessionSettings"
+      @save="handleSaveSessionSettings"
+    />
+
+    <!-- Attachment Cache Panel -->
+    <AttachmentCachePanel :open="attachmentCacheOpen" @close="handleCloseAttachmentCache" />
   </div>
 </template>
 
-<script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useOpenClawGateway } from '../composables/useOpenClawGateway';
-import {
-  useOpenClawChat,
-  type ChatMessage,
-  type ToolCardData,
-} from '../composables/useOpenClawChat';
-import { useEmosSuggestions } from '../composables/useEmosSuggestions';
-import {
-  getToolGroupState,
-  setToolGroupEnabled,
-  setToolGroupState,
-  type ToolGroupId,
-  TOOL_GROUP_DEFINITIONS,
-  type ToolGroupState,
-} from '@/entrypoints/shared/utils/tool-groups';
-import type { TimelineItem, ToolPresentation, ToolSeverity } from '../composables/useAgentThreads';
-import TimelineToolCallStep from './agent-chat/timeline/TimelineToolCallStep.vue';
-import TimelineToolResultCardStep from './agent-chat/timeline/TimelineToolResultCardStep.vue';
+<script lang="ts" setup>
+import { ref, computed, onMounted, onUnmounted, watch, provide } from 'vue';
+import type { AgentStoredMessage, AgentMessage, CodexReasoningEffort } from 'chrome-mcp-shared';
 
-const gateway = useOpenClawGateway();
-const chat = useOpenClawChat(gateway);
-const suggestions = useEmosSuggestions(gateway);
+// Composables
+import {
+  useAgentServer,
+  useAgentChat,
+  useAgentProjects,
+  useAgentSessions,
+  useAttachments,
+  useAgentTheme,
+  useAgentThreads,
+  useWebEditorTxState,
+  useAgentChatViewRoute,
+  useOpenProjectPreference,
+  useAgentInputPreferences,
+  useFloatingIconPreference,
+  WEB_EDITOR_TX_STATE_INJECTION_KEY,
+  AGENT_SERVER_PORT_KEY,
+  type AgentThemeId,
+} from '../composables';
+import type { OpenProjectTarget } from 'chrome-mcp-shared';
 
-const gatewayStatusLabel = computed(() => {
-  if (gateway.connected.value) return 'Connected';
-  if (gateway.connecting.value) return 'Connecting...';
-  return 'Disconnected';
+// New UI Components
+import {
+  AgentChatShell,
+  AgentTopBar,
+  AgentComposer,
+  WebEditorChanges,
+  AgentConversation,
+  AgentProjectMenu,
+  AgentSessionMenu,
+  AgentSettingsMenu,
+  AgentSessionSettingsPanel,
+  AgentSessionsView,
+  AgentOpenProjectMenu,
+} from './agent-chat';
+import type { SessionSettings } from './agent-chat/AgentSessionSettingsPanel.vue';
+import AttachmentCachePanel from './agent-chat/AttachmentCachePanel.vue';
+
+// Model utilities
+import {
+  getModelsForCli,
+  getCodexReasoningEfforts,
+  getDefaultModelForCli,
+} from '@/common/agent-models';
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+
+// Local UI state
+const selectedCli = ref('');
+const model = ref('');
+const reasoningEffort = ref<CodexReasoningEffort>('medium');
+const useCcr = ref(false);
+const enableChromeMcp = ref(true);
+const isSavingPreference = ref(false);
+
+/**
+ * Get normalized model value that is valid for the current CLI.
+ * Returns empty string if:
+ * - No CLI selected (use server default)
+ * - Model is invalid for selected CLI
+ */
+function getNormalizedModel(): string {
+  const trimmedModel = model.value.trim();
+  if (!trimmedModel) return '';
+  // No CLI selected = don't override model, let server use default
+  if (!selectedCli.value) return '';
+  const models = getModelsForCli(selectedCli.value);
+  if (models.length === 0) return ''; // Unknown CLI
+  const isValid = models.some((m) => m.id === trimmedModel);
+  return isValid ? trimmedModel : '';
+}
+
+/**
+ * Get normalized reasoning effort that is valid for the current model.
+ * Used when creating/updating codex sessions.
+ */
+function getNormalizedReasoningEffort(): CodexReasoningEffort {
+  if (selectedCli.value !== 'codex') return 'medium';
+  const effectiveModel = getNormalizedModel() || getDefaultModelForCli('codex');
+  const supported = getCodexReasoningEfforts(effectiveModel);
+  return supported.includes(reasoningEffort.value)
+    ? reasoningEffort.value
+    : (supported[supported.length - 1] as CodexReasoningEffort);
+}
+
+const isPickingDirectory = ref(false);
+const projectMenuOpen = ref(false);
+const sessionMenuOpen = ref(false);
+const settingsMenuOpen = ref(false);
+const openProjectMenuOpen = ref(false);
+
+// Open project context: which session/project to open when menu selects
+const openProjectContext = ref<{ type: 'session' | 'project'; id: string } | null>(null);
+
+// Session settings panel state
+const sessionSettingsOpen = ref(false);
+const sessionSettingsLoading = ref(false);
+const sessionSettingsSaving = ref(false);
+const currentManagementInfo = ref<import('chrome-mcp-shared').AgentManagementInfo | null>(null);
+
+// Attachment cache panel state
+const attachmentCacheOpen = ref(false);
+
+// Initialize composables - sessions must be declared first for sessionId access
+const sessions = useAgentSessions({
+  getServerPort: () => server.serverPort.value,
+  ensureServer: () => server.ensureNativeServer(),
+  onSessionChanged: (sessionId: string) => {
+    // Guard against stale callbacks from concurrent session switches
+    // This prevents race conditions where an older switch completes after a newer one
+    if (sessionId !== sessions.selectedSessionId.value) {
+      return;
+    }
+
+    // Always clear request state when session changes, regardless of view
+    // This prevents stale cancel targets and running badges from carrying over
+    chat.currentRequestId.value = null;
+    chat.isStreaming.value = false;
+    chat.requestState.value = 'idle';
+
+    // Always sync URL when session changes (for all paths: delete, project switch, etc.)
+    // This ensures URL stays consistent for refresh/deep-link scenarios
+    viewRoute.setSessionId(sessionId);
+
+    // Only reconnect SSE and reload history if we're in chat view
+    // This prevents duplicate connections when switching sessions from the list
+    // The list->chat navigation handlers will open SSE themselves
+    if (viewRoute.isChatView.value && projects.selectedProjectId.value) {
+      server.openEventSource();
+      void loadSessionHistory(sessionId);
+    }
+  },
 });
 
-const gatewayStatusTooltip = computed(() => {
-  if (gateway.connected.value) return 'Connected';
-  if (gateway.lastError.value) return gateway.lastError.value;
-  if (gateway.connecting.value) return 'Connecting...';
-  return 'Disconnected';
+const server = useAgentServer({
+  getSessionId: () => sessions.selectedSessionId.value,
+  onMessage: (event) => chat.handleRealtimeEvent(event),
+  onError: (error) => {
+    chat.errorMessage.value = error;
+  },
 });
 
-const gatewayStatusDotClass = computed(() => {
-  if (gateway.connected.value) return 'connected';
-  if (gateway.connecting.value) return 'connecting';
+const chat = useAgentChat({
+  getServerPort: () => server.serverPort.value,
+  getSessionId: () => sessions.selectedSessionId.value,
+  ensureServer: () => server.ensureNativeServer(),
+  openEventSource: () => server.openEventSource(),
+});
+
+const projects = useAgentProjects({
+  getServerPort: () => server.serverPort.value,
+  ensureServer: () => server.ensureNativeServer(),
+  onHistoryLoaded: (messages: AgentStoredMessage[]) => {
+    const converted = convertStoredMessages(messages);
+    chat.setMessages(converted);
+  },
+});
+
+const attachments = useAttachments();
+const themeState = useAgentTheme();
+const openProjectPreference = useOpenProjectPreference({
+  getServerPort: () => server.serverPort.value,
+});
+const inputPreferences = useAgentInputPreferences();
+const floatingIconPreference = useFloatingIconPreference();
+
+// Initialize Web Editor TX state at root level and provide to children
+// This prevents duplicate listener registration in child components
+const webEditorTxState = useWebEditorTxState();
+provide(WEB_EDITOR_TX_STATE_INJECTION_KEY, webEditorTxState);
+
+// Provide server port for child components to build attachment URLs
+provide(AGENT_SERVER_PORT_KEY, server.serverPort);
+
+// View routing (sessions list vs chat conversation)
+const viewRoute = useAgentChatViewRoute();
+
+// Track running sessions for badge display
+const runningSessionIds = computed(() => {
+  // For now, only track current session's running state
+  // Could be extended to track multiple sessions via background broadcast
+  const currentId = sessions.selectedSessionId.value;
+  // Use isRequestActive instead of isStreaming to correctly show running badge
+  // even during tool execution when isStreaming might be false
+  if (currentId && chat.isRequestActive.value) {
+    return new Set([currentId]);
+  }
+  return new Set<string>();
+});
+
+// Map of projectId -> AgentProject for looking up project info in sessions list
+const projectsMap = computed(() => {
+  return new Map(projects.projects.value.map((p) => [p.id, p] as const));
+});
+
+// Thread state for grouping messages
+const threadState = useAgentThreads({
+  messages: chat.messages,
+  requestState: chat.requestState,
+  currentRequestId: chat.currentRequestId,
+});
+
+// Computed values
+const projectLabel = computed(() => {
+  const project = projects.selectedProject.value;
+  return project?.name ?? 'No project';
+});
+
+const sessionLabel = computed(() => {
+  const session = sessions.selectedSession.value;
+  // Priority: preview (first user message) > name > 'New Session'
+  return session?.preview || session?.name || 'New Session';
+});
+
+const connectionState = computed(() => {
+  if (server.isServerReady.value) return 'ready';
+  if (server.nativeConnected.value) return 'connecting';
   return 'disconnected';
 });
 
-const contentRef = ref<HTMLElement | null>(null);
-const contentSlotRef = ref<HTMLElement | null>(null);
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
+// Computed values for AgentComposer
+const currentEngineName = computed(() => sessions.selectedSession.value?.engineName ?? '');
 
-const toolGroupsOpen = ref(false);
-const toolGroups = ref<ToolGroupState>({
-  observe: true,
-  navigate: true,
-  interact: false,
-  execute: false,
-  workflow: true,
-  updatedAt: new Date().toISOString(),
+// Engine display name for brand/footer
+const engineDisplayName = computed(() => {
+  const name = currentEngineName.value;
+  switch (name) {
+    case 'claude':
+      return 'Claude Code';
+    case 'codex':
+      return 'Codex';
+    case 'cursor':
+      return 'Cursor';
+    case 'qwen':
+      return 'Qwen';
+    case 'glm':
+      return 'GLM';
+    default:
+      return 'Agent';
+  }
 });
 
-const expandedGroups = ref<Set<ToolGroupId>>(new Set());
-const individualToolOverrides = ref<Record<string, boolean>>({});
-const toolGroupDefinitions = TOOL_GROUP_DEFINITIONS;
-// Auto-scroll state
-const isUserScrolledUp = ref(false);
-const SCROLL_THRESHOLD = 150;
-let contentResizeObserver: ResizeObserver | null = null;
-let scrollScheduled = false;
+const currentSessionModel = computed(() => {
+  const session = sessions.selectedSession.value;
+  if (!session) return '';
+  // Use session model if set, otherwise use default for the engine
+  return session.model || getDefaultModelForCli(session.engineName);
+});
 
-// Textarea auto-resize
-const MIN_TEXTAREA_HEIGHT = 40;
-const MAX_TEXTAREA_HEIGHT = 160;
+const currentAvailableModels = computed(() => {
+  const session = sessions.selectedSession.value;
+  if (!session) return [];
+  return getModelsForCli(session.engineName);
+});
 
-const groupItems = computed(() => [
-  { id: 'observe' as const, label: 'Observe', enabled: toolGroups.value.observe },
-  { id: 'navigate' as const, label: 'Navigate', enabled: toolGroups.value.navigate },
-  { id: 'interact' as const, label: 'Interact', enabled: toolGroups.value.interact },
-  { id: 'execute' as const, label: 'Execute', enabled: toolGroups.value.execute },
-  { id: 'workflow' as const, label: 'Workflow', enabled: toolGroups.value.workflow },
-]);
+const currentReasoningEffort = computed(() => {
+  const session = sessions.selectedSession.value;
+  if (!session || session.engineName !== 'codex') return 'medium' as CodexReasoningEffort;
+  return session.optionsConfig?.codexConfig?.reasoningEffort ?? 'medium';
+});
 
-// ---- Styles ----
+const currentAvailableReasoningEfforts = computed(() => {
+  const session = sessions.selectedSession.value;
+  if (!session || session.engineName !== 'codex') return [] as readonly CodexReasoningEffort[];
+  const effectiveModel = currentSessionModel.value || getDefaultModelForCli('codex');
+  return getCodexReasoningEfforts(effectiveModel);
+});
 
-const headerStyle = computed(() => ({
-  backgroundColor: 'var(--ac-header-bg)',
-  borderBottom: 'var(--ac-border-width) solid var(--ac-header-border)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
-}));
+// Track pending history load with nonce to prevent A→B→A race conditions
+let historyLoadNonce = 0;
 
-const btnStyle = computed(() => ({
-  color: 'var(--ac-text-muted)',
-  borderRadius: 'var(--ac-radius-button)',
-  border: 'none',
-  background: 'none',
-}));
+/**
+ * Load chat history for a specific session with race-condition protection.
+ * Uses a nonce to handle A→B→A scenarios where older requests for the same
+ * session could return after newer ones.
+ */
+async function loadSessionHistory(sessionId: string): Promise<void> {
+  const serverPort = server.serverPort.value;
+  if (!serverPort || !sessionId) return;
 
-const trayStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface)',
-  borderBottom: 'var(--ac-border-width) solid var(--ac-border)',
-}));
+  // Increment nonce for this load - any subsequent load will invalidate this one
+  const myNonce = ++historyLoadNonce;
 
-const chipActiveStyle = computed(() => ({
-  backgroundColor: 'var(--ac-accent-subtle)',
-  color: 'var(--ac-accent)',
-  border: 'var(--ac-border-width) solid var(--ac-accent)',
-  borderRadius: '999px',
-}));
+  /**
+   * Check if this load is still valid.
+   * Validates both the nonce (handles A→B→A) and current selection (handles switches).
+   */
+  const isStillValid = (): boolean => {
+    return myNonce === historyLoadNonce && sessions.selectedSessionId.value === sessionId;
+  };
 
-const chipInactiveStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface-muted)',
-  color: 'var(--ac-text-subtle)',
-  border: 'var(--ac-border-width) solid var(--ac-border)',
-  borderRadius: '999px',
-}));
-
-const composerCardStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface)',
-  borderRadius: 'var(--ac-radius-card)',
-  border: 'var(--ac-border-width) solid var(--ac-border)',
-  boxShadow: 'var(--ac-shadow-float)',
-}));
-
-const textareaStyle = computed(() => ({
-  fontFamily: 'var(--ac-font-body)',
-  color: 'var(--ac-text)',
-  minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
-  maxHeight: `${MAX_TEXTAREA_HEIGHT}px`,
-}));
-
-const sendBtnStyle = computed(() => ({
-  backgroundColor: chat.canSend.value ? 'var(--ac-accent)' : 'var(--ac-surface-muted)',
-  color: chat.canSend.value ? 'var(--ac-accent-contrast)' : 'var(--ac-text-subtle)',
-  borderRadius: 'var(--ac-radius-button)',
-  cursor: chat.canSend.value ? 'pointer' : 'not-allowed',
-}));
-
-const stopBtnStyle = computed(() => ({
-  backgroundColor: 'var(--ac-diff-del-bg)',
-  color: 'var(--ac-danger)',
-  border: 'var(--ac-border-width) solid var(--ac-diff-del-border)',
-  borderRadius: 'var(--ac-radius-button)',
-}));
-
-const suggestionsStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface)',
-  border: 'var(--ac-border-width) solid var(--ac-border)',
-  borderRadius: 'var(--ac-radius-card)',
-  boxShadow: 'var(--ac-shadow-float)',
-}));
-
-const suggestionItemStyle = computed(() => ({
-  borderRadius: 'var(--ac-radius-inner)',
-}));
-
-const errorBannerStyle = computed(() => ({
-  backgroundColor: 'var(--ac-diff-del-bg)',
-  color: 'var(--ac-danger)',
-  border: 'var(--ac-border-width) solid var(--ac-diff-del-border)',
-  borderRadius: 'var(--ac-radius-inner)',
-}));
-
-const footerGradientStyle = computed(() => ({
-  background: 'linear-gradient(to top, var(--ac-bg), var(--ac-bg), transparent)',
-}));
-
-// ---- Message helpers ----
-
-function messageStyle(role: string) {
-  if (role === 'user') {
-    return {
-      backgroundColor: 'var(--ac-accent-subtle)',
-      borderRadius: 'var(--ac-radius-card)',
-    };
-  }
-  if (role === 'assistant') {
-    return {
-      backgroundColor: 'var(--ac-surface)',
-      border: 'var(--ac-border-width) solid var(--ac-border)',
-      borderRadius: 'var(--ac-radius-card)',
-    };
-  }
-  return {};
-}
-
-function roleLabel(role: string): string {
-  if (role === 'user') return 'You';
-  if (role === 'assistant') return 'Ruminer';
-  return role;
-}
-
-function formatRelativeTime(value: string): string {
   try {
-    const date = new Date(value);
-    const now = Date.now();
-    const diffMs = now - date.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 60) return 'just now';
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return date.toLocaleDateString();
-  } catch {
-    return value;
-  }
-}
+    const url = `http://127.0.0.1:${serverPort}/agent/sessions/${encodeURIComponent(sessionId)}/history`;
+    const response = await fetch(url);
 
-// ---- Tool message helpers ----
+    if (!isStillValid()) return;
 
-function toolSeverity(card: ToolCardData): ToolSeverity {
-  if (card.isError) return 'error';
-  if (card.phase === 'result') return 'success';
-  return 'info';
-}
+    if (response.ok) {
+      const data = await response.json();
 
-function toToolPresentation(card: ToolCardData): ToolPresentation {
-  return {
-    kind: card.kind,
-    label: card.label,
-    title: card.title,
-    details: card.details,
-    files: card.files,
-    filePath: card.filePath,
-    diffStats: card.diffStats,
-    command: card.command,
-    commandDescription: card.commandDescription,
-    pattern: card.pattern,
-    searchPath: card.searchPath,
-    severity: toolSeverity(card),
-    phase: card.phase,
-    raw: {
-      content: card.details || '',
-      metadata: card.raw,
-    },
-  };
-}
+      // Re-check after json parsing (parsing can be slow for large histories)
+      if (!isStillValid()) return;
 
-function isToolUseMessage(
-  message: ChatMessage,
-): message is ChatMessage & { toolCard: ToolCardData & { phase: 'use' } } {
-  return message.role === 'tool' && message.toolCard?.phase === 'use';
-}
-
-function isToolResultMessage(
-  message: ChatMessage,
-): message is ChatMessage & { toolCard: ToolCardData & { phase: 'result' } } {
-  return message.role === 'tool' && message.toolCard?.phase === 'result';
-}
-
-function toToolUseTimelineItem(message: ChatMessage): Extract<TimelineItem, { kind: 'tool_use' }> {
-  const card = message.toolCard as ToolCardData;
-  return {
-    kind: 'tool_use',
-    id: `tool-use:${message.id}`,
-    createdAt: message.createdAt,
-    messageId: message.id,
-    tool: toToolPresentation(card),
-    isStreaming: message.isStreaming === true,
-    requestId: message.runId,
-  };
-}
-
-function toToolResultTimelineItem(
-  message: ChatMessage,
-): Extract<TimelineItem, { kind: 'tool_result' }> {
-  const card = message.toolCard as ToolCardData;
-  return {
-    kind: 'tool_result',
-    id: `tool-result:${message.id}`,
-    createdAt: message.createdAt,
-    messageId: message.id,
-    tool: toToolPresentation(card),
-    isError: card.isError === true,
-    requestId: message.runId,
-  };
-}
-
-// ---- Auto-scroll ----
-
-function isNearBottom(el: HTMLElement): boolean {
-  const { scrollTop, scrollHeight, clientHeight } = el;
-  return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
-}
-
-function handleScroll(): void {
-  if (!contentRef.value) return;
-  isUserScrolledUp.value = !isNearBottom(contentRef.value);
-}
-
-function scrollToBottom(behavior: ScrollBehavior = 'auto'): void {
-  if (!contentRef.value) return;
-  contentRef.value.scrollTo({
-    top: contentRef.value.scrollHeight,
-    behavior,
-  });
-}
-
-function maybeAutoScroll(): void {
-  if (scrollScheduled || isUserScrolledUp.value || !contentRef.value) return;
-  scrollScheduled = true;
-  requestAnimationFrame(() => {
-    scrollScheduled = false;
-    if (!isUserScrolledUp.value) {
-      scrollToBottom('auto');
+      const messages = data.messages || [];
+      const converted = convertStoredMessages(messages);
+      chat.setMessages(converted);
+    } else {
+      if (!isStillValid()) return;
+      chat.setMessages([]);
     }
-  });
-}
-
-// ---- Textarea auto-resize ----
-
-function resizeTextarea(): void {
-  const el = textareaRef.value;
-  if (!el) return;
-  el.style.height = 'auto';
-  const scrollH = el.scrollHeight;
-  el.style.height = `${Math.min(scrollH, MAX_TEXTAREA_HEIGHT)}px`;
-  el.style.overflowY = scrollH > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
-}
-
-function handleTextareaInput(): void {
-  resizeTextarea();
-  suggestions.updateQuery(chat.input.value);
-}
-
-function handleSend(): void {
-  if (chat.canSend.value) {
-    chat.send();
-    nextTick(resizeTextarea);
+  } catch (error) {
+    if (isStillValid()) {
+      console.error('Failed to load session history:', error);
+      chat.setMessages([]);
+    }
   }
 }
 
-// ---- Tool groups ----
-
-async function toggleGroup(groupId: ToolGroupId, enabled: boolean): Promise<void> {
-  toolGroups.value = await setToolGroupEnabled(groupId, enabled);
+// Convert stored messages to AgentMessage format
+function convertStoredMessages(stored: AgentStoredMessage[]): AgentMessage[] {
+  return stored.map((m) => ({
+    id: m.id,
+    sessionId: m.sessionId,
+    role: m.role,
+    content: m.content,
+    messageType: m.messageType,
+    cliSource: m.cliSource ?? undefined,
+    requestId: m.requestId,
+    createdAt: m.createdAt ?? new Date().toISOString(),
+    metadata: m.metadata,
+  }));
 }
 
-function toggleGroupExpand(groupId: ToolGroupId): void {
-  const newSet = new Set(expandedGroups.value);
-  if (newSet.has(groupId)) {
-    newSet.delete(groupId);
+/**
+ * Clear streaming/request state when switching sessions.
+ * Prevents stale cancel targets and running badges from carrying over.
+ */
+function clearRequestState(): void {
+  chat.currentRequestId.value = null;
+  chat.isStreaming.value = false;
+  chat.requestState.value = 'idle';
+}
+
+// Menu handlers
+function toggleProjectMenu(): void {
+  projectMenuOpen.value = !projectMenuOpen.value;
+  if (projectMenuOpen.value) {
+    sessionMenuOpen.value = false;
+    settingsMenuOpen.value = false;
+    openProjectMenuOpen.value = false;
+  }
+}
+
+function toggleSessionMenu(): void {
+  sessionMenuOpen.value = !sessionMenuOpen.value;
+  if (sessionMenuOpen.value) {
+    projectMenuOpen.value = false;
+    settingsMenuOpen.value = false;
+    openProjectMenuOpen.value = false;
+  }
+}
+
+function toggleSettingsMenu(): void {
+  settingsMenuOpen.value = !settingsMenuOpen.value;
+  if (settingsMenuOpen.value) {
+    projectMenuOpen.value = false;
+    sessionMenuOpen.value = false;
+    openProjectMenuOpen.value = false;
+  }
+}
+
+function toggleOpenProjectMenu(): void {
+  openProjectMenuOpen.value = !openProjectMenuOpen.value;
+  if (openProjectMenuOpen.value) {
+    projectMenuOpen.value = false;
+    sessionMenuOpen.value = false;
+    settingsMenuOpen.value = false;
+    // Set context to current session from chat view
+    const sessionId = sessions.selectedSessionId.value;
+    if (sessionId) {
+      openProjectContext.value = { type: 'session', id: sessionId };
+    }
   } else {
-    newSet.add(groupId);
+    openProjectContext.value = null;
   }
-  expandedGroups.value = newSet;
 }
 
-function isToolEnabled(groupId: ToolGroupId, toolId: string): boolean {
-  const key = `${groupId}:${toolId}`;
-  if (key in individualToolOverrides.value) {
-    return individualToolOverrides.value[key];
+function closeOpenProjectMenu(): void {
+  openProjectMenuOpen.value = false;
+  openProjectContext.value = null;
+}
+
+/**
+ * Handle session list item's open-project button click.
+ * If user has a default preference, open directly; otherwise show menu.
+ */
+async function handleSessionOpenProject(sessionId: string): Promise<void> {
+  const defaultTarget = openProjectPreference.defaultTarget.value;
+  if (defaultTarget) {
+    // User has default preference, open directly
+    const result = await openProjectPreference.openBySession(sessionId, defaultTarget);
+    if (!result.success) {
+      alert(`Failed to open project: ${result.error}`);
+    }
+  } else {
+    // No default, show menu
+    openProjectContext.value = { type: 'session', id: sessionId };
+    openProjectMenuOpen.value = true;
+    projectMenuOpen.value = false;
+    sessionMenuOpen.value = false;
+    settingsMenuOpen.value = false;
   }
-  return toolGroups.value[groupId];
 }
 
-function toggleIndividualTool(groupId: ToolGroupId, toolId: string, enabled: boolean): void {
-  const key = `${groupId}:${toolId}`;
-  individualToolOverrides.value = {
-    ...individualToolOverrides.value,
-    [key]: enabled,
-  };
+/**
+ * Handle open project menu selection.
+ * Saves preference and opens the project.
+ */
+async function handleOpenProjectSelect(target: OpenProjectTarget): Promise<void> {
+  // Snapshot context before any await to prevent race condition
+  // (close event may clear context while we're awaiting)
+  const ctx = openProjectContext.value;
+
+  // Close menu immediately for better UX
+  closeOpenProjectMenu();
+
+  if (!ctx) return;
+
+  // Save as default preference (non-blocking for UX)
+  void openProjectPreference.saveDefaultTarget(target);
+
+  // Execute open action based on context
+  let result;
+  if (ctx.type === 'session') {
+    result = await openProjectPreference.openBySession(ctx.id, target);
+  } else {
+    result = await openProjectPreference.openByProject(ctx.id, target);
+  }
+
+  if (!result.success) {
+    alert(`Failed to open project: ${result.error}`);
+  }
 }
 
-async function enableAllGroups(): Promise<void> {
-  toolGroups.value = await setToolGroupState({
-    observe: true,
-    navigate: true,
-    interact: true,
-    execute: true,
-    workflow: true,
+function closeMenus(): void {
+  projectMenuOpen.value = false;
+  sessionMenuOpen.value = false;
+  settingsMenuOpen.value = false;
+  openProjectMenuOpen.value = false;
+  openProjectContext.value = null;
+}
+
+// Theme handler
+async function handleThemeChange(theme: AgentThemeId): Promise<void> {
+  await themeState.setTheme(theme);
+  closeMenus();
+}
+
+// Fake caret toggle handler
+async function handleFakeCaretToggle(enabled: boolean): Promise<void> {
+  await inputPreferences.setFakeCaretEnabled(enabled);
+}
+
+// Floating icon toggle handler
+async function handleFloatingIconToggle(enabled: boolean): Promise<void> {
+  await floatingIconPreference.setEnabled(enabled);
+}
+
+// Server reconnect
+async function handleReconnect(): Promise<void> {
+  closeMenus();
+  await server.reconnect();
+}
+
+// Attachment cache handlers
+function handleOpenAttachmentCache(): void {
+  attachmentCacheOpen.value = true;
+  sessionSettingsOpen.value = false;
+  closeMenus();
+}
+
+function handleCloseAttachmentCache(): void {
+  attachmentCacheOpen.value = false;
+}
+
+// Session handlers
+async function handleSessionSelect(sessionId: string): Promise<void> {
+  await sessions.selectSession(sessionId);
+  // Note: URL sync is handled by onSessionChanged callback
+  closeMenus();
+}
+
+async function handleNewSession(): Promise<void> {
+  const projectId = projects.selectedProjectId.value;
+  if (!projectId) return;
+
+  // Clear previous request state (in chat view, creating new session should reset state)
+  clearRequestState();
+
+  const engineName =
+    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+
+  // Include codex config if using codex engine
+  const optionsConfig =
+    engineName === 'codex'
+      ? {
+          codexConfig: {
+            reasoningEffort: getNormalizedReasoningEffort(),
+          },
+        }
+      : undefined;
+
+  const session = await sessions.createSession(projectId, {
+    engineName,
+    name: `Session ${sessions.sessions.value.length + 1}`,
+    optionsConfig,
+  });
+
+  // Guard: only clear messages if the new session is still selected
+  // This prevents clearing messages if user switched during createSession await
+  if (session && sessions.selectedSessionId.value === session.id) {
+    chat.setMessages([]);
+    // Note: URL sync is handled by onSessionChanged callback (triggered by createSession)
+  }
+  closeMenus();
+}
+
+async function handleDeleteSession(sessionId: string): Promise<void> {
+  const wasCurrentSession = sessions.selectedSessionId.value === sessionId;
+  const wasInChatView = viewRoute.isChatView.value;
+
+  await sessions.deleteSession(sessionId);
+
+  // Handle post-delete navigation and URL sync
+  if (wasCurrentSession) {
+    if (sessions.sessions.value.length === 0) {
+      // No sessions left - go back to sessions list (will show empty state)
+      // Also clear URL sessionId since there's no valid session
+      viewRoute.setSessionId(null);
+      if (wasInChatView) {
+        viewRoute.goToSessions();
+      }
+    }
+    // Note: If there are remaining sessions, useAgentSessions.deleteSession
+    // already calls onSessionChanged which syncs URL via setSessionId
+  }
+}
+
+async function handleRenameSession(sessionId: string, name: string): Promise<void> {
+  await sessions.renameSession(sessionId, name);
+}
+
+async function handleOpenSessionSettings(sessionId: string): Promise<void> {
+  closeMenus();
+  sessionSettingsOpen.value = true;
+  sessionSettingsLoading.value = true;
+  currentManagementInfo.value = null;
+
+  try {
+    // Fetch Claude SDK management info if this is a Claude session
+    const session = sessions.sessions.value.find((s) => s.id === sessionId);
+    if (session?.engineName === 'claude') {
+      const info = await sessions.fetchClaudeInfo(sessionId);
+      if (info) {
+        currentManagementInfo.value = info.managementInfo;
+      }
+    }
+  } finally {
+    sessionSettingsLoading.value = false;
+  }
+}
+
+async function handleResetSession(sessionId: string): Promise<void> {
+  closeMenus();
+  const result = await sessions.resetConversation(sessionId);
+  // Guard: only clear messages if the reset session is still selected
+  // This prevents clearing messages if user switched during reset await
+  if (result && sessions.selectedSessionId.value === sessionId) {
+    chat.setMessages([]);
+  }
+}
+
+// Composer direct model/reasoning effort change handlers
+async function handleComposerModelChange(modelId: string): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (!sessionId) return;
+
+  await sessions.updateSession(sessionId, { model: modelId || null });
+}
+
+async function handleComposerReasoningEffortChange(effort: CodexReasoningEffort): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  const session = sessions.selectedSession.value;
+  if (!sessionId || !session) return;
+
+  const existingOptions = session.optionsConfig ?? {};
+  const existingCodexConfig = existingOptions.codexConfig ?? {};
+  await sessions.updateSession(sessionId, {
+    optionsConfig: {
+      ...existingOptions,
+      codexConfig: {
+        ...existingCodexConfig,
+        reasoningEffort: effort,
+      },
+    },
   });
 }
 
-async function disableAllGroups(): Promise<void> {
-  toolGroups.value = await setToolGroupState({
-    observe: false,
-    navigate: false,
-    interact: false,
-    execute: false,
-    workflow: false,
+// Composer session settings/reset handlers (without sessionId parameter)
+function handleComposerOpenSettings(): void {
+  const sessionId = sessions.selectedSessionId.value;
+  if (sessionId) {
+    handleOpenSessionSettings(sessionId);
+  }
+}
+
+async function handleComposerReset(): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (sessionId) {
+    await handleResetSession(sessionId);
+  }
+}
+
+function handleCloseSessionSettings(): void {
+  sessionSettingsOpen.value = false;
+  currentManagementInfo.value = null;
+}
+
+async function handleSaveSessionSettings(settings: SessionSettings): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  if (!sessionId) return;
+
+  sessionSettingsSaving.value = true;
+  try {
+    await sessions.updateSession(sessionId, {
+      model: settings.model || null,
+      permissionMode: settings.permissionMode || null,
+      systemPromptConfig: settings.systemPromptConfig,
+      optionsConfig: settings.optionsConfig,
+    });
+    sessionSettingsOpen.value = false;
+    currentManagementInfo.value = null;
+  } finally {
+    sessionSettingsSaving.value = false;
+  }
+}
+
+// Project handlers
+async function handleProjectSelect(projectId: string): Promise<void> {
+  // Clear request state and sessions before switching project
+  // This prevents stale session data from mixing with the new project
+  clearRequestState();
+  sessions.clearSessions();
+
+  projects.selectedProjectId.value = projectId;
+  await projects.handleProjectChanged();
+
+  // Guard: abort if user switched to a different project during await
+  if (projects.selectedProjectId.value !== projectId) {
+    closeMenus();
+    return;
+  }
+
+  const project = projects.selectedProject.value;
+  if (project) {
+    selectedCli.value = project.preferredCli ?? '';
+    model.value = project.selectedModel ?? '';
+    useCcr.value = project.useCcr ?? false;
+    enableChromeMcp.value = project.enableChromeMcp !== false;
+  }
+  // Load sessions for the new project
+  await sessions.ensureDefaultSession(
+    projectId,
+    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
+  );
+
+  // Guard again after ensureDefaultSession
+  if (projects.selectedProjectId.value !== projectId) {
+    closeMenus();
+    return;
+  }
+
+  // Ensure URL is synced after project switch (fallback for edge cases)
+  // This handles rare cases where ensureDefaultSession doesn't trigger onSessionChanged
+  viewRoute.setSessionId(sessions.selectedSessionId.value || null);
+
+  closeMenus();
+}
+
+async function handleNewProject(): Promise<void> {
+  isPickingDirectory.value = true;
+  try {
+    const path = await projects.pickDirectory();
+    if (path) {
+      // Extract directory name from path, handling trailing slashes
+      const segments = path.split(/[/\\]/).filter((s) => s.length > 0);
+      const dirName = segments.pop() || 'New Project';
+      const project = await projects.createProjectFromPath(path, dirName);
+      if (project) {
+        selectedCli.value = project.preferredCli ?? '';
+        model.value = project.selectedModel ?? '';
+        useCcr.value = project.useCcr ?? false;
+        enableChromeMcp.value = project.enableChromeMcp !== false;
+
+        // Ensure a default session exists for the new project
+        const engineName =
+          (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+        await sessions.ensureDefaultSession(project.id, engineName);
+
+        // Reconnect SSE and load session history
+        if (sessions.selectedSessionId.value) {
+          server.openEventSource();
+          await loadSessionHistory(sessions.selectedSessionId.value);
+        }
+      }
+    }
+  } finally {
+    isPickingDirectory.value = false;
+    closeMenus();
+  }
+}
+
+async function handleSaveSettings(): Promise<void> {
+  const project = projects.selectedProject.value;
+  if (!project) return;
+
+  // Capture previous CLI to detect changes
+  const previousCli = project.preferredCli ?? '';
+
+  isSavingPreference.value = true;
+  try {
+    // Use normalized model to ensure valid value is saved
+    const normalizedModel = getNormalizedModel();
+    // Only save CCR if Claude CLI is selected
+    const normalizedCcr = selectedCli.value === 'claude' ? useCcr.value : false;
+    await projects.saveProjectPreference(
+      selectedCli.value,
+      normalizedModel,
+      normalizedCcr,
+      enableChromeMcp.value,
+    );
+    // Sync local state with normalized values
+    model.value = normalizedModel;
+    useCcr.value = normalizedCcr;
+
+    // If CLI changed, create a new empty session with the new CLI
+    const cliChanged = previousCli !== selectedCli.value;
+    if (cliChanged && selectedCli.value) {
+      const engineName = selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+
+      // Include codex config if using codex engine
+      const optionsConfig =
+        engineName === 'codex'
+          ? {
+              codexConfig: {
+                reasoningEffort: getNormalizedReasoningEffort(),
+              },
+            }
+          : undefined;
+
+      const session = await sessions.createSession(project.id, {
+        engineName,
+        name: `Session ${sessions.sessions.value.length + 1}`,
+        optionsConfig,
+      });
+
+      // Guard: only clear messages if the new session is still selected
+      // This prevents clearing messages if user switched during createSession await
+      if (session && sessions.selectedSessionId.value === session.id) {
+        chat.setMessages([]);
+      }
+    }
+  } finally {
+    isSavingPreference.value = false;
+    closeMenus();
+  }
+}
+
+// =============================================================================
+// View Navigation
+// =============================================================================
+
+/**
+ * Handle session selection from sessions list and navigate to chat view.
+ * Supports cross-project selection: if the selected session belongs to a different
+ * project, the project context will be switched automatically.
+ */
+async function handleSessionSelectAndNavigate(sessionId: string): Promise<void> {
+  // Only clear request state when switching to a DIFFERENT session
+  // If re-entering the same session, preserve the running state
+  // (e.g., user exits to list and comes back while request is still running)
+  const isSameSession = sessions.selectedSessionId.value === sessionId;
+  if (!isSameSession) {
+    clearRequestState();
+  }
+
+  // Find the session's projectId from allSessions, fallback to API if not found
+  const targetProjectId =
+    sessions.allSessions.value.find((s) => s.id === sessionId)?.projectId ??
+    (await sessions.getSession(sessionId))?.projectId;
+
+  if (!targetProjectId) {
+    console.warn('[AgentChat] Unable to resolve projectId for session:', sessionId);
+    return;
+  }
+
+  // If the session belongs to a different project, switch project context first
+  if (projects.selectedProjectId.value !== targetProjectId) {
+    // Clear sessions before switching to prevent stale data mixing
+    sessions.clearSessions();
+    projects.selectedProjectId.value = targetProjectId;
+    await projects.handleProjectChanged();
+
+    // Guard: abort if user switched to a different project during await
+    if (projects.selectedProjectId.value !== targetProjectId) {
+      return;
+    }
+
+    // Sync local UI state with the new project's preferences
+    const project = projects.selectedProject.value;
+    if (project) {
+      selectedCli.value = project.preferredCli ?? '';
+      model.value = project.selectedModel ?? '';
+      useCcr.value = project.useCcr ?? false;
+      enableChromeMcp.value = project.enableChromeMcp !== false;
+    }
+
+    // Fetch sessions for the new project
+    await sessions.fetchSessions(targetProjectId);
+
+    // Guard again after fetchSessions
+    if (projects.selectedProjectId.value !== targetProjectId) {
+      return;
+    }
+  }
+
+  await sessions.selectSession(sessionId);
+
+  // Guard against stale navigation if user switched to a different session during await
+  if (sessions.selectedSessionId.value !== sessionId) {
+    return;
+  }
+
+  viewRoute.goToChat(sessionId);
+
+  // Open SSE and load history when entering chat view
+  server.openEventSource();
+  await loadSessionHistory(sessionId);
+}
+
+/**
+ * Create a new session and navigate to chat view.
+ */
+async function handleNewSessionAndNavigate(): Promise<void> {
+  if (!projects.selectedProjectId.value) return;
+
+  // Clear previous state before creating new session
+  clearRequestState();
+
+  const engineName =
+    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+  const optionsConfig =
+    engineName === 'codex'
+      ? {
+          codexConfig: {
+            reasoningEffort: getNormalizedReasoningEffort(),
+          },
+        }
+      : undefined;
+
+  const session = await sessions.createSession(projects.selectedProjectId.value, {
+    engineName,
+    name: `Session ${sessions.sessions.value.length + 1}`,
+    optionsConfig,
   });
+
+  // Guard against stale navigation if user switched during createSession await
+  if (session && sessions.selectedSessionId.value === session.id) {
+    chat.setMessages([]);
+    viewRoute.goToChat(session.id);
+
+    // Open SSE for new session
+    server.openEventSource();
+  }
 }
 
-const toolPanelStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface)',
-  border: 'var(--ac-border-width) solid var(--ac-border)',
-  borderRadius: 'var(--ac-radius-card)',
-  boxShadow: 'var(--ac-shadow-float)',
-}));
-
-function insertSuggestion(content: string): void {
-  chat.input.value = `${chat.input.value.trim()}\n${content}`.trim();
-  suggestions.clear();
-  nextTick(resizeTextarea);
+/**
+ * Navigate back to sessions list.
+ */
+function handleBackToSessions(): void {
+  viewRoute.goToSessions();
 }
 
-// ---- Lifecycle ----
+// =============================================================================
+// Web Editor Selection Context
+// =============================================================================
 
+/**
+ * Build instruction with web editor selection context prepended.
+ * This provides AI with element context when user asks to modify selected element.
+ *
+ * Format:
+ * ```
+ * [WebEditorSelectionContext]
+ * pageUrl: <pageUrl>
+ * tagName: <tagName>
+ * label: <label>
+ * selectors: [<up to 3>]
+ * fingerprint: <fingerprint>
+ *
+ * [UserRequest]
+ * <user original input>
+ * ```
+ *
+ * @param userInput - The user's original input text
+ * @returns Instruction with context prepended, or original input if no selection
+ */
+function buildInstructionWithSelectionContext(userInput: string): string {
+  const selection = webEditorTxState.selectedElement.value;
+  const txState = webEditorTxState.txState.value;
+  const selectionPageUrl = webEditorTxState.selectionPageUrl.value;
+
+  // No selection = return original input
+  if (!selection) {
+    return userInput;
+  }
+
+  // Build context lines
+  const contextLines: string[] = ['[WebEditorSelectionContext]'];
+
+  // Page URL - prefer selection's pageUrl (more recent), fall back to txState
+  const pageUrl = selectionPageUrl || txState?.pageUrl;
+  if (pageUrl) {
+    contextLines.push(`pageUrl: ${pageUrl}`);
+  }
+
+  // Element key for stable identification
+  if (selection.elementKey) {
+    contextLines.push(`elementKey: ${selection.elementKey}`);
+  }
+
+  // Element info
+  contextLines.push(`tagName: ${selection.tagName || 'unknown'}`);
+  contextLines.push(`label: ${selection.label || selection.fullLabel || 'unknown'}`);
+
+  // Selectors (up to 3)
+  const selectors = selection.locator?.selectors ?? [];
+  const topSelectors = selectors.slice(0, 3);
+  if (topSelectors.length > 0) {
+    contextLines.push(`selectors: [${topSelectors.map((s) => `"${s}"`).join(', ')}]`);
+  }
+
+  // Fingerprint for similarity matching
+  if (selection.locator?.fingerprint) {
+    contextLines.push(`fingerprint: ${selection.locator.fingerprint}`);
+  }
+
+  // Combine context with user request
+  return `${contextLines.join('\n')}\n\n[UserRequest]\n${userInput}`;
+}
+
+// Attachment handlers
+function handleAttachmentAdd(): void {
+  // Create and click a hidden file input
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.onchange = (e) => attachments.handleFileSelect(e);
+  input.click();
+}
+
+// Send handler
+async function handleSend(): Promise<void> {
+  const dbSessionId = sessions.selectedSessionId.value;
+  if (!dbSessionId) {
+    chat.errorMessage.value = 'No session selected.';
+    return;
+  }
+
+  // Capture input before clearing for preview update
+  const messageText = chat.input.value.trim();
+  if (!messageText) return;
+
+  // Check if user has selected an element in web editor
+  const selection = webEditorTxState.selectedElement.value;
+  const txState = webEditorTxState.txState.value;
+  const selectionPageUrl = webEditorTxState.selectionPageUrl.value;
+
+  // Capture selection info before sending (for clear after success)
+  const selectionTabId = webEditorTxState.tabId.value;
+  const selectionElementKey = selection?.elementKey ?? null;
+
+  // When a web editor element is selected, store structured metadata on the user message
+  // so the thread header can render as a chip (same style as "Web editor apply")
+  const selectionClientMeta = selection
+    ? {
+        kind: 'web_editor_apply_single' as const,
+        pageUrl: selectionPageUrl || txState?.pageUrl || 'unknown',
+        elementCount: 1,
+        elementLabels: [
+          selection.label || selection.fullLabel || selection.tagName || 'selected element',
+        ],
+      }
+    : undefined;
+
+  // Build instruction with web editor selection context (if any)
+  // The UI will show the original messageText, but the actual instruction
+  // sent to the server will include element context for AI to understand
+  const instructionWithContext = buildInstructionWithSelectionContext(messageText);
+
+  // Use getAttachments() to strip previewUrl and avoid payload bloat
+  chat.attachments.value = attachments.getAttachments() ?? [];
+
+  // Session-level config is now used by backend; no need to pass cliPreference/model
+  // For selection context messages, use the user's input as displayText
+  // so the chip shows meaningful content instead of a generic label
+  await chat.send({
+    projectId: projects.selectedProjectId.value || undefined,
+    dbSessionId,
+    // Pass the context-enriched instruction to be sent to server
+    instruction: instructionWithContext,
+    // Attach metadata only when selection context exists
+    // Use user's original message as displayText for better UX
+    displayText: selection ? messageText : undefined,
+    clientMeta: selectionClientMeta,
+  });
+
+  // Clear web editor selection after successful send
+  // This "consumes" the selection context so it won't be re-injected in next message
+  if (selectionElementKey && selectionTabId) {
+    // Check if user has selected a DIFFERENT element during the loading period
+    // Compare both elementKey AND tabId to handle cross-tab scenarios
+    // (elementKey like "div#app" is not unique across tabs/pages)
+    const currentElementKey = webEditorTxState.selectedElement.value?.elementKey ?? null;
+    const currentTabId = webEditorTxState.tabId.value;
+
+    const isSameSelection =
+      currentElementKey === selectionElementKey && currentTabId === selectionTabId;
+
+    if (!isSameSelection && currentElementKey !== null) {
+      // User selected a new element (or switched tab) during send - preserve it, don't clear
+    } else {
+      // Same element or already deselected - proceed with clear
+      // Try to clear via message (web-editor may be open)
+      chrome.runtime
+        .sendMessage({
+          type: BACKGROUND_MESSAGE_TYPES.WEB_EDITOR_CLEAR_SELECTION,
+          payload: { tabId: selectionTabId },
+        })
+        .then((response: { success: boolean } | undefined) => {
+          // If web-editor didn't respond (closed/not active), clear local state
+          // Use captured selectionTabId/selectionElementKey to avoid clearing new selection
+          if (!response?.success) {
+            clearLocalSelectionState(selectionTabId, selectionElementKey);
+          }
+          // If success, web-editor will broadcast null selection which will clear our state
+        })
+        .catch(() => {
+          // Message failed - clear sidepanel local state directly
+          clearLocalSelectionState(selectionTabId, selectionElementKey);
+        });
+    }
+  }
+
+  // Update session preview with first user message (if not already set)
+  // Note: Use original messageText, not the context-enriched version
+  // Include previewMeta for special chip rendering in session list
+  sessions.updateSessionPreview(
+    dbSessionId,
+    messageText,
+    selectionClientMeta
+      ? {
+          displayText: messageText,
+          clientMeta: selectionClientMeta,
+          fullContent: instructionWithContext,
+        }
+      : undefined,
+  );
+
+  attachments.clearAttachments();
+}
+
+/**
+ * Clear sidepanel local selection state.
+ * Used when web-editor is closed or unreachable.
+ *
+ * @param expectedTabId - The tab ID that was selected at send time
+ * @param expectedElementKey - The element key that was selected at send time
+ */
+function clearLocalSelectionState(expectedTabId: number, expectedElementKey: string): void {
+  // Double-check we're still on the same selection to avoid clearing new selection
+  const currentTabId = webEditorTxState.tabId.value;
+  const currentElementKey = webEditorTxState.selectedElement.value?.elementKey ?? null;
+
+  // Only clear if still pointing to the same selection (or already cleared)
+  const shouldClear =
+    currentElementKey === null ||
+    (currentTabId === expectedTabId && currentElementKey === expectedElementKey);
+
+  if (!shouldClear) {
+    // User switched to a different selection - don't clear
+    return;
+  }
+
+  // Clear the reactive state
+  webEditorTxState.selectedElement.value = null;
+  webEditorTxState.selectionPageUrl.value = null;
+
+  // Clear session storage to prevent "revival" on refresh/tab switch
+  if (expectedTabId) {
+    const storageKey = `web-editor-v2-selection-${expectedTabId}`;
+    chrome.storage.session.remove(storageKey).catch(() => {
+      // Ignore storage errors
+    });
+  }
+}
+
+// Initialize
+onMounted(async () => {
+  // Initialize theme
+  await themeState.initTheme();
+
+  // Load open project preference
+  await openProjectPreference.loadDefaultTarget();
+
+  // Load input preferences (fake caret, etc.)
+  await inputPreferences.init();
+
+  // Load floating icon preference
+  await floatingIconPreference.initPreference();
+
+  // Initialize server
+  await server.initialize();
+
+  if (server.isServerReady.value) {
+    // Ensure default project exists and load projects
+    await projects.ensureDefaultProject();
+    await projects.fetchProjects();
+
+    // Load all sessions across all projects for the global sessions list view
+    await sessions.fetchAllSessions();
+
+    // Load selected project or use first one
+    await projects.loadSelectedProjectId();
+    const hasValidSelection =
+      projects.selectedProjectId.value &&
+      projects.projects.value.some((p) => p.id === projects.selectedProjectId.value);
+
+    if (!hasValidSelection && projects.projects.value.length > 0) {
+      projects.selectedProjectId.value = projects.projects.value[0].id;
+      await projects.saveSelectedProjectId();
+    }
+
+    // Load settings and sessions
+    if (projects.selectedProjectId.value) {
+      const project = projects.selectedProject.value;
+      if (project) {
+        selectedCli.value = project.preferredCli ?? '';
+        model.value = project.selectedModel ?? '';
+        useCcr.value = project.useCcr ?? false;
+        enableChromeMcp.value = project.enableChromeMcp !== false;
+      }
+
+      // Load sessions for the project
+      await sessions.loadSelectedSessionId();
+      await sessions.fetchSessions(projects.selectedProjectId.value);
+
+      // Parse URL parameters to determine initial view
+      // Note: This is called after fetchSessions so we can verify the session exists
+      const initialRoute = viewRoute.initFromUrl();
+
+      // Handle deep link: URL specifies session to open directly (e.g., from Apply)
+      // Support cross-project sessions by checking allSessions first
+      if (initialRoute.view === 'chat' && initialRoute.sessionId) {
+        const targetSession =
+          sessions.allSessions.value.find((s) => s.id === initialRoute.sessionId) ??
+          sessions.sessions.value.find((s) => s.id === initialRoute.sessionId);
+
+        if (targetSession) {
+          // Use handleSessionSelectAndNavigate to handle cross-project switching
+          await handleSessionSelectAndNavigate(targetSession.id);
+        } else {
+          // Session doesn't exist in any project, fall back to sessions list
+          viewRoute.goToSessions();
+        }
+      }
+
+      // Ensure a default session exists (for new users)
+      // Note: This won't fetch sessions again since we already did above
+      await sessions.ensureDefaultSession(
+        projects.selectedProjectId.value,
+        (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
+      );
+
+      // Only open SSE and load history if we're in chat view with a valid session
+      if (viewRoute.isChatView.value && sessions.selectedSessionId.value) {
+        server.openEventSource();
+        await loadSessionHistory(sessions.selectedSessionId.value);
+      }
+    }
+  }
+});
+
+// Watch for server ready
 watch(
-  () => chat.messages.value.length,
-  () => {
-    maybeAutoScroll();
+  () => server.isServerReady.value,
+  async (ready) => {
+    if (ready && projects.projects.value.length === 0) {
+      await projects.ensureDefaultProject();
+      await projects.fetchProjects();
+
+      // Also fetch all sessions for the global sessions list
+      await sessions.fetchAllSessions();
+
+      const hasValidSelection =
+        projects.selectedProjectId.value &&
+        projects.projects.value.some((p) => p.id === projects.selectedProjectId.value);
+
+      if (!hasValidSelection && projects.projects.value.length > 0) {
+        projects.selectedProjectId.value = projects.projects.value[0].id;
+        await projects.saveSelectedProjectId();
+      }
+    }
   },
 );
 
-onMounted(async () => {
-  toolGroups.value = await getToolGroupState();
-
-  // Setup content ResizeObserver for auto-scroll
-  if (contentSlotRef.value) {
-    contentResizeObserver = new ResizeObserver(() => {
-      maybeAutoScroll();
-    });
-    contentResizeObserver.observe(contentSlotRef.value);
+// Close menus on Escape key
+const handleEscape = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    closeMenus();
   }
+};
 
-  const ok = await gateway.connect();
-  if (ok) {
-    await chat.hydrateHistory();
-  }
-
-  nextTick(resizeTextarea);
+onMounted(() => {
+  document.addEventListener('keydown', handleEscape);
 });
 
 onUnmounted(() => {
-  contentResizeObserver?.disconnect();
+  document.removeEventListener('keydown', handleEscape);
 });
 </script>
-
-<style scoped>
-.chat-shell {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Header */
-.chat-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  z-index: 10;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-label {
-  font-size: 12px;
-  color: var(--ac-text-muted);
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.status-dot.connected {
-  background-color: var(--ac-success);
-  box-shadow: 0 0 6px var(--ac-success);
-  animation: pulse-dot 2s infinite;
-}
-
-.status-dot.connecting {
-  background-color: var(--ac-warning);
-  box-shadow: 0 0 6px var(--ac-warning);
-  animation: pulse-dot 2s infinite;
-}
-
-.status-dot.disconnected {
-  background-color: var(--ac-warning);
-}
-
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.header-btn {
-  padding: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.btn-icon-sm {
-  width: 14px;
-  height: 14px;
-}
-
-/* Tool Groups Tray */
-.tool-tray {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  transition: all var(--ac-motion-fast);
-}
-
-.tool-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-}
-
-.tool-chip {
-  padding: 4px 12px;
-  font-size: 12px;
-  font-family: var(--ac-font-body);
-  cursor: pointer;
-  transition: all var(--ac-motion-fast);
-}
-
-.tray-close {
-  flex-shrink: 0;
-  padding: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Scrollable Message Area */
-.message-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-  min-height: 0;
-}
-
-.message-content-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 8px;
-}
-
-/* Empty State */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 16px;
-  gap: 8px;
-}
-
-.empty-icon {
-  margin-bottom: 4px;
-}
-
-.empty-heading {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ac-text-subtle);
-  font-family: var(--ac-font-heading);
-}
-
-.empty-subtext {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ac-text-muted);
-}
-
-/* Messages */
-.message {
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.message.role-tool {
-  padding: 0;
-}
-
-.message-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.message-role {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ac-text-muted);
-  text-transform: capitalize;
-}
-
-.message-time {
-  font-size: 10px;
-  color: var(--ac-text-subtle);
-}
-
-.message-body {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ac-text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--ac-font-body);
-}
-
-/* Footer */
-.chat-footer {
-  flex-shrink: 0;
-  padding: 8px 16px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 5;
-}
-
-/* Suggestions Card */
-.suggestions-card {
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.suggestions-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.suggestions-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ac-text-muted);
-}
-
-.suggestions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 160px;
-  overflow-y: auto;
-}
-
-.suggestion-item {
-  text-align: left;
-  padding: 6px 8px;
-  border: none;
-  background: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  cursor: pointer;
-}
-
-.suggestion-text {
-  font-size: 12px;
-  color: var(--ac-text);
-}
-
-.suggestion-meta {
-  font-size: 10px;
-  color: var(--ac-text-subtle);
-}
-
-/* Error Banner */
-.error-banner {
-  padding: 8px 12px;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-/* Composer Card */
-.composer-card {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.composer-textarea {
-  width: 100%;
-  border: none;
-  background: transparent;
-  resize: none;
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  outline: none;
-  overflow-y: hidden;
-}
-
-.composer-textarea::placeholder {
-  color: var(--ac-text-placeholder);
-}
-
-.composer-textarea:disabled {
-  opacity: 0.5;
-}
-
-.composer-bar {
-  display: flex;
-  align-items: center;
-  padding: 4px 8px 8px;
-  gap: 4px;
-}
-
-.bar-spacer {
-  flex: 1;
-}
-
-.bar-btn {
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.send-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-  transition:
-    background-color var(--ac-motion-fast),
-    color var(--ac-motion-fast);
-}
-
-.send-btn:disabled {
-  cursor: not-allowed;
-}
-
-/* Tool Panel */
-.tool-panel {
-  flex-shrink: 0;
-  max-height: 50vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  animation: slide-up 0.2s ease-out;
-}
-
-.tool-panel-enter-from,
-.tool-panel-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.tool-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: var(--ac-border-width) solid var(--ac-border);
-}
-
-.tool-panel-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ac-text);
-}
-
-.tool-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tool-panel-btn {
-  padding: 4px 8px;
-  font-size: 11px;
-  color: var(--ac-text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  border-radius: var(--ac-radius-button);
-}
-
-.tool-panel-btn:hover {
-  color: var(--ac-accent);
-}
-
-.tool-panel-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 8px;
-}
-
-.tool-group-section {
-  border-bottom: var(--ac-border-width) solid var(--ac-border);
-  padding: 8px 0;
-}
-
-.tool-group-section:last-child {
-  border-bottom: none;
-}
-
-.tool-group-header {
-  display: flex;
-  align-items: center;
-  padding: 4px 0;
-  cursor: pointer;
-  gap: 8px;
-  border-radius: var(--ac-radius-inner);
-}
-
-.tool-group-header:hover {
-  background-color: var(--ac-hover-bg);
-}
-
-.tool-group-toggle {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.tool-group-toggle input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-track {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  background-color: var(--ac-surface-muted);
-  border-radius: 9px;
-  transition: background-color var(--ac-motion-fast);
-}
-
-.toggle-track::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  background-color: var(--ac-text-subtle);
-  border-radius: 50%;
-  transition:
-    transform var(--ac-motion-fast),
-    background-color var(--ac-motion-fast);
-}
-
-.tool-group-toggle input:checked + .toggle-track {
-  background-color: var(--ac-accent-subtle);
-}
-
-.tool-group-toggle input:checked + .toggle-track::after {
-  transform: translateX(14px);
-  background-color: var(--ac-accent);
-}
-
-.tool-group-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.tool-group-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ac-text);
-}
-
-.tool-group-desc {
-  display: block;
-  font-size: 10px;
-  color: var(--ac-text-muted);
-}
-
-.expand-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--ac-text-muted);
-  transition: transform var(--ac-motion-fast);
-  flex-shrink: 0;
-}
-
-.expand-icon.expanded {
-  transform: rotate(180deg);
-}
-
-.tool-list {
-  padding: 4px 0 4px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tool-list-enter-active,
-.tool-list-leave-active {
-  transition: all 0.2s ease;
-}
-
-.tool-list-enter-from,
-.tool-list-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.tool-row {
-  display: flex;
-  align-items: center;
-  padding: 4px 8px;
-  gap: 8px;
-  border-radius: var(--ac-radius-inner);
-}
-
-.tool-row:hover {
-  background-color: var(--ac-hover-bg);
-}
-
-.tool-toggle {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.tool-toggle input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-track-sm {
-  position: relative;
-  width: 24px;
-  height: 14px;
-  background-color: var(--ac-surface-muted);
-  border-radius: 7px;
-  transition: background-color var(--ac-motion-fast);
-}
-
-.toggle-track-sm::after {
-  content: '';
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 12px;
-  height: 12px;
-  background-color: var(--ac-text-subtle);
-  border-radius: 50%;
-  transition:
-    transform var(--ac-motion-fast),
-    background-color var(--ac-motion-fast);
-}
-
-.tool-toggle input:checked + .toggle-track-sm {
-  background-color: var(--ac-accent-subtle);
-}
-
-.tool-toggle input:checked + .toggle-track-sm::after {
-  transform: translateX(10px);
-  background-color: var(--ac-accent);
-}
-
-.tool-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.tool-name {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ac-text);
-  font-family: var(--ac-font-mono);
-}
-
-.tool-desc {
-  display: block;
-  font-size: 10px;
-  color: var(--ac-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-</style>
