@@ -44,6 +44,7 @@ app/
 │   │   ├── agent-models.ts
 │   │   ├── constants.ts
 │   │   ├── element-marker-types.ts
+│   │   ├── flow-approvals.ts
 │   │   ├── message-types.ts
 │   │   ├── node-types.ts
 │   │   ├── rr-v3-keepalive-protocol.ts
@@ -419,11 +420,13 @@ app/
     ├── evermemos
     │   ├── index.ts
     │   ├── openclaw.plugin.json
+    │   ├── package.json
     │   ├── queue.ts
     │   ├── tsconfig.json
     │   └── types.ts
     └── mcp-client
         ├── index.ts
-        └── openclaw.plugin.json
+        ├── openclaw.plugin.json
+        └── package.json
 
-98 directories, 304 files
+98 directories, 307 files

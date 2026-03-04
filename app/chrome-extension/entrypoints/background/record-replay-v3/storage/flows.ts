@@ -11,6 +11,7 @@ import type { FlowsStore } from '../engine/storage/storage-port';
 import { RR_V3_STORES, withTransaction } from './db';
 import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
 import { stableJson } from '@/entrypoints/shared/utils/stable-json';
+import { normalizeToolList } from '@/common/flow-approvals';
 
 async function computeFlowVersionHash(flow: FlowV3): Promise<string> {
   const { createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = flow;
@@ -105,11 +106,21 @@ export function createFlowsStore(): FlowsStore {
     },
 
     async save(flow: FlowV3): Promise<void> {
-      const versionHash = await computeFlowVersionHash(flow);
-      const normalized: FlowV3 = {
+      const requiredTools = normalizeToolList(flow.meta?.requiredTools);
+
+      const withoutVersionHash: FlowV3 = {
         ...flow,
         meta: {
           ...(flow.meta ?? {}),
+          ...(requiredTools.length > 0 ? { requiredTools } : {}),
+        },
+      };
+
+      const versionHash = await computeFlowVersionHash(withoutVersionHash);
+      const normalized: FlowV3 = {
+        ...withoutVersionHash,
+        meta: {
+          ...(withoutVersionHash.meta ?? {}),
           versionHash,
         },
       };

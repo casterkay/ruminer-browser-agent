@@ -152,7 +152,7 @@ export interface UseWorkflowsV3Return {
   refreshFlows: () => Promise<void>;
   refreshRuns: () => Promise<void>;
   refreshTriggers: () => Promise<void>;
-  runFlow: (flowId: string) => Promise<{ runId: string } | null>;
+  runFlow: (flowId: string, args?: Record<string, unknown>) => Promise<{ runId: string } | null>;
   cancelQueueItem: (runId: string, reason?: string) => Promise<boolean>;
   cancelRun: (runId: string, reason?: string) => Promise<boolean>;
   deleteFlow: (flowId: string) => Promise<boolean>;
@@ -230,10 +230,14 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     }
   }
 
-  async function runFlow(flowId: string): Promise<{ runId: string } | null> {
+  async function runFlow(
+    flowId: string,
+    args?: Record<string, unknown>,
+  ): Promise<{ runId: string } | null> {
     try {
       const result = (await rpc.request('rr_v3.enqueueRun', {
         flowId: flowId as FlowId,
+        ...(args ? { args: args as any } : {}),
       })) as { runId: RunId; position: number } | null;
       // Refresh runs to show the new run
       void refreshRuns();

@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to=".sidepanel-root">
     <div
       v-if="open"
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -76,11 +76,11 @@ defineEmits<{
 }>();
 
 const backdropStyle = computed(() => ({
-  backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  backgroundColor: 'rgba(0, 0, 0, 0.55)',
 }));
 
 const modalStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface)',
+  backgroundColor: 'var(--ac-modal-surface, var(--ac-surface, #ffffff))',
   borderRadius: 'var(--ac-radius-card, 12px)',
   border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4)',
   boxShadow: 'var(--ac-shadow-float, 0 12px 40px -12px rgba(0, 0, 0, 0.25))',

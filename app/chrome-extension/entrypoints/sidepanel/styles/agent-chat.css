@@ -72,6 +72,7 @@
     --ac-surface: #ffffff;
     --ac-surface-muted: #f2f0eb;
     --ac-surface-inset: #f2f0eb;
+    --ac-modal-surface: #ffffff;
 
     /* Text */
     --ac-text: #1a1a1a;
@@ -423,6 +424,7 @@
     --ac-surface: #0f1117;
     --ac-surface-muted: #0a0c10;
     --ac-surface-inset: #1a1d26;
+    --ac-modal-surface: #0f1117;
 
     --ac-text: #e5e7eb;
     --ac-text-muted: #9ca3af;

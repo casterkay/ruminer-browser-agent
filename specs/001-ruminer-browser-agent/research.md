@@ -11,9 +11,6 @@ artifacts and implementation tasks.
     and exposes tool execution via `NativeMessageType.CALL_TOOL`.
   - Sidepanel “agent chat” currently talks to `http://127.0.0.1:<port>/agent/...` and streams via SSE
     (`EventSource`) in `app/chrome-extension/entrypoints/sidepanel/composables/useAgentServer.ts`.
-- The extension already includes an **OpenClaw Gateway WebSocket operator client** for chat (`chat.*`):
-  - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawGateway.ts`
-  - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
 - The repo includes OpenClaw plugin modules:
   - `app/openclaw-extensions/evermemos/openclaw.plugin.json` + `index.ts`
   - Uses `registerGatewayMethod('evermemos.addMemory'|'evermemos.searchMemory'|...)`.

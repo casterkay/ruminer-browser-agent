@@ -112,6 +112,8 @@ export interface Flow {
     bindings?: Array<{ type: 'domain' | 'path' | 'url'; value: string }>;
     tool?: { category?: string; description?: string };
     exposedOutputs?: Array<{ nodeId: string; as: string }>;
+    /** Declared MCP tool IDs required to execute this flow (for approval/enforcement) */
+    requiredTools?: string[];
     /** Version chain link to parent flow (for flow versioning / updates) */
     parentVersion?: {
       flowId: string;

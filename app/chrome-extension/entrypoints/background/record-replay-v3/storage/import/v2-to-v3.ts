@@ -9,6 +9,7 @@ import type { VariableDefinition } from '../../domain/variables';
 import type { NodeId, FlowId, EdgeId } from '../../domain/ids';
 import type { ISODateTimeString, JsonObject, JsonValue } from '../../domain/json';
 import { FLOW_SCHEMA_VERSION } from '../../domain/flow';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 // ==================== V2 Types (imported from record-replay) ====================
 
@@ -60,6 +61,7 @@ interface V2Flow {
     bindings?: V2Binding[];
     tool?: { category?: string; description?: string };
     exposedOutputs?: Array<{ nodeId: string; as: string }>;
+    requiredTools?: string[];
   };
   variables?: V2VariableDef[];
   nodes?: V2Node[];
@@ -158,6 +160,7 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
 
   // 7. 转换元数据
   const meta = convertMetaV2ToV3(v2Flow.meta);
+  const requiredTools = inferRequiredToolsV3(v2Flow);
 
   // 8. 构建 V3 Flow
   const now = new Date().toISOString() as ISODateTimeString;
@@ -179,11 +182,98 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
   if (variables.length > 0) {
     v3Flow.variables = variables;
   }
-  if (meta) {
-    v3Flow.meta = meta;
+  if (meta || requiredTools.length > 0) {
+    v3Flow.meta = {
+      ...(meta ?? {}),
+      ...(requiredTools.length > 0 ? { requiredTools } : {}),
+    };
   }
 
   return { success: true, data: v3Flow, errors, warnings };
+}
+
+function normalizeTools(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const trimmed = value
+    .filter((tool): tool is string => typeof tool === 'string')
+    .map((tool) => tool.trim())
+    .filter(Boolean);
+  return Array.from(new Set(trimmed)).sort();
+}
+
+function inferRequiredToolsV3(v2Flow: V2Flow): string[] {
+  const explicit = normalizeTools(v2Flow.meta?.requiredTools);
+  if (explicit.length > 0) return explicit;
+
+  const tools = new Set<string>();
+  for (const node of v2Flow.nodes || []) {
+    const type = String(node.type || '').trim();
+    if (!type) continue;
+
+    // Exclude non-executable/UI/control-flow nodes.
+    if (type === 'trigger' || type === 'if' || type === 'foreach' || type === 'while') continue;
+    if (type === 'delay' || type === 'wait' || type === 'assert') continue;
+    if (type === 'switchFrame') continue;
+
+    switch (type) {
+      case 'navigate':
+        tools.add(TOOL_NAMES.BROWSER.NAVIGATE);
+        break;
+      case 'openTab':
+        tools.add(TOOL_NAMES.BROWSER.NAVIGATE);
+        break;
+      case 'switchTab':
+        tools.add(TOOL_NAMES.BROWSER.SWITCH_TAB);
+        break;
+      case 'closeTab':
+        tools.add(TOOL_NAMES.BROWSER.CLOSE_TABS);
+        break;
+      case 'click':
+      case 'dblclick':
+        tools.add(TOOL_NAMES.BROWSER.CLICK);
+        break;
+      case 'fill':
+        tools.add(TOOL_NAMES.BROWSER.FILL);
+        break;
+      case 'key':
+        tools.add(TOOL_NAMES.BROWSER.KEYBOARD);
+        break;
+      case 'scroll':
+      case 'drag':
+        tools.add(TOOL_NAMES.BROWSER.COMPUTER);
+        break;
+      case 'screenshot':
+        tools.add(TOOL_NAMES.BROWSER.SCREENSHOT);
+        break;
+      case 'http':
+        tools.add(TOOL_NAMES.BROWSER.NETWORK_REQUEST);
+        break;
+      case 'extract': {
+        const mode = (node.config as { mode?: unknown } | undefined)?.mode;
+        if (mode === 'js') {
+          tools.add(TOOL_NAMES.BROWSER.JAVASCRIPT);
+        } else {
+          tools.add(TOOL_NAMES.BROWSER.READ_PAGE);
+        }
+        break;
+      }
+      case 'script':
+      case 'triggerEvent':
+      case 'setAttribute':
+        tools.add(TOOL_NAMES.BROWSER.JAVASCRIPT);
+        break;
+      case 'handleDownload':
+        tools.add(TOOL_NAMES.BROWSER.HANDLE_DOWNLOAD);
+        break;
+
+      default:
+        // Conservative fallback: unknown nodes may execute scripts or interact with the page.
+        tools.add(TOOL_NAMES.BROWSER.JAVASCRIPT);
+        break;
+    }
+  }
+
+  return Array.from(tools).sort();
 }
 
 /**
@@ -397,6 +487,11 @@ function convertMetaV2ToV3(v2Meta: V2Flow['meta']): FlowV3['meta'] | undefined {
     }));
   }
 
+  const requiredTools = normalizeTools(v2Meta.requiredTools);
+  if (requiredTools.length > 0) {
+    meta.requiredTools = requiredTools;
+  }
+
   // 如果 meta 为空对象，返回 undefined
   if (Object.keys(meta).length === 0) {
     return undefined;
@@ -458,6 +553,9 @@ export function convertFlowV3ToV2(v3Flow: FlowV3): ConversionResult<V2Flow> {
       type: b.kind, // V3 kind -> V2 type
       value: b.value,
     }));
+  }
+  if (v3Flow.meta?.requiredTools) {
+    meta.requiredTools = v3Flow.meta.requiredTools;
   }
 
   // 5. 构建 V2 Flow

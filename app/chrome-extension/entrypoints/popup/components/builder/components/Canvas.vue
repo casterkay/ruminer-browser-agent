@@ -76,6 +76,10 @@ const nodeTypes = (() => {
     // Avoid making component instances reactive; VueFlow expects raw component refs
     base[key] = markRaw(comp);
   }
+  // Render unknown/custom node kinds (e.g. ruminer.*) with our standard NodeCard.
+  // Otherwise VueFlow falls back to its default node, but our CSS intentionally
+  // strips the wrapper styling for rr-node-plain, making those nodes effectively invisible.
+  base['rr-unknown'] = markRaw(NodeCard as any);
   return base;
 })();
 
@@ -86,7 +90,9 @@ watchEffect(() => {
   vfNodes.value = list.map((n) => ({
     id: n.id,
     position: { x: n.ui?.x || 0, y: n.ui?.y || 0 },
-    type: canvasTypeKey(n.type as any),
+    type: Object.prototype.hasOwnProperty.call(nodeTypes, canvasTypeKey(n.type as any))
+      ? canvasTypeKey(n.type as any)
+      : 'rr-unknown',
     data: {
       node: n,
       edges: edgesRef,

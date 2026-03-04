@@ -12,6 +12,12 @@
 import type { UnixMillis } from './domain/json';
 import type { RunId } from './domain/ids';
 import { RR_ERROR_CODES, createRRError, type RRError } from './domain/errors';
+import {
+  diffAddedTools,
+  isToolListSuperset,
+  loadFlowApprovals,
+  normalizeToolList,
+} from '@/common/flow-approvals';
 
 import type { StoragePort } from './engine/storage/storage-port';
 import { StorageBackedEventsBus, type EventsBus } from './engine/transport/events-bus';
@@ -217,6 +223,39 @@ function createDefaultRunExecutor(deps: {
         createRRError(RR_ERROR_CODES.VALIDATION_ERROR, `Flow "${item.flowId}" not found`),
       );
       return;
+    }
+
+    // 2.5) Enforce flow tool approvals at execution time (covers post-enqueue mutations).
+    const requiredTools = normalizeToolList(flow.meta?.requiredTools);
+    if (requiredTools.length > 0) {
+      const approvals = await loadFlowApprovals();
+      const existing = approvals[item.flowId];
+      const approvedTools = normalizeToolList(existing?.approvedTools);
+
+      const approved = existing && isToolListSuperset(approvedTools, requiredTools);
+      if (!approved) {
+        const addedTools = diffAddedTools(approvedTools, requiredTools);
+        await failRun(
+          deps,
+          runId,
+          createRRError(
+            RR_ERROR_CODES.PERMISSION_DENIED,
+            addedTools.length > 0
+              ? `Flow "${item.flowId}" requires additional tools approval: ${addedTools.join(', ')}`
+              : `Flow "${item.flowId}" requires tools approval`,
+            {
+              data: {
+                flowId: item.flowId,
+                requiredTools,
+                approvedTools,
+                addedTools,
+              },
+              retryable: false,
+            },
+          ),
+        );
+        return;
+      }
     }
 
     // 3. 解析 Tab ID

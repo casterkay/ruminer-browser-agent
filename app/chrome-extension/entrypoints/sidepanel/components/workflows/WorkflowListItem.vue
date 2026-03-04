@@ -446,6 +446,7 @@ const menuItemDangerStyle = computed(() => ({
 
 .workflow-actions {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
   opacity: 0;

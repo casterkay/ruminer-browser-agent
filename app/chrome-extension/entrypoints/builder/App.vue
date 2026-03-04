@@ -348,6 +348,9 @@ function getQuery(): Record<string, string> {
 
 async function bootstrap() {
   const q = getQuery();
+  if (q.openTriggers === '1') {
+    triggerPanelVisible.value = true;
+  }
   if (q.flowId) {
     try {
       await rpc.ensureConnected();

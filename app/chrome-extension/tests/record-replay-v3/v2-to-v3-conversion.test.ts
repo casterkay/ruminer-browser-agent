@@ -8,6 +8,7 @@ import {
   convertFlowV2ToV3,
   convertFlowV3ToV2,
 } from '@/entrypoints/background/record-replay-v3/storage/import/v2-to-v3';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 // ==================== Test Helpers ====================
 
@@ -340,5 +341,52 @@ describe('V2 <-> V3 roundtrip conversion', () => {
     expect(node?.disabled).toBe(true);
     expect(node?.config).toEqual({ url: 'https://example.com', waitUntil: 'load' });
     expect(node?.ui).toEqual({ x: 100, y: 200 });
+  });
+
+  it('infers requiredTools when missing', () => {
+    const original = createV2Flow({
+      nodes: [
+        { id: 'nav-1', type: 'navigate' },
+        { id: 'click-1', type: 'click' },
+        { id: 'extract-1', type: 'extract', config: { mode: 'selector', selector: 'h1' } },
+        { id: 'script-1', type: 'script', config: { code: 'return 1' } },
+      ],
+      edges: [],
+    });
+
+    const toV3 = convertFlowV2ToV3(original);
+    expect(toV3.success).toBe(true);
+    expect(toV3.data?.meta?.requiredTools).toEqual([
+      TOOL_NAMES.BROWSER.CLICK,
+      TOOL_NAMES.BROWSER.JAVASCRIPT,
+      TOOL_NAMES.BROWSER.NAVIGATE,
+      TOOL_NAMES.BROWSER.READ_PAGE,
+    ]);
+  });
+
+  it('preserves explicit requiredTools (normalized) through roundtrip', () => {
+    const original = createV2Flow({
+      meta: {
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        requiredTools: [' chrome_navigate ', TOOL_NAMES.BROWSER.CLICK, TOOL_NAMES.BROWSER.CLICK],
+      },
+      nodes: [{ id: 'nav-1', type: 'navigate' }],
+      edges: [],
+    });
+
+    const toV3 = convertFlowV2ToV3(original);
+    expect(toV3.success).toBe(true);
+    expect(toV3.data?.meta?.requiredTools).toEqual([
+      TOOL_NAMES.BROWSER.CLICK,
+      TOOL_NAMES.BROWSER.NAVIGATE,
+    ]);
+
+    const backToV2 = convertFlowV3ToV2(toV3.data!);
+    expect(backToV2.success).toBe(true);
+    expect(backToV2.data?.meta?.requiredTools).toEqual([
+      TOOL_NAMES.BROWSER.CLICK,
+      TOOL_NAMES.BROWSER.NAVIGATE,
+    ]);
   });
 });

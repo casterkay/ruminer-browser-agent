@@ -89,8 +89,6 @@ only)
   - “Disabled browser tools: … (IDs). Do not use disabled
     tools.”
 - Implement this in:
-  - app/chrome-extension/entrypoints/sidepanel/composables/
-    useOpenClawChat.ts
   - backed by a new helper in app/chrome-extension/
     entrypoints/shared/utils/tool-groups.ts:
     - getEffectiveDisabledToolIds(state, individualState): string[]

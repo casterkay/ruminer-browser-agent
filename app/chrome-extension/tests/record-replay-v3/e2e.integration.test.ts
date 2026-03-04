@@ -8,7 +8,8 @@
  * - service-level RPC（直接调用内部 handler，避免 Port mock）
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 import type { FlowV3, RunEvent, RunRecordV3 } from '@/entrypoints/background/record-replay-v3';
 import {
@@ -20,6 +21,7 @@ import {
   resetBreakpointRegistry,
   recoverFromCrash,
 } from '@/entrypoints/background/record-replay-v3';
+import { STORAGE_KEYS } from '@/common/constants';
 
 import { createV3E2EHarness, type V3E2EHarness, type RpcClient } from './v3-e2e-harness';
 
@@ -165,6 +167,65 @@ describe('V3 service-level E2E', () => {
       expect(run.error?.code).toBe(RR_ERROR_CODES.TIMEOUT);
 
       await h.waitForQueueItemGone(runId);
+    });
+  });
+
+  describe('Flow tool approvals', () => {
+    beforeEach(() => {
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({});
+    });
+
+    afterEach(() => {
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({});
+    });
+
+    it('enqueueRun fails with PERMISSION_DENIED when flow tools are not approved', async () => {
+      const flow = createTestFlow('flow-approval-denied');
+      flow.meta = { requiredTools: [TOOL_NAMES.BROWSER.NAVIGATE] };
+      await h.storage.flows.save(flow);
+
+      const result = await client.call<{ runId: string; position: number }>('rr_v3.enqueueRun', {
+        flowId: flow.id,
+      });
+
+      expect(result.position).toBe(-1);
+
+      const run = await h.waitForTerminal(result.runId);
+      expect(run.status).toBe('failed');
+      expect(run.error?.code).toBe(RR_ERROR_CODES.PERMISSION_DENIED);
+
+      const queueItem = await h.storage.queue.get(result.runId);
+      expect(queueItem).toBeNull();
+
+      const events = await h.listEvents(result.runId);
+      expect(eventTypes(events, result.runId)).toEqual(['run.queued', 'run.failed']);
+    });
+
+    it('enqueueRun proceeds when flow tools are approved (superset)', async () => {
+      const flow = createTestFlow('flow-approval-ok');
+      flow.meta = { requiredTools: [TOOL_NAMES.BROWSER.NAVIGATE] };
+      await h.storage.flows.save(flow);
+
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({
+        [STORAGE_KEYS.FLOW_APPROVALS]: {
+          [flow.id]: {
+            approvedToolsHash: 'test-hash',
+            approvedTools: [TOOL_NAMES.BROWSER.NAVIGATE, TOOL_NAMES.BROWSER.CLICK],
+            approvedAt: new Date(0).toISOString(),
+          },
+        },
+      });
+
+      const result = await client.call<{ runId: string; position: number }>('rr_v3.enqueueRun', {
+        flowId: flow.id,
+      });
+
+      expect(result.position).toBeGreaterThanOrEqual(1);
+
+      const run = await h.waitForTerminal(result.runId);
+      expect(run.status).toBe('succeeded');
+
+      await h.waitForQueueItemGone(result.runId);
     });
   });
 

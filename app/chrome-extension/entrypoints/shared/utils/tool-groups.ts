@@ -123,7 +123,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     id: 'interact',
     label: 'Interact',
     description: 'DOM manipulation and network',
-    defaultEnabled: false,
+    defaultEnabled: true,
     tools: [
       {
         id: TOOL_NAMES.BROWSER.CLICK,

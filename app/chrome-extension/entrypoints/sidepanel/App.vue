@@ -43,6 +43,15 @@
       @approve="handleFlowApproval(true)"
       @cancel="handleFlowApproval(false)"
     />
+
+    <FlowArgsModal
+      :open="Boolean(flowArgsModal)"
+      :flow-name="flowArgsModal?.flowName ?? ''"
+      :variables="flowArgsModal?.variables ?? []"
+      :initial-values="flowArgsModal?.initialValues ?? {}"
+      @run="handleFlowArgs($event)"
+      @cancel="handleFlowArgs(null)"
+    />
   </div>
 </template>
 
@@ -54,16 +63,43 @@ import SidepanelNavigator from './components/SidepanelNavigator.vue';
 import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
 import FlowApprovalModal from './components/workflows/FlowApprovalModal.vue';
+import FlowArgsModal, { type FlowArgVar } from './components/workflows/FlowArgsModal.vue';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useChatBackendPreference } from './composables/useChatBackendPreference';
 import { useWorkflowsV3 } from './composables/useWorkflowsV3';
-import { STORAGE_KEYS } from '@/common/constants';
-import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
-import { stableJson } from '@/entrypoints/shared/utils/stable-json';
+import {
+  computeToolListHash,
+  diffAddedTools,
+  isToolListSuperset,
+  loadFlowApprovals,
+  normalizeToolList,
+  saveFlowApprovals,
+  type FlowApprovalsStore,
+} from '@/common/flow-approvals';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 
 type TabId = 'chat' | 'memory' | 'workflows' | 'settings';
+
+async function getActiveTabUrl(): Promise<string | null> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return typeof tabs[0]?.url === 'string' && tabs[0].url ? tabs[0].url : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseChatConversationId(url: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/(?:c|chat)\/([^/?#]+)/i);
+    return m ? String(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
 
 const theme = useAgentTheme();
 const chatBackend = useChatBackendPreference();
@@ -104,14 +140,6 @@ async function handleWorkflowRefresh(): Promise<void> {
   await workflows.refresh();
 }
 
-type FlowApprovalRecord = {
-  approvedToolsHash: string;
-  approvedTools: string[];
-  approvedAt: string;
-};
-
-type FlowApprovalsStore = Record<string, FlowApprovalRecord>;
-
 const flowApprovalModal = ref<{
   flowId: string;
   flowName: string;
@@ -142,49 +170,108 @@ function requestFlowApproval(input: {
   });
 }
 
-async function loadFlowApprovals(): Promise<FlowApprovalsStore> {
-  const raw = (await chrome.storage.local.get(STORAGE_KEYS.FLOW_APPROVALS))[
-    STORAGE_KEYS.FLOW_APPROVALS
-  ];
-  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as FlowApprovalsStore) : {};
+const flowArgsModal = ref<{
+  flowId: string;
+  flowName: string;
+  variables: FlowArgVar[];
+  initialValues: Record<string, string | undefined>;
+} | null>(null);
+
+let flowArgsResolver: ((args: Record<string, string> | null) => void) | null = null;
+
+function handleFlowArgs(args: Record<string, string> | null) {
+  const resolver = flowArgsResolver;
+  flowArgsResolver = null;
+  flowArgsModal.value = null;
+  resolver?.(args);
 }
 
-async function saveFlowApprovals(store: FlowApprovalsStore): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEYS.FLOW_APPROVALS]: store });
+function requestFlowArgs(input: {
+  flowId: string;
+  flowName: string;
+  variables: FlowArgVar[];
+  initialValues: Record<string, string | undefined>;
+}): Promise<Record<string, string> | null> {
+  flowArgsModal.value = input;
+  return new Promise<Record<string, string> | null>((resolve) => {
+    flowArgsResolver = resolve;
+  });
 }
 
 async function runFlow(flowId: string): Promise<void> {
   const flow = await workflows.getFlowById(flowId);
 
-  const requiredTools = Array.isArray(flow?.meta?.requiredTools)
-    ? flow!
-        .meta!.requiredTools!.filter((tool) => typeof tool === 'string' && tool.trim())
-        .map((t) => t.trim())
-    : [];
+  const requiredVars = (flow?.variables || []).filter((v) => v.required && v.default === undefined);
 
-  const normalizedTools = Array.from(new Set(requiredTools)).sort();
-  if (normalizedTools.length === 0) {
-    await workflows.runFlow(flowId);
+  let args: Record<string, string> | undefined;
+  if (requiredVars.length > 0) {
+    const initialValues: Record<string, string | undefined> = {};
+
+    const activeUrl = await getActiveTabUrl();
+    if (activeUrl) {
+      try {
+        const host = new URL(activeUrl).hostname.toLowerCase();
+        if (host === 'chatgpt.com' || host === 'chat.openai.com') {
+          if (requiredVars.some((v) => v.name === 'conversationUrl')) {
+            initialValues.conversationUrl = activeUrl;
+          }
+          if (requiredVars.some((v) => v.name === 'conversationId')) {
+            const seedUrl = initialValues.conversationUrl || activeUrl;
+            const parsed = parseChatConversationId(seedUrl);
+            if (parsed) {
+              initialValues.conversationId = parsed;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const provided = await requestFlowArgs({
+      flowId,
+      flowName: flow?.name ?? flowId,
+      variables: requiredVars.map((v) => ({
+        name: v.name,
+        label: v.label,
+        description: v.description,
+        sensitive: v.sensitive,
+      })),
+      initialValues,
+    });
+
+    if (!provided) {
+      return;
+    }
+    args = provided;
+  }
+
+  const requiredTools = normalizeToolList(flow?.meta?.requiredTools);
+  if (requiredTools.length === 0) {
+    await workflows.runFlow(flowId, args);
     return;
   }
 
-  const requiredToolsHash = await sha256Hex(stableJson(normalizedTools));
+  const requiredToolsHash = await computeToolListHash(requiredTools);
   const approvals = await loadFlowApprovals();
   const existing = approvals[flowId];
 
   if (existing?.approvedToolsHash === requiredToolsHash) {
-    await workflows.runFlow(flowId);
+    await workflows.runFlow(flowId, args);
     return;
   }
 
-  const prevTools = Array.isArray(existing?.approvedTools) ? existing.approvedTools : [];
-  const addedTools = normalizedTools.filter((tool) => !prevTools.includes(tool));
+  const prevTools = normalizeToolList(existing?.approvedTools);
+  if (existing && isToolListSuperset(prevTools, requiredTools)) {
+    await workflows.runFlow(flowId, args);
+    return;
+  }
+
+  const addedTools = diffAddedTools(prevTools, requiredTools);
 
   const approved = await requestFlowApproval({
     flowId,
     flowName: flow?.name ?? flowId,
     requiredToolsHash,
-    requiredTools: normalizedTools,
+    requiredTools,
     addedTools,
   });
 
@@ -196,12 +283,12 @@ async function runFlow(flowId: string): Promise<void> {
     ...approvals,
     [flowId]: {
       approvedToolsHash: requiredToolsHash,
-      approvedTools: normalizedTools,
+      approvedTools: requiredTools,
       approvedAt: new Date().toISOString(),
     },
   });
 
-  await workflows.runFlow(flowId);
+  await workflows.runFlow(flowId, args);
 }
 
 async function stopRun(payload: { runId: string; status: string }): Promise<void> {
@@ -218,15 +305,82 @@ async function scheduleChange(payload: {
   cron: string | null;
   enabled: boolean;
 }): Promise<void> {
+  if (!payload.enabled || !payload.cron) {
+    await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
+    return;
+  }
+
+  const flow = await workflows.getFlowById(payload.flowId);
+  const requiredVars = (flow?.variables || []).filter((v) => v.required && v.default === undefined);
+  if (requiredVars.length > 0) {
+    // The simple schedule UI can't capture per-trigger args yet; avoid silently scheduling broken runs.
+    window.alert('This workflow requires parameters and cannot be scheduled from this UI yet.');
+    return;
+  }
+  const requiredTools = normalizeToolList(flow?.meta?.requiredTools);
+  if (requiredTools.length === 0) {
+    await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
+    return;
+  }
+
+  const requiredToolsHash = await computeToolListHash(requiredTools);
+  const approvals: FlowApprovalsStore = await loadFlowApprovals();
+  const existing = approvals[payload.flowId];
+
+  const prevTools = normalizeToolList(existing?.approvedTools);
+  if (existing && isToolListSuperset(prevTools, requiredTools)) {
+    await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
+    return;
+  }
+
+  const addedTools = diffAddedTools(prevTools, requiredTools);
+  const approved = await requestFlowApproval({
+    flowId: payload.flowId,
+    flowName: flow?.name ?? payload.flowId,
+    requiredToolsHash,
+    requiredTools,
+    addedTools,
+  });
+  if (!approved) {
+    return;
+  }
+
+  await saveFlowApprovals({
+    ...approvals,
+    [payload.flowId]: {
+      approvedToolsHash: requiredToolsHash,
+      approvedTools: requiredTools,
+      approvedAt: new Date().toISOString(),
+    },
+  });
+
   await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
 }
 
 function openBuilder(mode: 'flow' | 'trigger', id?: string): void {
-  const url = new URL(chrome.runtime.getURL('/popup.html'));
-  url.searchParams.set('mode', mode);
-  if (id) {
-    url.searchParams.set('id', id);
+  const url = new URL(chrome.runtime.getURL('/builder.html'));
+
+  if (mode === 'flow') {
+    if (id) {
+      url.searchParams.set('flowId', id);
+    } else {
+      url.searchParams.set('new', '1');
+    }
+  } else {
+    url.searchParams.set('openTriggers', '1');
+
+    if (id) {
+      const trigger = workflows.triggers.value.find((t) => t.id === id);
+      if (trigger?.flowId) {
+        url.searchParams.set('flowId', trigger.flowId);
+      } else {
+        url.searchParams.set('new', '1');
+      }
+    } else {
+      url.searchParams.set('new', '1');
+    }
   }
+
   void chrome.tabs.create({ url: url.toString() });
 }
 

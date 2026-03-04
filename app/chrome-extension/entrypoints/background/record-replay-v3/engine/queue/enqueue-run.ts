@@ -13,9 +13,16 @@ import type { JsonObject, UnixMillis } from '../../domain/json';
 import type { FlowId, NodeId, RunId } from '../../domain/ids';
 import type { TriggerFireContext } from '../../domain/triggers';
 import { RUN_SCHEMA_VERSION, type RunRecordV3 } from '../../domain/events';
+import { RR_ERROR_CODES, createRRError } from '../../domain/errors';
 import type { StoragePort } from '../storage/storage-port';
 import type { EventsBus } from '../transport/events-bus';
 import type { RunScheduler } from './scheduler';
+import {
+  diffAddedTools,
+  isToolListSuperset,
+  loadFlowApprovals,
+  normalizeToolList,
+} from '@/common/flow-approvals';
 
 // ==================== Types ====================
 
@@ -167,6 +174,67 @@ export async function enqueueRun(
     const nodeExists = flow.nodes.some((n) => n.id === input.startNodeId);
     if (!nodeExists) {
       throw new Error(`startNodeId "${input.startNodeId}" not found in flow "${flowId}"`);
+    }
+  }
+
+  // ===== Flow tools approval enforcement (Flow integrity) =====
+  const requiredTools = normalizeToolList(flow.meta?.requiredTools);
+  if (requiredTools.length > 0) {
+    const approvals = await loadFlowApprovals();
+    const existing = approvals[flowId];
+    const approvedTools = normalizeToolList(existing?.approvedTools);
+
+    // Approved if existing approvedTools covers requiredTools (superset).
+    const approved = existing && isToolListSuperset(approvedTools, requiredTools);
+    if (!approved) {
+      const addedTools = diffAddedTools(approvedTools, requiredTools);
+      const tsDenied = now();
+      const runIdDenied = generateRunId();
+      const maxAttemptsDenied = maxAttempts;
+
+      const error = createRRError(
+        RR_ERROR_CODES.PERMISSION_DENIED,
+        addedTools.length > 0
+          ? `Flow "${flowId}" requires additional tools approval: ${addedTools.join(', ')}`
+          : `Flow "${flowId}" requires tools approval`,
+        {
+          data: {
+            flowId,
+            requiredTools,
+            approvedTools,
+            addedTools,
+          },
+          retryable: false,
+        },
+      );
+
+      const deniedRecord: RunRecordV3 = {
+        schemaVersion: RUN_SCHEMA_VERSION,
+        id: runIdDenied,
+        flowId,
+        ...(flowVersionHash ? { flowVersionHash } : {}),
+        status: 'failed',
+        createdAt: tsDenied,
+        updatedAt: tsDenied,
+        finishedAt: tsDenied,
+        tookMs: 0,
+        attempt: 0,
+        maxAttempts: maxAttemptsDenied,
+        args: input.args,
+        trigger: input.trigger,
+        debug: input.debug,
+        startNodeId: input.startNodeId,
+        error,
+        nextSeq: 0,
+      };
+
+      await deps.storage.runs.save(deniedRecord);
+
+      // Emit an auditable event trail for UI visibility (queued -> failed).
+      await deps.events.append({ runId: runIdDenied, type: 'run.queued', flowId });
+      await deps.events.append({ runId: runIdDenied, type: 'run.failed', error });
+
+      return { runId: runIdDenied, position: -1 };
     }
   }
 
