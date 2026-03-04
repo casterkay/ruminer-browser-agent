@@ -16,6 +16,7 @@ export {
   type AgentRole,
   type AgentStatusEvent,
   type AgentStoredMessage,
+  type GetEmosSettingsResponse,
   type GetOpenClawGatewaySettingsResponse,
   type ListOpenClawAgentsResponse,
   type OpenClawAgentDto,
@@ -23,6 +24,8 @@ export {
   type RealtimeEvent,
   type StreamTransport,
   type TestOpenClawGatewayResponse,
+  type UpdateEmosSettingsRequest,
+  type UpdateEmosSettingsResponse,
   type UpdateOpenClawGatewaySettingsRequest,
   type UpdateOpenClawGatewaySettingsResponse,
 } from 'chrome-mcp-shared';

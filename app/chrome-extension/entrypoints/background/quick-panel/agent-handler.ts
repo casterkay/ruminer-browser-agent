@@ -23,6 +23,8 @@ import {
   type QuickPanelAIEventMessage,
   type QuickPanelCancelAIMessage,
   type QuickPanelCancelAIResponse,
+  type QuickPanelGetBrandingMessage,
+  type QuickPanelGetBrandingResponse,
   type QuickPanelSendToAIMessage,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -763,6 +765,150 @@ async function handleOpenSidepanel(
   return { success: true };
 }
 
+/** Resolve engine display name (matches sidepanel branding). */
+function toEngineDisplayName(engineName: string): string {
+  const name = engineName.trim();
+  switch (name) {
+    case 'openclaw':
+      return 'OpenClaw';
+    case 'claude':
+      return 'Claude Code';
+    case 'codex':
+      return 'Codex';
+    case 'cursor':
+      return 'Cursor';
+    case 'qwen':
+      return 'Qwen';
+    case 'glm':
+      return 'GLM';
+    default:
+      return name || 'Agent';
+  }
+}
+
+function getEngineIconUrl(engineName: string): string {
+  const normalized = engineName.trim();
+  const path =
+    normalized === 'openclaw'
+      ? 'engine-icons/openclaw.svg'
+      : normalized === 'claude'
+        ? 'engine-icons/claude.png'
+        : normalized === 'codex'
+          ? 'engine-icons/codex.svg'
+          : '';
+
+  if (!path) return '';
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+      return chrome.runtime.getURL(path);
+    }
+  } catch {
+    // ignore
+  }
+
+  return `/${path}`;
+}
+
+// Many websites enforce CSP that blocks `img-src chrome-extension://...` for DOM injected by
+// content scripts. Returning a `data:` URL makes the Quick Panel header icon much more likely
+// to render across sites.
+const engineIconDataUrlCache = new Map<string, string>();
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  // Chunk to avoid call stack limits
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function resolveEngineIconUrl(engineName: string): Promise<string> {
+  const normalized = engineName.trim();
+  if (!normalized) return '';
+  const cached = engineIconDataUrlCache.get(normalized);
+  if (cached) return cached;
+
+  const extensionUrl = getEngineIconUrl(normalized);
+  if (!extensionUrl) return '';
+
+  try {
+    const response = await fetch(extensionUrl);
+    if (!response.ok) return extensionUrl;
+
+    if (extensionUrl.endsWith('.svg')) {
+      const svg = await response.text();
+      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      engineIconDataUrlCache.set(normalized, dataUrl);
+      return dataUrl;
+    }
+
+    if (extensionUrl.endsWith('.png')) {
+      const buffer = await response.arrayBuffer();
+      const base64 = arrayBufferToBase64(buffer);
+      const dataUrl = `data:image/png;base64,${base64}`;
+      engineIconDataUrlCache.set(normalized, dataUrl);
+      return dataUrl;
+    }
+  } catch {
+    // ignore
+  }
+
+  return extensionUrl;
+}
+
+/** Handle QUICK_PANEL_GET_BRANDING message. */
+async function handleGetBranding(
+  _message: QuickPanelGetBrandingMessage,
+): Promise<QuickPanelGetBrandingResponse> {
+  try {
+    const stored = await chrome.storage.local.get([
+      STORAGE_KEYS.NATIVE_SERVER_PORT,
+      STORAGE_KEY_SELECTED_SESSION,
+    ]);
+
+    const port =
+      normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+    const sessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+
+    if (!sessionId) {
+      return {
+        success: true,
+        engineName: '',
+        engineDisplayName: 'Agent',
+        brandIconUrl: '',
+      };
+    }
+
+    const url = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      return {
+        success: true,
+        engineName: '',
+        engineDisplayName: 'Agent',
+        brandIconUrl: '',
+      };
+    }
+
+    const payload = (await response.json().catch(() => null)) as any;
+    const engineName = normalizeString(payload?.session?.engineName).trim();
+    return {
+      success: true,
+      engineName,
+      engineDisplayName: toEngineDisplayName(engineName),
+      brandIconUrl: engineName ? await resolveEngineIconUrl(engineName) : '',
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg || 'Failed to resolve branding' };
+  }
+}
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -802,6 +948,17 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_OPEN_SIDEPANEL
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL) {
       handleOpenSidepanel(sender)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_GET_BRANDING
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING) {
+      handleGetBranding(message as QuickPanelGetBrandingMessage)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

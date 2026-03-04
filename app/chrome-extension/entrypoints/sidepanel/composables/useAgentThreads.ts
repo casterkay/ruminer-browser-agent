@@ -2,12 +2,12 @@
  * Composable for grouping messages into conversation threads.
  * Transforms flat AgentMessage[] into structured AgentThread[] for UI rendering.
  */
-import { computed, type InjectionKey, type Ref } from 'vue';
 import type {
   AgentMessage,
   AgentMessageAttachmentMetadata,
   AttachmentMetadata,
 } from 'chrome-mcp-shared';
+import { computed, type InjectionKey, type Ref } from 'vue';
 import type { RequestState } from './useAgentChat';
 
 /**
@@ -626,7 +626,10 @@ function buildThreads(
           ? (rawClientMeta as WebEditorApplyMeta)
           : undefined;
 
-      const displayText = typeof rawDisplayText === 'string' ? rawDisplayText : undefined;
+      const displayText =
+        typeof rawDisplayText === 'string' && rawDisplayText.trim()
+          ? rawDisplayText.trim()
+          : undefined;
 
       // Store attachments for thread header display
       if (attachments.length > 0) {
@@ -642,6 +645,9 @@ function buildThreads(
         };
         // Use display text as title for web editor apply messages
         group.title = displayText || `Apply ${clientMeta.elementCount ?? 0} changes`;
+      } else if (displayText) {
+        // Prefer user-visible display text when present (e.g., injected context/tool restrictions).
+        group.title = displayText;
       } else if (fullContent) {
         group.title = fullContent;
       } else {

@@ -72,7 +72,8 @@ export const TOOL_SCHEMAS: Tool[] = [
       properties: {
         user_id: {
           type: 'string',
-          description: 'Optional user ID (defaults to EMOS settings userId if omitted).',
+          description:
+            'Optional user ID (speaker) to scope memories. If omitted, server defaults apply.',
         },
         group_id: {
           type: 'string',
@@ -116,7 +117,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         query: { type: 'string', description: 'Search query text.' },
         user_id: {
           type: 'string',
-          description: 'Optional user ID (defaults to EMOS settings userId if omitted).',
+          description:
+            'Optional user ID (speaker) to scope memories. If omitted, server defaults apply.',
         },
         group_id: { type: 'string', description: 'Optional group ID filter.' },
         limit: { type: 'number', description: 'Max number of items to return (optional).' },

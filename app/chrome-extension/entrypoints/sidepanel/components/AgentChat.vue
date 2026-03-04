@@ -203,67 +203,73 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted, watch, provide } from 'vue';
 import type {
-  AgentStoredMessage,
-  AgentMessage,
-  CodexReasoningEffort,
   AgentManagementInfo,
+  AgentMessage,
   AgentSession,
   AgentSessionOptionsConfig,
+  AgentStoredMessage,
+  CodexReasoningEffort,
   OpenClawAgentDto,
 } from 'chrome-mcp-shared';
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 
 // Composables
+import type { OpenProjectTarget } from 'chrome-mcp-shared';
 import {
-  useAgentServer,
+  AGENT_SERVER_PORT_KEY,
   useAgentChat,
+  useAgentChatViewRoute,
+  useAgentInputPreferences,
   useAgentProjects,
+  useAgentServer,
   useAgentSessions,
-  useAttachments,
   useAgentTheme,
   useAgentThreads,
-  useWebEditorTxState,
-  useAgentChatViewRoute,
-  useOpenProjectPreference,
-  useAgentInputPreferences,
+  useAttachments,
   useEmosSuggestions,
+  useOpenProjectPreference,
+  useWebEditorTxState,
   WEB_EDITOR_TX_STATE_INJECTION_KEY,
-  AGENT_SERVER_PORT_KEY,
-  type AgentThemeId,
 } from '../composables';
-import type { OpenProjectTarget } from 'chrome-mcp-shared';
 
 // New UI Components
 import {
   AgentChatShell,
-  AgentTopBar,
   AgentComposer,
-  WebEditorChanges,
   AgentConversation,
+  AgentEngineMenu,
+  AgentOpenProjectMenu,
   AgentProjectMenu,
   AgentSessionMenu,
-  AgentEngineMenu,
   AgentSessionSettingsPanel,
-  AgentToolSelectionPanel,
   AgentSessionsView,
-  AgentOpenProjectMenu,
+  AgentToolSelectionPanel,
+  AgentTopBar,
+  WebEditorChanges,
 } from './agent-chat';
 import type { SessionSettings } from './agent-chat/AgentSessionSettingsPanel.vue';
 import AttachmentCachePanel from './agent-chat/AttachmentCachePanel.vue';
 
 // Model utilities
 import {
-  getModelsForCli,
   getCodexReasoningEfforts,
   getDefaultModelForCli,
+  getModelsForCli,
 } from '@/common/agent-models';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import { getMessage } from '@/utils/i18n';
 import {
   emosUpsertMemory,
   type EmosSingleMessage,
 } from '@/entrypoints/background/ruminer/emos-client';
+import {
+  getEffectiveDisabledToolIds,
+  getIndividualToolState,
+  getToolGroupState,
+  type IndividualToolState,
+  type ToolGroupState,
+} from '@/entrypoints/shared/utils/tool-groups';
+import { getMessage } from '@/utils/i18n';
 
 // Local UI state
 const selectedCli = ref('');
@@ -1457,6 +1463,33 @@ function buildInstructionWithSelectionContext(userInput: string): string {
   return `${contextLines.join('\n')}\n\n[UserRequest]\n${userInput}`;
 }
 
+function injectToolRestrictions(
+  instruction: string,
+  toolGroups: ToolGroupState,
+  individualToolState: IndividualToolState | null,
+): string {
+  const disabledTools = getEffectiveDisabledToolIds(toolGroups, individualToolState);
+  const restrictionText =
+    disabledTools.length === 0
+      ? [
+          'Tool restrictions (enforced at runtime):',
+          '- No tools are currently disabled.',
+          '',
+          'If a tool fails at runtime, ask the user to enable it in Ruminer → Tools.',
+        ].join('\n')
+      : [
+          'Tool restrictions (enforced at runtime):',
+          `- Disabled tools: ${disabledTools.join(', ')}`,
+          '- Do not use any disabled tools.',
+          '',
+          'Ask the user to enable a tool in Ruminer → Tools before using it.',
+        ].join('\n');
+
+  // Do NOT add extra "User request:" wrapper here; the base instruction may
+  // already be structured (e.g., WebEditorSelectionContext).
+  return `${restrictionText}\n\n${instruction}`;
+}
+
 // Attachment handlers
 function handleAttachmentAdd(): void {
   // Create and click a hidden file input
@@ -1619,6 +1652,18 @@ async function handleSend(): Promise<void> {
   // sent to the server will include element context for AI to understand
   const instructionWithContext = buildInstructionWithSelectionContext(messageText);
 
+  // Apply tool restrictions (based on Ruminer tool toggles) for all engines.
+  // This is prompt-layer guidance; runtime enforcement still happens at tool-call boundary.
+  const [toolGroups, individualToolState] = await Promise.all([
+    getToolGroupState(),
+    getIndividualToolState(),
+  ]);
+  const finalInstruction = injectToolRestrictions(
+    instructionWithContext,
+    toolGroups,
+    individualToolState,
+  );
+
   // Use getAttachments() to strip previewUrl and avoid payload bloat
   chat.attachments.value = attachments.getAttachments() ?? [];
 
@@ -1629,10 +1674,9 @@ async function handleSend(): Promise<void> {
     projectId: projects.selectedProjectId.value || undefined,
     dbSessionId,
     // Pass the context-enriched instruction to be sent to server
-    instruction: instructionWithContext,
-    // Attach metadata only when selection context exists
-    // Use user's original message as displayText for better UX
-    displayText: selection ? messageText : undefined,
+    instruction: finalInstruction,
+    // Always send displayText so persisted history never shows injected boilerplate.
+    displayText: messageText,
     clientMeta: selectionClientMeta,
   });
 

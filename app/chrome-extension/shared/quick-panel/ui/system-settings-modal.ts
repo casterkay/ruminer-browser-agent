@@ -295,7 +295,6 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     gatewayAuthToken: '',
     baseUrl: 'https://api.evermind.ai',
     apiKey: '',
-    userId: '',
     testingGateway: false,
     testingEmos: false,
     gatewayOk: true,
@@ -303,7 +302,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     emosOk: true,
     emosMessage: '',
     lastSavedGateway: { wsUrl: '', authToken: '' },
-    lastSavedEmos: { baseUrl: '', apiKey: '', userId: '' },
+    lastSavedEmos: { baseUrl: '', apiKey: '' },
     lastSavedFloatingIcon: true,
   };
 
@@ -364,7 +363,6 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     state.gatewayAuthToken = gw.gatewayAuthToken;
     state.baseUrl = em.baseUrl;
     state.apiKey = em.apiKey;
-    state.userId = em.userId;
     state.floatingIconEnabled = fi[STORAGE_KEY_FLOATING_ICON] ?? true;
     state.lastSavedGateway = {
       wsUrl: gw.gatewayWsUrl.trim(),
@@ -373,7 +371,6 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     state.lastSavedEmos = {
       baseUrl: em.baseUrl.trim(),
       apiKey: em.apiKey.trim(),
-      userId: em.userId.trim(),
     };
     state.lastSavedFloatingIcon = state.floatingIconEnabled;
     updateInputs();
@@ -387,13 +384,11 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const gwToken = getEl('gatewayAuthToken') as HTMLInputElement | null;
     const baseInput = getEl('baseUrl') as HTMLInputElement | null;
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
-    const userInput = getEl('userId') as HTMLInputElement | null;
     const floatingCb = getEl('floatingIconCb') as HTMLInputElement | null;
     if (gwInput) gwInput.value = state.gatewayWsUrl;
     if (gwToken) gwToken.value = state.gatewayAuthToken;
     if (baseInput) baseInput.value = state.baseUrl;
     if (apiInput) apiInput.value = state.apiKey;
-    if (userInput) userInput.value = state.userId;
     if (floatingCb) floatingCb.checked = state.floatingIconEnabled;
   }
 
@@ -415,12 +410,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const gwToken = getEl('gatewayAuthToken') as HTMLInputElement | null;
     const baseInput = getEl('baseUrl') as HTMLInputElement | null;
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
-    const userInput = getEl('userId') as HTMLInputElement | null;
     if (gwInput) state.gatewayWsUrl = gwInput.value;
     if (gwToken) state.gatewayAuthToken = gwToken.value;
     if (baseInput) state.baseUrl = baseInput.value;
     if (apiInput) state.apiKey = apiInput.value;
-    if (userInput) state.userId = userInput.value;
   }
 
   function showToast(message: string): void {
@@ -453,16 +446,11 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     syncFromInputs();
     const baseUrl = state.baseUrl.trim();
     const apiKey = state.apiKey.trim();
-    const userId = state.userId.trim();
-    if (
-      baseUrl === state.lastSavedEmos.baseUrl &&
-      apiKey === state.lastSavedEmos.apiKey &&
-      userId === state.lastSavedEmos.userId
-    ) {
+    if (baseUrl === state.lastSavedEmos.baseUrl && apiKey === state.lastSavedEmos.apiKey) {
       return;
     }
-    await setEmosSettings({ baseUrl, apiKey, userId });
-    state.lastSavedEmos = { baseUrl, apiKey, userId };
+    await setEmosSettings({ baseUrl, apiKey });
+    state.lastSavedEmos = { baseUrl, apiKey };
     state.emosOk = true;
     state.emosMessage = '';
     updateStatus('emos', true, '');
@@ -494,7 +482,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (testBtn) testBtn.disabled = true;
     state.emosMessage = '';
     try {
-      const result = await doTestEmos(state.baseUrl, state.apiKey, state.userId);
+      const result = await doTestEmos(state.baseUrl, state.apiKey);
       state.emosOk = result.ok;
       state.emosMessage = result.message;
     } finally {
@@ -605,10 +593,6 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
         <span class="qp-settings-field-label">API Key</span>
         <input data-id="apiKey" class="qp-settings-field-input" type="password" placeholder="your EverMemOS API key"/>
       </label>
-      <label class="qp-settings-field">
-        <span class="qp-settings-field-label">User ID</span>
-        <input data-id="userId" class="qp-settings-field-input" type="text" placeholder="your user identifier for memory storage"/>
-      </label>
       <div data-id="emosStatus" class="qp-settings-status" hidden></div>
     `;
 
@@ -643,7 +627,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       if (input) disposer.listen(input, 'blur', () => void saveGateway());
     }
     // Auto-save on blur for EverMemOS inputs
-    for (const id of ['baseUrl', 'apiKey', 'userId']) {
+    for (const id of ['baseUrl', 'apiKey']) {
       const input = emCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
       if (input) disposer.listen(input, 'blur', () => void saveEmos());
     }

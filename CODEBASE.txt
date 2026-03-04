@@ -177,8 +177,6 @@ app/
 │   │   │   │   ├── useFakeCaret.ts
 │   │   │   │   ├── useFloatingDrag.ts
 │   │   │   │   ├── useFloatingIconPreference.ts
-│   │   │   │   ├── useOpenClawChat.ts
-│   │   │   │   ├── useOpenClawGateway.ts
 │   │   │   │   ├── useOpenProjectPreference.ts
 │   │   │   │   ├── useRRV3Debugger.ts
 │   │   │   │   ├── useRRV3Rpc.ts
@@ -360,6 +358,8 @@ app/
 │   │   │   │   ├── index.ts
 │   │   │   │   └── schema.ts
 │   │   │   ├── directory-picker.ts
+│   │   │   ├── emos
+│   │   │   │   └── settings-service.ts
 │   │   │   ├── engines
 │   │   │   │   ├── claude.ts
 │   │   │   │   ├── codex.ts
@@ -371,7 +371,8 @@ app/
 │   │   │   │   ├── device-auth.ts
 │   │   │   │   ├── device-identity.ts
 │   │   │   │   ├── gateway-client.ts
-│   │   │   │   └── settings-service.ts
+│   │   │   │   ├── settings-service.ts
+│   │   │   │   └── tool-events.ts
 │   │   │   ├── project-service.ts
 │   │   │   ├── project-types.ts
 │   │   │   ├── session-service.ts
@@ -429,4 +430,4 @@ app/
         ├── openclaw.plugin.json
         └── package.json
 
-98 directories, 307 files
+99 directories, 307 files

@@ -159,6 +159,27 @@ export interface TestOpenClawGatewayResponse {
 }
 
 // ============================================================
+// EverMemOS (EMOS) Settings API (native-server owned)
+// ============================================================
+
+export interface EmosSettingsDto {
+  apiKey: string;
+  updatedAt: string;
+}
+
+export interface GetEmosSettingsResponse {
+  settings: EmosSettingsDto;
+}
+
+export interface UpdateEmosSettingsRequest {
+  apiKey?: string;
+}
+
+export interface UpdateEmosSettingsResponse {
+  settings: EmosSettingsDto;
+}
+
+// ============================================================
 // Project & Engine Types
 // ============================================================
 

@@ -20,8 +20,8 @@ import type {
 } from 'chrome-mcp-shared';
 
 import type { QuickPanelAIContext, QuickPanelSendToAIPayload } from '@/common/message-types';
-import type { QuickPanelAgentBridge } from '../core/agent-bridge';
 import { Disposer } from '@/entrypoints/web-editor-v2/utils/disposables';
+import type { QuickPanelAgentBridge } from '../core/agent-bridge';
 import {
   createQuickPanelMessageRenderer,
   type QuickPanelMessageRenderer,
@@ -42,6 +42,8 @@ export interface QuickPanelAiChatPanelOptions {
   title?: string;
   /** Header subtitle. Default: "Quick Panel" */
   subtitle?: string;
+  /** Optional brand icon URL shown in the header (engine icon). */
+  brandIconUrl?: string;
   /** Input placeholder. Default: "Ask the agent..." */
   placeholder?: string;
   /** Auto-focus textarea on mount. Default: true */
@@ -69,6 +71,8 @@ export interface QuickPanelAiChatPanelManager {
   getState: () => QuickPanelAiChatPanelState;
   focusInput: () => void;
   clearMessages: () => void;
+  /** Update header branding (title/subtitle/icon) without remounting. */
+  setBranding: (branding: { title?: string; subtitle?: string; brandIconUrl?: string }) => void;
   close: () => void;
   dispose: () => void;
 }
@@ -200,7 +204,10 @@ function formatUsageStats(usage: AgentUsageStats | null): string | null {
 interface PanelDOMElements {
   overlay: HTMLDivElement;
   panel: HTMLDivElement;
+  brandEl: HTMLDivElement;
+  titleNameEl: HTMLDivElement;
   titleSubEl: HTMLDivElement;
+  emptyIconEl: HTMLDivElement;
   streamIndicator: HTMLDivElement;
   streamText: HTMLSpanElement;
   closeBtn: HTMLButtonElement;
@@ -215,10 +222,31 @@ interface PanelDOMElements {
   actionBtn: HTMLButtonElement;
 }
 
+function renderBrandIcon(target: HTMLElement, brandIconUrl?: string): void {
+  const url = brandIconUrl?.trim();
+  target.textContent = '';
+
+  if (!url) {
+    target.textContent = '\u2726';
+    return;
+  }
+
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = '';
+  img.decoding = 'async';
+  img.loading = 'lazy';
+  img.className = 'qp-brand-img';
+  // Keep consistent with AgentChat icon styling
+  img.style.backgroundColor = 'var(--ac-surface)';
+  target.append(img);
+}
+
 function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements {
   const title = options.title?.trim() || DEFAULT_TITLE;
   const subtitle = options.subtitle?.trim() || DEFAULT_SUBTITLE;
   const placeholder = options.placeholder?.trim() || DEFAULT_PLACEHOLDER;
+  const brandIconUrl = options.brandIconUrl?.trim() || '';
 
   // Overlay (click outside to close)
   const overlay = document.createElement('div');
@@ -241,7 +269,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
 
   const brand = document.createElement('div');
   brand.className = 'qp-brand';
-  brand.textContent = '\u2726'; // Star symbol
+  renderBrandIcon(brand, brandIconUrl);
 
   const titleWrap = document.createElement('div');
   titleWrap.className = 'qp-title';
@@ -302,7 +330,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
 
   const emptyIcon = document.createElement('div');
   emptyIcon.className = 'qp-empty-icon';
-  emptyIcon.textContent = '\u2726';
+  renderBrandIcon(emptyIcon, brandIconUrl);
 
   const emptyText = document.createElement('div');
   emptyText.className = 'qp-empty-text';
@@ -374,7 +402,10 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
   return {
     overlay,
     panel,
+    brandEl: brand,
+    titleNameEl,
     titleSubEl,
+    emptyIconEl: emptyIcon,
     streamIndicator,
     streamText,
     closeBtn,
@@ -946,6 +977,29 @@ export function mountQuickPanelAiChatPanel(
     setState({ lastUsage: null, lastStatus: null, errorMessage: null });
   }
 
+  function setBranding(branding: {
+    title?: string;
+    subtitle?: string;
+    brandIconUrl?: string;
+  }): void {
+    if (disposed) return;
+
+    const nextTitle = typeof branding.title === 'string' ? branding.title.trim() : '';
+    if (nextTitle) {
+      dom.titleNameEl.textContent = nextTitle;
+      dom.panel.setAttribute('aria-label', nextTitle);
+    }
+
+    if (typeof branding.subtitle === 'string') {
+      dom.titleSubEl.textContent = branding.subtitle.trim() || defaultSubtitle;
+    }
+
+    if (typeof branding.brandIconUrl === 'string') {
+      renderBrandIcon(dom.brandEl, branding.brandIconUrl);
+      renderBrandIcon(dom.emptyIconEl, branding.brandIconUrl);
+    }
+  }
+
   function close(): void {
     if (disposed) return;
 
@@ -987,6 +1041,7 @@ export function mountQuickPanelAiChatPanel(
     getState: () => ({ ...state }),
     focusInput,
     clearMessages,
+    setBranding,
     close,
     dispose,
   };

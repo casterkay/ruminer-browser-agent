@@ -106,6 +106,9 @@ export function createFlowsStore(): FlowsStore {
     },
 
     async save(flow: FlowV3): Promise<void> {
+      // TODO(FR-032): Consider inferring `meta.requiredTools` for V3 flows when missing/empty.
+      // Today we only normalize the provided list, which means flows edited/created via the
+      // builder/RPC can accidentally omit tools and bypass user re-approval expectations.
       const requiredTools = normalizeToolList(flow.meta?.requiredTools);
 
       const withoutVersionHash: FlowV3 = {

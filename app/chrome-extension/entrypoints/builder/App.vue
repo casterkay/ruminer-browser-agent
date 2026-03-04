@@ -781,6 +781,11 @@ async function runFromSelected() {
 
     await rpc.ensureConnected();
 
+    // TODO(FR-032): Mirror sidepanel flow tool-approval UX for builder-run.
+    // Today the enqueue path enforces approvals in the background and returns PERMISSION_DENIED,
+    // but the builder should surface a blocking modal that shows the added tool diff + allows
+    // explicit approval before enqueuing.
+
     // Skip trigger nodes (they can't be start nodes)
     const node = store.nodes.find((n) => n.id === selectedId.value) || null;
     const startNodeId = node?.type === 'trigger' ? undefined : selectedId.value;
@@ -802,6 +807,8 @@ async function runAll() {
     if (!saved) return;
 
     await rpc.ensureConnected();
+
+    // TODO(FR-032): Same as runFromSelected() — show a blocking tool approval modal in the builder.
     await rpc.request('rr_v3.enqueueRun', { flowId: saved.id as FlowId });
   } catch (e) {
     pushToast(`运行失败：${e instanceof Error ? e.message : String(e)}`, 'error');

@@ -259,13 +259,15 @@ export function useAgentChat(options: UseAgentChatOptions) {
       projectId?: string;
       dbSessionId?: string;
       projectRoot?: string;
+      instruction?: string;
       attachments?: AgentAttachment[];
       clientMeta?: Record<string, unknown>;
       displayText?: string;
     } = {},
   ): Promise<void> {
-    const text = input.value.trim();
-    if (!text) return;
+    const rawInput = input.value.trim();
+    const instruction = (chatOptions.instruction ?? rawInput).trim();
+    if (!instruction) return;
 
     const sessionId = options.getSessionId();
     if (!sessionId) {
@@ -287,7 +289,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
       id: `temp-${requestId}`,
       sessionId,
       role: 'user',
-      content: text,
+      // IMPORTANT: keep UX clean (show user-visible text, not injected context).
+      content: (chatOptions.displayText ?? rawInput).trim(),
       messageType: 'chat',
       requestId,
       createdAt: now,
@@ -312,7 +315,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       const url = `http://127.0.0.1:${serverPort}/agent/chat/${encodeURIComponent(sessionId)}/act`;
 
       const body: AgentActRequest = {
-        instruction: text,
+        instruction,
         cliPreference: (chatOptions.cliPreference as AgentCliPreference | undefined) ?? undefined,
         model: chatOptions.model?.trim() || undefined,
         attachments: chatOptions.attachments,

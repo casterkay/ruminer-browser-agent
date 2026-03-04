@@ -30,10 +30,10 @@
 
 import { createAgentBridge, type QuickPanelAgentBridge } from './core/agent-bridge';
 import {
-  mountQuickPanelShadowHost,
   mountQuickPanelAiChatPanel,
-  type QuickPanelShadowHostManager,
+  mountQuickPanelShadowHost,
   type QuickPanelAiChatPanelManager,
+  type QuickPanelShadowHostManager,
 } from './ui';
 
 // ============================================================
@@ -51,6 +51,8 @@ export interface QuickPanelControllerOptions {
   subtitle?: string;
   /** Input placeholder. Default: 'Ask the agent...' */
   placeholder?: string;
+  /** Optional brand icon URL shown in the header (engine icon). */
+  brandIconUrl?: string;
 }
 
 export interface QuickPanelController {
@@ -62,6 +64,8 @@ export interface QuickPanelController {
   toggle: () => void;
   /** Check if panel is currently visible */
   isVisible: () => boolean;
+  /** Update header branding (title/subtitle/icon) without remounting. */
+  setBranding: (branding: { title?: string; subtitle?: string; brandIconUrl?: string }) => void;
   /** Fully dispose all resources */
   dispose: () => void;
 }
@@ -106,6 +110,12 @@ export function createQuickPanelController(
   options: QuickPanelControllerOptions = {},
 ): QuickPanelController {
   let disposed = false;
+
+  let branding: { title?: string; subtitle?: string; brandIconUrl?: string } = {
+    title: options.title,
+    subtitle: options.subtitle,
+    brandIconUrl: options.brandIconUrl,
+  };
 
   // Shared agent bridge (persists across show/hide cycles)
   let agentBridge: QuickPanelAgentBridge | null = null;
@@ -185,12 +195,31 @@ export function createQuickPanelController(
     chatPanel = mountQuickPanelAiChatPanel({
       mount: elements.root,
       agentBridge: bridge,
-      title: options.title,
-      subtitle: options.subtitle,
+      title: branding.title ?? options.title,
+      subtitle: branding.subtitle ?? options.subtitle,
+      brandIconUrl: branding.brandIconUrl ?? options.brandIconUrl,
       placeholder: options.placeholder,
       autoFocus: true,
       onRequestClose: () => hide(),
     });
+  }
+
+  function setBranding(next: { title?: string; subtitle?: string; brandIconUrl?: string }): void {
+    const patch: { title?: string; subtitle?: string; brandIconUrl?: string } = {};
+
+    if (typeof next?.title === 'string') patch.title = next.title;
+    if (typeof next?.subtitle === 'string') patch.subtitle = next.subtitle;
+    if (typeof next?.brandIconUrl === 'string') patch.brandIconUrl = next.brandIconUrl;
+
+    branding = { ...branding, ...patch };
+
+    if (chatPanel) {
+      try {
+        chatPanel.setBranding(next);
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Error applying branding:`, err);
+      }
+    }
   }
 
   /**
@@ -245,6 +274,7 @@ export function createQuickPanelController(
     hide,
     toggle,
     isVisible,
+    setBranding,
     dispose,
   };
 }
@@ -256,53 +286,62 @@ export function createQuickPanelController(
 // Core types
 export {
   DEFAULT_SCOPE,
-  QUICK_PANEL_SCOPES,
   normalizeQuickPanelScope,
-  parseScopePrefixedQuery,
   normalizeSearchQuery,
+  parseScopePrefixedQuery,
+  QUICK_PANEL_SCOPES,
 } from './core/types';
 
 export type {
-  QuickPanelScope,
-  QuickPanelScopeDefinition,
-  QuickPanelView,
+  Action,
+  ActionContext,
+  ActionTone,
   ParsedScopeQuery,
   QuickPanelIcon,
-  SearchResult,
-  ActionTone,
-  ActionContext,
-  Action,
-  SearchQuery,
-  SearchProviderContext,
-  SearchProvider,
+  QuickPanelScope,
+  QuickPanelScopeDefinition,
   QuickPanelState,
+  QuickPanelView,
+  SearchProvider,
+  SearchProviderContext,
+  SearchQuery,
+  SearchResult,
 } from './core/types';
 
 // Agent bridge
 export { createAgentBridge } from './core/agent-bridge';
 export type {
+  AgentBridgeOptions,
   QuickPanelAgentBridge,
   RequestEventListener,
-  AgentBridgeOptions,
 } from './core/agent-bridge';
 
 // UI Components
 export {
+  createQuickEntries,
+  createQuickPanelMessageRenderer,
+  // Search UI
+  createSearchInput,
+  // AI Chat
+  mountQuickPanelAiChatPanel,
   // Shadow host
   mountQuickPanelShadowHost,
   // Panel shell (unified container)
   mountQuickPanelShell,
-  // AI Chat
-  mountQuickPanelAiChatPanel,
-  createQuickPanelMessageRenderer,
-  // Search UI
-  createSearchInput,
-  createQuickEntries,
   // Styles
   QUICK_PANEL_STYLES,
 } from './ui';
 
 export type {
+  // Quick entries
+  QuickEntriesManager,
+  QuickEntriesOptions,
+  // AI Chat
+  QuickPanelAiChatPanelManager,
+  QuickPanelAiChatPanelOptions,
+  QuickPanelAiChatPanelState,
+  QuickPanelMessageRenderer,
+  QuickPanelMessageRendererOptions,
   // Shadow host
   QuickPanelShadowHostElements,
   QuickPanelShadowHostManager,
@@ -311,19 +350,10 @@ export type {
   QuickPanelShellElements,
   QuickPanelShellManager,
   QuickPanelShellOptions,
-  // AI Chat
-  QuickPanelAiChatPanelManager,
-  QuickPanelAiChatPanelOptions,
-  QuickPanelAiChatPanelState,
-  QuickPanelMessageRenderer,
-  QuickPanelMessageRendererOptions,
   // Search input
   SearchInputManager,
   SearchInputOptions,
   SearchInputState,
-  // Quick entries
-  QuickEntriesManager,
-  QuickEntriesOptions,
 } from './ui';
 
 // Search Engine
@@ -341,4 +371,4 @@ export type { TabsProviderOptions, TabsSearchResultData } from './providers';
 
 // Floating Icon
 export { createFloatingIcon } from './ui/floating-icon';
-export type { FloatingIconOptions, FloatingIconManager } from './ui/floating-icon';
+export type { FloatingIconManager, FloatingIconOptions } from './ui/floating-icon';

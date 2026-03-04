@@ -85,6 +85,7 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_SEND_TO_AI: 'quick_panel_send_to_ai',
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
   QUICK_PANEL_OPEN_SIDEPANEL: 'quick_panel_open_sidepanel',
+  QUICK_PANEL_GET_BRANDING: 'quick_panel_get_branding',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
@@ -264,6 +265,15 @@ export interface QuickPanelSendToAIMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_SEND_TO_AI;
   payload: QuickPanelSendToAIPayload;
 }
+
+/** Request current engine branding (engine name + icon URL) for Quick Panel header. */
+export interface QuickPanelGetBrandingMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING;
+}
+
+export type QuickPanelGetBrandingResponse =
+  | { success: true; engineName: string; engineDisplayName: string; brandIconUrl: string }
+  | { success: false; error: string };
 
 /**
  * Payload for cancelling an active AI request.

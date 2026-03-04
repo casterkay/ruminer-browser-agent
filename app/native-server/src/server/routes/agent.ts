@@ -12,12 +12,15 @@ import type {
   AttachmentCleanupRequest,
   AttachmentCleanupResponse,
   AttachmentStatsResponse,
+  GetEmosSettingsResponse,
   GetOpenClawGatewaySettingsResponse,
   ListOpenClawAgentsResponse,
   OpenClawAgentDto,
   OpenProjectRequest,
   OpenProjectTarget,
   TestOpenClawGatewayResponse,
+  UpdateEmosSettingsRequest,
+  UpdateEmosSettingsResponse,
   UpdateOpenClawGatewaySettingsRequest,
   UpdateOpenClawGatewaySettingsResponse,
 } from 'chrome-mcp-shared';
@@ -44,6 +47,7 @@ import {
   recordOpenClawGatewayTestResult,
   updateOpenClawGatewaySettings,
 } from '../../agent/openclaw/settings-service';
+import { getEmosSettings, updateEmosSettings } from '../../agent/emos/settings-service';
 import {
   createProjectDirectory,
   deleteProject,
@@ -200,6 +204,54 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
     }
   });
+
+  // ============================================================
+  // EverMemOS Settings (native-server owned)
+  // ============================================================
+
+  fastify.get('/agent/emos/settings', async (_request, reply) => {
+    try {
+      const settings = await getEmosSettings();
+      const body: GetEmosSettingsResponse = {
+        settings: {
+          apiKey: settings.apiKey,
+          updatedAt: settings.updatedAt,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/emos/settings',
+    async (request: FastifyRequest<{ Body: UpdateEmosSettingsRequest }>, reply: FastifyReply) => {
+      // Avoid logging secrets; do not log request body.
+      try {
+        const body = request.body || {};
+
+        const patch: { apiKey?: string } = {};
+        if (typeof body.apiKey === 'string') {
+          patch.apiKey = body.apiKey;
+        }
+
+        const settings = await updateEmosSettings(patch);
+        const resBody: UpdateEmosSettingsResponse = {
+          settings: {
+            apiKey: settings.apiKey,
+            updatedAt: settings.updatedAt,
+          },
+        };
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update EMOS settings');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
 
   // ============================================================
   // EverMemOS → OpenClaw plugin config sync (persistent)

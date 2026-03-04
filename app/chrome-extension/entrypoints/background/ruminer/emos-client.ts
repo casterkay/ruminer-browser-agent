@@ -90,7 +90,6 @@ export async function emosUpsertMemory(message: EmosSingleMessage): Promise<unkn
 }
 
 export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosSearchResponse> {
-  const settings = await getEmosSettings();
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
@@ -100,14 +99,9 @@ export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosS
   if (body.group_id) params.append('group_id', body.group_id);
   if (body.limit) params.append('limit', String(body.limit));
   if (body.retrieve_method) params.append('retrieve_method', body.retrieve_method);
-  // user_id priority: explicit request value, otherwise EMOS settings.
   const requestedUserId =
     typeof body.user_id === 'string' && body.user_id.trim() ? body.user_id.trim() : '';
-  const fallbackUserId = settings.userId.trim();
-  const effectiveUserId = requestedUserId || fallbackUserId;
-  if (effectiveUserId) {
-    params.append('user_id', effectiveUserId);
-  }
+  if (requestedUserId) params.append('user_id', requestedUserId);
   // Add any additional params from body
   Object.entries(body).forEach(([key, value]) => {
     if (
@@ -149,7 +143,6 @@ export async function emosDeleteMemory(messageId: string): Promise<unknown> {
 }
 
 export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}): Promise<unknown> {
-  const settings = await getEmosSettings();
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
@@ -166,11 +159,7 @@ export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}):
     typeof paramsInput.user_id === 'string' && paramsInput.user_id.trim()
       ? paramsInput.user_id.trim()
       : '';
-  const fallbackUserId = settings.userId.trim();
-  const effectiveUserId = requestedUserId || fallbackUserId;
-  if (effectiveUserId) {
-    params.append('user_id', effectiveUserId);
-  }
+  if (requestedUserId) params.append('user_id', requestedUserId);
 
   Object.entries(paramsInput).forEach(([key, value]) => {
     if (

@@ -130,8 +130,10 @@ export function useEmosSuggestions(): UseEmosSuggestions {
 
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  function getSearchUserIds(configuredUserId: string): string[] {
-    return Array.from(new Set([configuredUserId.trim(), 'me'].filter((value) => value.length > 0)));
+  const DEFAULT_SPEAKER_IDS = ['user', 'assistant'] as const;
+
+  function getSearchUserIds(): string[] {
+    return [...DEFAULT_SPEAKER_IDS];
   }
 
   function extractRawSuggestions(response: any): any[] {
@@ -192,7 +194,7 @@ export function useEmosSuggestions(): UseEmosSuggestions {
       if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
         throw new Error('EMOS is not configured');
       }
-      const userIds = getSearchUserIds(settings.userId);
+      const userIds = getSearchUserIds();
       const queryText = text.trim();
       const allRawItems = await runEmosSearch(queryText, userIds);
 

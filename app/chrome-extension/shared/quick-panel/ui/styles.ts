@@ -346,6 +346,14 @@ export const QUICK_PANEL_STYLES = /* css */ `
     font-size: 24px;
   }
 
+  .qp-brand-img {
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    object-fit: cover;
+    display: block;
+  }
+
   .qp-title {
     display: flex;
     flex-direction: column;

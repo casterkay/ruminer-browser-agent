@@ -43,13 +43,13 @@
           </template>
           <!-- Display Name + Model -->
           <template v-else>
-            <span class="text-sm font-medium truncate" :style="titleStyle">
+            <span class="flex-1 min-w-0 text-sm font-medium truncate" :style="titleStyle">
               {{ displayName }}
             </span>
             <!-- Model Badge -->
             <span
               v-if="session.engineName !== 'openclaw' && session.model"
-              class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+              class="flex-shrink-0 min-w-[40px] max-w-[80px] text-[10px] px-1.5 py-0.5 rounded truncate"
               :style="modelBadgeStyle"
             >
               {{ session.model }}
@@ -57,7 +57,7 @@
             <!-- OpenClaw Agent Badge -->
             <span
               v-if="session.engineName === 'openclaw' && openclawAgentId"
-              class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+              class="flex-shrink-0 min-w-[40px] max-w-[80px] text-[10px] px-1.5 py-0.5 rounded truncate"
               :style="modelBadgeStyle"
             >
               agent:{{ openclawAgentId }}

@@ -314,6 +314,8 @@ async function scheduleChange(payload: {
   const requiredVars = (flow?.variables || []).filter((v) => v.required && v.default === undefined);
   if (requiredVars.length > 0) {
     // The simple schedule UI can't capture per-trigger args yet; avoid silently scheduling broken runs.
+    // TODO(plan2 D3): Support scheduling flows with args (persist args per-trigger and plumb through
+    // rr_v3 cron trigger firing into enqueueRun input.args).
     window.alert('This workflow requires parameters and cannot be scheduled from this UI yet.');
     return;
   }

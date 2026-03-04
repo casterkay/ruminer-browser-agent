@@ -119,16 +119,6 @@
           @blur="saveEmos"
         />
       </label>
-      <label class="settings-field">
-        <span class="settings-field-label">User ID</span>
-        <input
-          v-model="userId"
-          class="settings-field-input"
-          type="text"
-          placeholder="your user identifier for memory storage"
-          @blur="saveEmos"
-        />
-      </label>
       <div v-if="emosMessage" class="settings-status" :class="emosOk ? 'ok' : 'error'">
         {{ emosMessage }}
       </div>
@@ -187,7 +177,6 @@ const gatewayMessage = ref('');
 // EverMemOS state
 const baseUrl = ref('https://api.evermind.ai');
 const apiKey = ref('');
-const userId = ref('');
 const testingEmos = ref(false);
 const emosOk = ref(true);
 const emosMessage = ref('');
@@ -197,7 +186,7 @@ const floatingIconEnabled = ref(true);
 
 // Last saved values (to avoid toast when nothing changed)
 const lastSavedGateway = ref({ wsUrl: '', authToken: '' });
-const lastSavedEmos = ref({ baseUrl: '', apiKey: '', userId: '' });
+const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
 
 async function refreshServerStatus(): Promise<void> {
@@ -221,13 +210,11 @@ async function loadSettings(): Promise<void> {
   gatewayAuthToken.value = gw.gatewayAuthToken;
   baseUrl.value = em.baseUrl;
   apiKey.value = em.apiKey;
-  userId.value = em.userId;
   floatingIconEnabled.value = fi;
   lastSavedGateway.value = { wsUrl: gw.gatewayWsUrl.trim(), authToken: gw.gatewayAuthToken.trim() };
   lastSavedEmos.value = {
     baseUrl: em.baseUrl.trim(),
     apiKey: em.apiKey.trim(),
-    userId: em.userId.trim(),
   };
   lastSavedFloatingIcon.value = fi;
 }
@@ -249,16 +236,11 @@ async function saveGateway(): Promise<void> {
 async function saveEmos(): Promise<void> {
   const base = baseUrl.value.trim();
   const key = apiKey.value.trim();
-  const user = userId.value.trim();
-  if (
-    base === lastSavedEmos.value.baseUrl &&
-    key === lastSavedEmos.value.apiKey &&
-    user === lastSavedEmos.value.userId
-  ) {
+  if (base === lastSavedEmos.value.baseUrl && key === lastSavedEmos.value.apiKey) {
     return;
   }
-  await setEmosSettings({ baseUrl: base, apiKey: key, userId: user });
-  lastSavedEmos.value = { baseUrl: base, apiKey: key, userId: user };
+  await setEmosSettings({ baseUrl: base, apiKey: key });
+  lastSavedEmos.value = { baseUrl: base, apiKey: key };
   emosOk.value = true;
   emosMessage.value = '';
   showToast(t('settingsEmosSavedNotification'));
@@ -288,7 +270,7 @@ async function testEmos(): Promise<void> {
   testingEmos.value = true;
   emosMessage.value = '';
   try {
-    const result = await doTestEmos(baseUrl.value, apiKey.value, userId.value);
+    const result = await doTestEmos(baseUrl.value, apiKey.value);
     emosOk.value = result.ok;
     emosMessage.value = result.message;
   } finally {

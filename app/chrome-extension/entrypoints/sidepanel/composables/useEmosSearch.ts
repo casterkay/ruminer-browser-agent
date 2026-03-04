@@ -17,6 +17,7 @@ export interface MemoryItem {
 export interface MemoryFilters {
   query: string;
   platform?: string | string[];
+  speakers?: string[];
   startDate?: string;
   endDate?: string;
 }
@@ -82,17 +83,21 @@ function normalizeItem(raw: any): MemoryItem {
   };
 }
 
-async function fetchSearchResult(body: Record<string, unknown>): Promise<any> {
+const DEFAULT_SPEAKER_IDS = ['user', 'assistant'] as const;
+
+async function fetchSearchResult(body: Record<string, unknown>, speakers?: string[]): Promise<any> {
   const settings = await getEmosSettings();
   if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
     throw new Error('EMOS is not configured');
   }
 
   const userIds = Array.from(
-    new Set([settings.userId.trim(), 'me'].filter((value) => value.length > 0)),
-  );
+    new Set(
+      (speakers && speakers.length > 0 ? speakers : [...DEFAULT_SPEAKER_IDS]).map((v) => v.trim()),
+    ),
+  ).filter((value) => value.length > 0);
   if (userIds.length === 0) {
-    throw new Error('EMOS User ID is not configured');
+    return { result: { memories: [] } };
   }
 
   const requests = userIds.map(async (userId) => {
@@ -234,8 +239,7 @@ export function useEmosSearch(): UseEmosSearch {
 
     try {
       const settings = await getEmosSettings();
-      isConfigured.value =
-        !!settings.baseUrl.trim() && !!settings.apiKey.trim() && !!settings.userId.trim();
+      isConfigured.value = !!settings.baseUrl.trim() && !!settings.apiKey.trim();
 
       if (!isConfigured.value) {
         items.value = [];
@@ -254,7 +258,7 @@ export function useEmosSearch(): UseEmosSearch {
         body.end_time = filters.endDate;
       }
 
-      const response = await fetchSearchResult(body);
+      const response = await fetchSearchResult(body, filters.speakers);
 
       const rawList = extractRawItems(response);
       const normalized = rawList

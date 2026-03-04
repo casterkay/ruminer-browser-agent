@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS openclaw_device_identity (
   private_key TEXT NOT NULL,
   created_at_ms INTEGER NOT NULL
 );
+
+-- EverMemOS settings (native-server owned)
+-- Store secrets (API keys) here so they can survive extension reinstall.
+CREATE TABLE IF NOT EXISTS emos_settings (
+  id TEXT PRIMARY KEY,
+  api_key TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 // ============================================================

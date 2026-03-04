@@ -7,15 +7,13 @@ export { useAgentChatViewRoute } from './useAgentChatViewRoute';
 export { useAgentProjects } from './useAgentProjects';
 export { useAgentServer } from './useAgentServer';
 export { useAgentSessions } from './useAgentSessions';
-export { preloadAgentTheme, THEME_LABELS, useAgentTheme } from './useAgentTheme';
+export { THEME_LABELS, preloadAgentTheme, useAgentTheme } from './useAgentTheme';
 export { AGENT_SERVER_PORT_KEY, useAgentThreads } from './useAgentThreads';
 export { useAttachments, type AttachmentWithPreview } from './useAttachments';
 export { useChatBackendPreference } from './useChatBackendPreference';
 export { useEmosSearch } from './useEmosSearch';
 export { useEmosSuggestions } from './useEmosSuggestions';
-export { useOpenClawChat } from './useOpenClawChat';
-export { useOpenClawGateway } from './useOpenClawGateway';
-export { useWebEditorTxState, WEB_EDITOR_TX_STATE_INJECTION_KEY } from './useWebEditorTxState';
+export { WEB_EDITOR_TX_STATE_INJECTION_KEY, useWebEditorTxState } from './useWebEditorTxState';
 
 export type { RequestState, UseAgentChatOptions } from './useAgentChat';
 export type {
@@ -42,8 +40,6 @@ export type {
 export type { SidepanelChatBackend, UseChatBackendPreference } from './useChatBackendPreference';
 export type { MemoryFilters, MemoryItem, UseEmosSearch } from './useEmosSearch';
 export type { MemorySuggestion, UseEmosSuggestions } from './useEmosSuggestions';
-export type { ChatMessage, ChatRole, UseOpenClawChat } from './useOpenClawChat';
-export type { GatewayEvent, UseOpenClawGateway } from './useOpenClawGateway';
 export type { UseWebEditorTxStateOptions, WebEditorTxStateReturn } from './useWebEditorTxState';
 
 // RR V3 Composables

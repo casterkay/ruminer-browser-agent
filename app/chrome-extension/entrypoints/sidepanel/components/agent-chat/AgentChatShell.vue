@@ -104,8 +104,8 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue';
 import type { AgentUsageStats } from 'chrome-mcp-shared';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 
 const props = withDefaults(
   defineProps<{
@@ -147,6 +147,8 @@ const composerHeight = ref(120); // Default height
 const isUserScrolledUp = ref(false);
 // Threshold should account for padding and some tolerance
 const SCROLL_THRESHOLD = 150;
+
+type ScrollBehavior = 'auto' | 'smooth';
 
 /**
  * Check if scroll position is near bottom

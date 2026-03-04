@@ -161,7 +161,7 @@
               color: 'var(--ac-text-subtle)',
             }"
           >
-            Advanced
+            More
           </span>
         </div>
 

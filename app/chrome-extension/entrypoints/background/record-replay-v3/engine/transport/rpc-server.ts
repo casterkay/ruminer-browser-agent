@@ -656,6 +656,10 @@ export class RpcServer {
       if (typeof raw.meta !== 'object' || Array.isArray(raw.meta)) {
         throw new Error('flow.meta must be an object');
       }
+      // TODO(FR-032): Derive/validate `flow.meta.requiredTools` server-side for V3 flows.
+      // Relying on client-provided `requiredTools` allows under-declaration (skipping the
+      // re-approval modal + runtime enforcement). Consider computing a conservative tool set
+      // from the node graph and/or rejecting flows that omit requiredTools.
       flow.meta = raw.meta as FlowV3['meta'];
     }
 

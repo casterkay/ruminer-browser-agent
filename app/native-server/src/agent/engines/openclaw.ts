@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { OpenClawGatewayClient } from '../openclaw/gateway-client';
 import { getOpenClawGatewaySettings } from '../openclaw/settings-service';
+import { parseOpenClawToolEvent } from '../openclaw/tool-events';
 import type { AgentMessage } from '../types';
 import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
 
@@ -239,6 +240,33 @@ export class OpenClawEngine implements AgentEngine {
       ctx.emit({ type: 'message', data: message });
     };
 
+    const emitToolEvent = (payload: unknown): void => {
+      const parsed = parseOpenClawToolEvent(payload);
+      if (!parsed) {
+        return;
+      }
+
+      const message: AgentMessage = {
+        id: parsed.id,
+        sessionId,
+        role: 'tool',
+        content: parsed.content,
+        messageType: parsed.phase === 'use' ? 'tool_use' : 'tool_result',
+        cliSource: this.name,
+        requestId,
+        // Treat tool_use as streaming (progress); tool_result as final snapshot.
+        isStreaming: parsed.phase === 'use',
+        isFinal: parsed.phase !== 'use',
+        createdAt: parsed.createdAt,
+        metadata: {
+          cli_type: 'openclaw',
+          ...parsed.metadata,
+        },
+      };
+
+      ctx.emit({ type: 'message', data: message });
+    };
+
     const off = gateway.onEvent((evt) => {
       if (evt.event !== 'chat' && evt.event !== 'openclaw') return;
 
@@ -336,7 +364,10 @@ export class OpenClawEngine implements AgentEngine {
       }
 
       if (!isChatEvent) {
-        // Tool-stream channel (`agent` upstream) can carry completion status.
+        // Tool-stream channel (`agent` upstream) can carry tool lifecycle events.
+        emitToolEvent(payload);
+
+        // Tool-stream channel can also carry completion status.
         if (isTerminalStatus(status)) {
           debugLog('resolve: terminal status from tool stream', { status });
           resolveDone?.();

@@ -18,7 +18,6 @@ export interface GatewayConnectionStatus {
 export interface EmosConnectionSettings {
   baseUrl: string;
   apiKey: string;
-  userId: string;
   lastTestOkAt: string | null;
   lastTestError: string | null;
 }
@@ -36,7 +35,6 @@ const DEFAULT_NATIVE_SERVER_PORT = 12306;
 const DEFAULT_EMOS_SETTINGS: EmosConnectionSettings = {
   baseUrl: 'https://api.evermind.ai',
   apiKey: '',
-  userId: '',
   lastTestOkAt: null,
   lastTestError: null,
 };
@@ -72,6 +70,23 @@ async function readJson<T>(response: Response): Promise<T> {
     return JSON.parse(text) as T;
   } catch {
     throw new Error(text || `HTTP ${response.status}`);
+  }
+}
+
+async function getEmosApiKeyFromNativeServer(): Promise<string | null> {
+  try {
+    const port = await getNativeServerPort();
+    const response = await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
+      method: 'GET',
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await readJson<{ settings?: any }>(response);
+    const apiKey = normalizeString(data?.settings?.apiKey, '');
+    return apiKey;
+  } catch {
+    return null;
   }
 }
 
@@ -236,10 +251,14 @@ export async function isGatewayConfigured(): Promise<boolean> {
 export async function getEmosSettings(): Promise<EmosConnectionSettings> {
   const raw =
     (await chrome.storage.local.get(STORAGE_KEYS.EMOS_SETTINGS))[STORAGE_KEYS.EMOS_SETTINGS] || {};
+
+  const nativeApiKey = await getEmosApiKeyFromNativeServer();
+  const storedApiKey = normalizeString(raw.apiKey, '');
+  const apiKey = nativeApiKey && nativeApiKey.trim().length > 0 ? nativeApiKey : storedApiKey;
+
   return {
     baseUrl: normalizeString(raw.baseUrl, DEFAULT_EMOS_SETTINGS.baseUrl),
-    apiKey: normalizeString(raw.apiKey, ''),
-    userId: normalizeString(raw.userId, ''),
+    apiKey,
     lastTestOkAt: normalizeNullableString(raw.lastTestOkAt),
     lastTestError: normalizeNullableString(raw.lastTestError),
   };
@@ -254,23 +273,18 @@ export async function setEmosSettings(
     ...patch,
     baseUrl: patch.baseUrl ?? current.baseUrl,
     apiKey: patch.apiKey ?? current.apiKey,
-    userId: patch.userId ?? current.userId,
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.EMOS_SETTINGS]: next });
 
-  // Best-effort: persist EverMemOS settings into OpenClaw's evermemos plugin config.
-  // This is intentionally non-blocking so the UI can still save local settings even
-  // when native-server/OpenClaw isn't available.
+  // Best-effort: persist API key into native-server for durability across extension reinstalls.
+  // Intentionally non-blocking so the UI can still save local settings even when native-server
+  // isn't available.
   try {
     const port = await getNativeServerPort();
-    await fetch(`http://127.0.0.1:${port}/agent/openclaw/plugins/evermemos/config`, {
+    await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        evermemosBaseUrl: next.baseUrl,
-        apiKey: next.apiKey,
-        defaultUserId: next.userId,
-      }),
+      body: JSON.stringify({ apiKey: next.apiKey }),
     });
   } catch {
     // ignore

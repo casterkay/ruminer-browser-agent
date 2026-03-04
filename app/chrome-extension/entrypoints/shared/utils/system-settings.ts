@@ -92,20 +92,10 @@ export async function testGateway(
   }
 }
 
-export async function testEmos(
-  baseUrl: string,
-  apiKey: string,
-  userId: string,
-): Promise<TestResult> {
+export async function testEmos(baseUrl: string, apiKey: string): Promise<TestResult> {
   const base = baseUrl.trim().replace(/\/$/, '');
   const key = apiKey.trim();
-  const user = userId.trim();
-
-  if (!user) {
-    return { ok: false, message: 'User ID is required for EverMemOS connection.' };
-  }
-
-  const endpoint = `${base}/api/v0/memories/search?query=ping&user_id=${encodeURIComponent(user)}&limit=1`;
+  const endpoint = `${base}/api/v0/memories/search?query=ping&user_id=user&limit=1`;
 
   try {
     const response = await fetch(endpoint, {

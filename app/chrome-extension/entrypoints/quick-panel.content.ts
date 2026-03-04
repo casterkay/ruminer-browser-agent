@@ -14,11 +14,17 @@
  */
 
 import {
-  createQuickPanelController,
-  type QuickPanelController,
   createFloatingIcon,
+  createQuickPanelController,
   type FloatingIconManager,
+  type QuickPanelController,
 } from '@/shared/quick-panel';
+
+import {
+  BACKGROUND_MESSAGE_TYPES,
+  type QuickPanelGetBrandingMessage,
+  type QuickPanelGetBrandingResponse,
+} from '@/common/message-types';
 
 /** Storage key for floating icon preference */
 const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
@@ -34,6 +40,36 @@ export default defineContentScript({
     console.log('[QuickPanelContentScript] Content script loaded on:', window.location.href);
     let controller: QuickPanelController | null = null;
     let floatingIcon: FloatingIconManager | null = null;
+
+    async function resolveSelectedEngineBranding(): Promise<{
+      subtitle: string;
+      brandIconUrl: string;
+    }> {
+      try {
+        const response = (await chrome.runtime.sendMessage({
+          type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING,
+        } satisfies QuickPanelGetBrandingMessage)) as QuickPanelGetBrandingResponse;
+
+        if (response?.success) {
+          return {
+            subtitle: response.engineDisplayName || 'Agent',
+            brandIconUrl: response.brandIconUrl || '',
+          };
+        }
+      } catch {
+        // ignore
+      }
+
+      return { subtitle: 'Agent', brandIconUrl: '' };
+    }
+
+    function refreshBranding(): void {
+      if (!controller) return;
+
+      void resolveSelectedEngineBranding().then(({ subtitle, brandIconUrl }) => {
+        controller?.setBranding({ subtitle, brandIconUrl });
+      });
+    }
 
     /**
      * Check if floating icon is enabled
@@ -53,11 +89,13 @@ export default defineContentScript({
     function ensureController(): QuickPanelController {
       if (!controller) {
         controller = createQuickPanelController({
-          title: 'Agent',
-          subtitle: 'Quick Panel',
+          title: 'Ruminer Browser Agent',
+          subtitle: 'Agent',
           placeholder: 'Ask about this page...',
+          brandIconUrl: '',
         });
       }
+      refreshBranding();
       return controller;
     }
 
@@ -79,6 +117,7 @@ export default defineContentScript({
         initialRight: 24,
         onClick: () => {
           const ctrl = ensureController();
+          refreshBranding();
           ctrl.toggle();
         },
         onPositionChange: (position) => {
@@ -135,6 +174,7 @@ export default defineContentScript({
         console.log('[QuickPanelContentScript] Received toggle_quick_panel message');
         try {
           const ctrl = ensureController();
+          refreshBranding();
           ctrl.toggle();
           const visible = ctrl.isVisible();
           console.log('[QuickPanelContentScript] Toggle completed, visible:', visible);
@@ -149,6 +189,7 @@ export default defineContentScript({
       if (msg?.action === 'show_quick_panel') {
         try {
           const ctrl = ensureController();
+          refreshBranding();
           ctrl.show();
           sendResponse({ success: true });
         } catch (err) {
