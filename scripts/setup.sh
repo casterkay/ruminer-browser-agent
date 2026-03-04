@@ -59,10 +59,10 @@ install_openclaw_plugins() {
   local mcp_client_path="${ROOT_DIR}/app/openclaw-extensions/mcp-client"
 
   log "Installing/enabling OpenClaw plugins..."
-  openclaw plugins install "${evermemos_path}" || true
+  openclaw plugins install --link "${evermemos_path}" || true
   openclaw plugins enable evermemos || true
 
-  openclaw plugins install "${mcp_client_path}" || true
+  openclaw plugins install --link "${mcp_client_path}" || true
   openclaw plugins enable mcp-client || true
 
   log "OpenClaw plugins installed/enabled (best-effort)."

@@ -1,0 +1,15 @@
+{
+  "name": "@ruminer/mcp-client",
+  "version": "0.1.0",
+  "description": "Ruminer MCP Client Plugin (OpenClaw → MCP client → Ruminer native server)",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

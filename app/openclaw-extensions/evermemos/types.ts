@@ -1,6 +1,6 @@
 export type PluginConfig = {
-  evermemosBaseUrl: string;
-  apiKey: string;
+  evermemosBaseUrl?: string;
+  apiKey?: string;
   tenantId?: string;
   spaceId?: string;
   defaultUserId?: string;

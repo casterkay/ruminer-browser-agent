@@ -22,6 +22,7 @@ import type {
   UpdateOpenClawGatewaySettingsResponse,
 } from 'chrome-mcp-shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { spawn } from 'node:child_process';
 import { attachmentService } from '../../agent/attachment-service';
 import { AgentChatService } from '../../agent/chat-service';
 import { openDirectoryPicker } from '../../agent/directory-picker';
@@ -67,6 +68,55 @@ import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/stora
 import { AgentStreamManager } from '../../agent/stream-manager';
 import type { AgentActRequest, AgentActResponse, RealtimeEvent } from '../../agent/types';
 import { ERROR_MESSAGES, HTTP_STATUS } from '../../constant';
+
+type EvermemosOpenClawConfigPatch = {
+  evermemosBaseUrl?: string;
+  apiKey?: string;
+  tenantId?: string;
+  spaceId?: string;
+  defaultUserId?: string;
+  ingestGroupIdPrefix?: string;
+};
+
+async function runOpenClawCli(args: string[], timeoutMs = 30_000): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('openclaw', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    const timer = setTimeout(
+      () => {
+        child.kill('SIGKILL');
+        reject(new Error(`openclaw CLI timed out after ${timeoutMs}ms`));
+      },
+      Math.max(1_000, timeoutMs),
+    );
+
+    child.stdout?.on('data', (d) => stdout.push(Buffer.from(d)));
+    child.stderr?.on('data', (d) => stderr.push(Buffer.from(d)));
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const out = Buffer.concat(stdout).toString('utf-8').trim();
+      const err = Buffer.concat(stderr).toString('utf-8').trim();
+      const msg = [err, out].filter(Boolean).join('\n');
+      reject(new Error(msg || `openclaw CLI exited with code ${code ?? 'unknown'}`));
+    });
+  });
+}
 
 // Valid engine names for validation
 const VALID_ENGINE_NAMES: readonly EngineName[] = [
@@ -150,6 +200,71 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
     }
   });
+
+  // ============================================================
+  // EverMemOS → OpenClaw plugin config sync (persistent)
+  // ============================================================
+
+  fastify.post(
+    '/agent/openclaw/plugins/evermemos/config',
+    async (
+      request: FastifyRequest<{ Body: EvermemosOpenClawConfigPatch }>,
+      reply: FastifyReply,
+    ) => {
+      const body = (request.body || {}) as EvermemosOpenClawConfigPatch;
+
+      const normalizeOptional = (value: unknown): string | undefined => {
+        if (typeof value !== 'string') return undefined;
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      };
+
+      const patch: EvermemosOpenClawConfigPatch = {
+        evermemosBaseUrl: normalizeOptional(body.evermemosBaseUrl),
+        apiKey: normalizeOptional(body.apiKey),
+        tenantId: normalizeOptional(body.tenantId),
+        spaceId: normalizeOptional(body.spaceId),
+        defaultUserId: normalizeOptional(body.defaultUserId),
+        ingestGroupIdPrefix: normalizeOptional(body.ingestGroupIdPrefix),
+      };
+
+      const entries = Object.entries(patch).filter(([, v]) => typeof v === 'string');
+      if (entries.length === 0) {
+        reply.status(HTTP_STATUS.BAD_REQUEST).send({
+          error:
+            'No config fields provided. Send at least one of: evermemosBaseUrl, apiKey, tenantId, spaceId, defaultUserId, ingestGroupIdPrefix.',
+        });
+        return;
+      }
+
+      try {
+        for (const [key, value] of entries as Array<[keyof EvermemosOpenClawConfigPatch, string]>) {
+          const configPath = `plugins.entries.evermemos.config.${String(key)}`;
+          // Force string type via strict JSON parsing.
+          await runOpenClawCli([
+            'config',
+            'set',
+            '--strict-json',
+            configPath,
+            JSON.stringify(value),
+          ]);
+        }
+
+        reply.status(HTTP_STATUS.OK).send({
+          ok: true,
+          updatedKeys: entries.map(([k]) => k),
+          restartRequired: true,
+        });
+      } catch (error) {
+        // Avoid leaking secrets in logs; do not log request body.
+        fastify.log.error({ err: error }, 'Failed to sync evermemos OpenClaw plugin config');
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
 
   fastify.post(
     '/agent/openclaw/settings',

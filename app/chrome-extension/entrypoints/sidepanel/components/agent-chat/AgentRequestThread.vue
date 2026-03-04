@@ -2,24 +2,10 @@
   <div ref="rootRef" class="group">
     <!-- User Query Header -->
     <div class="mb-4">
-      <div class="flex justify-between items-start">
-        <!-- Special rendering for web editor apply messages -->
-        <ApplyMessageChip v-if="thread.header?.webEditorApply" :header="thread.header" />
-
-        <!-- Default title rendering for regular messages -->
-        <h2
-          v-else
-          class="text-lg font-medium leading-snug"
-          :style="{
-            color: 'var(--ac-text)',
-          }"
-        >
-          {{ thread.title }}
-        </h2>
-
+      <div class="flex items-start gap-2">
         <!-- Edit button (placeholder, appears on hover) -->
         <button
-          class="opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
+          class="opacity-50 group-hover:opacity-100 transition-all p-1 cursor-pointer"
           :style="{ color: 'var(--ac-text-subtle)' }"
           title="Edit (coming soon)"
         >
@@ -32,57 +18,73 @@
             />
           </svg>
         </button>
-      </div>
+        <div class="user-header-bubble min-w-0 flex-1">
+          <!-- Special rendering for web editor apply messages -->
+          <ApplyMessageChip v-if="thread.header?.webEditorApply" :header="thread.header" />
 
-      <!-- Attachment thumbnails -->
-      <div v-if="thread.attachments.length > 0" class="flex flex-wrap gap-2 mt-3">
-        <button
-          v-for="attachment in thread.attachments"
-          :key="`${attachment.messageId}:${attachment.index}`"
-          type="button"
-          class="relative group/thumb w-16 h-16 rounded-lg overflow-hidden transition-opacity hover:opacity-90 cursor-pointer"
-          :style="{
-            backgroundColor: 'var(--ac-surface-muted)',
-            border: 'var(--ac-border-width) solid var(--ac-border)',
-          }"
-          :title="attachment.originalName"
-          @click="openViewer(attachment)"
-        >
-          <img
-            v-if="getAttachmentUrl(attachment)"
-            :src="getAttachmentUrl(attachment)!"
-            :alt="attachment.originalName"
-            class="w-full h-full object-cover"
-            loading="lazy"
-          />
-          <!-- Fallback placeholder when server not ready -->
-          <div
+          <!-- Default title rendering for regular messages -->
+          <h2
             v-else
-            class="w-full h-full flex items-center justify-center"
-            :style="{ color: 'var(--ac-text-subtle)' }"
-            title="Server not ready"
-          >
-            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
-
-          <!-- Filename overlay on hover -->
-          <div
-            class="absolute bottom-0 left-0 right-0 px-0.5 py-0.5 text-[8px] truncate opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+            class="min-w-0 text-base font-medium leading-snug break-words"
             :style="{
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              color: 'white',
+              color: 'var(--ac-text-inverse, #ffffff)',
+              overflowWrap: 'anywhere',
             }"
           >
-            {{ attachment.originalName }}
+            {{ thread.title }}
+          </h2>
+
+          <!-- Attachment thumbnails -->
+          <div v-if="thread.attachments.length > 0" class="flex flex-wrap gap-2 mt-3">
+            <button
+              v-for="attachment in thread.attachments"
+              :key="`${attachment.messageId}:${attachment.index}`"
+              type="button"
+              class="relative group/thumb w-16 h-16 rounded-lg overflow-hidden transition-opacity hover:opacity-90 cursor-pointer"
+              :style="{
+                backgroundColor: 'var(--ac-surface-muted)',
+                border: 'var(--ac-border-width) solid var(--ac-border)',
+              }"
+              :title="attachment.originalName"
+              @click="openViewer(attachment)"
+            >
+              <img
+                v-if="getAttachmentUrl(attachment)"
+                :src="getAttachmentUrl(attachment)!"
+                :alt="attachment.originalName"
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <!-- Fallback placeholder when server not ready -->
+              <div
+                v-else
+                class="w-full h-full flex items-center justify-center"
+                :style="{ color: 'var(--ac-text-subtle)' }"
+                title="Server not ready"
+              >
+                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+
+              <!-- Filename overlay on hover -->
+              <div
+                class="absolute bottom-0 left-0 right-0 px-0.5 py-0.5 text-[8px] truncate opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+                :style="{
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  color: 'white',
+                }"
+              >
+                {{ attachment.originalName }}
+              </div>
+            </button>
           </div>
-        </button>
+        </div>
       </div>
     </div>
 
@@ -220,3 +222,17 @@ onMounted(() => {
     rootRef.value?.closest('.agent-theme') ?? rootRef.value?.ownerDocument?.body ?? null;
 });
 </script>
+
+<style scoped>
+.user-header-bubble {
+  border-radius: var(--ac-radius-card);
+  padding: 10px 12px;
+  background-color: var(--ac-accent-subtle);
+  background-color: color-mix(in srgb, var(--ac-accent) 75%, transparent);
+  color: var(--ac-text-inverse, #ffffff);
+}
+
+.user-header-bubble :deep(*) {
+  color: inherit;
+}
+</style>

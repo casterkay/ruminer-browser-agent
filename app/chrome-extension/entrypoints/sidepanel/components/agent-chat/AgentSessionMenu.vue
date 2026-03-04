@@ -92,7 +92,10 @@
                 color: 'var(--ac-text-subtle, #a8a29e)',
               }"
             >
-              <span v-if="session.model">{{ session.model }}</span>
+              <span v-if="session.engineName === 'openclaw'"
+                >agent:{{ getOpenClawAgentId(session) }}</span
+              >
+              <span v-else-if="session.model">{{ session.model }}</span>
               <span>{{ formatDate(session.updatedAt) }}</span>
             </div>
           </div>
@@ -181,6 +184,13 @@
 <script lang="ts" setup>
 import { ref, nextTick } from 'vue';
 import type { AgentSession } from 'chrome-mcp-shared';
+
+function getOpenClawAgentId(session: AgentSession): string {
+  const options: any = session.optionsConfig ?? {};
+  const raw = options?.openclaw?.sessionKey ?? options?.openclawSessionKey;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed || 'main';
+}
 
 const props = defineProps<{
   open: boolean;

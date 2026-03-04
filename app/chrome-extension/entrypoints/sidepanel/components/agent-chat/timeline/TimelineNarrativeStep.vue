@@ -40,6 +40,12 @@ defineProps<{
 </script>
 
 <style scoped>
+.markdown-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .markdown-content :deep(pre) {
   background-color: var(--ac-code-bg);
   border: var(--ac-border-width) solid var(--ac-code-border);
@@ -52,6 +58,8 @@ defineProps<{
   font-family: var(--ac-font-mono);
   font-size: 0.875em;
   color: var(--ac-code-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-content :deep(p) {
@@ -107,6 +115,9 @@ defineProps<{
   border-collapse: collapse;
   margin: 0.5em 0;
   width: 100%;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
 }
 
 .markdown-content :deep(th),

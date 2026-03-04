@@ -49,7 +49,7 @@
             <button
               class="text-[10px] ac-btn"
               :style="{ color: 'var(--ac-link, #3b82f6)' }"
-              :disabled="isSaving"
+              :disabled="isSaving || !canSave"
               @click="handleRestoreClaudeTools"
             >
               Reset defaults
@@ -84,7 +84,7 @@
                 <button
                   class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
                   :style="toggleStyle(isAgentGroupEnabled(group.id))"
-                  :disabled="isSaving"
+                  :disabled="isSaving || !canSave"
                   @click.stop="handleToggleAgentGroup(group.id)"
                 >
                   <span
@@ -115,7 +115,7 @@
                   <input
                     type="checkbox"
                     :checked="isClaudeToolEnabled(tool)"
-                    :disabled="!isAgentGroupEnabled(group.id) || isSaving"
+                    :disabled="!isAgentGroupEnabled(group.id) || isSaving || !canSave"
                     @change="handleToggleClaudeTool(tool)"
                   />
                   <span class="font-mono text-xs truncate flex-1">{{ tool }}</span>
@@ -168,7 +168,7 @@
                 <button
                   class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
                   :style="toggleStyle(!!toolGroups?.[group.id])"
-                  :disabled="toolGroupsBusy"
+                  :disabled="toolGroupsBusy || !canSave"
                   @click.stop="handleToggleToolGroup(group.id)"
                 >
                   <span
@@ -197,7 +197,7 @@
                   <input
                     type="checkbox"
                     :checked="isBrowserToolEnabled(group, tool)"
-                    :disabled="!toolGroups?.[group.id] || toolGroupsBusy"
+                    :disabled="!toolGroups?.[group.id] || toolGroupsBusy || !canSave"
                     @change="handleToggleBrowserTool(group, tool)"
                   />
                   <span class="text-xs truncate flex-1">{{ tool.name }}</span>
@@ -222,7 +222,7 @@
             <button
               class="text-[10px] ac-btn"
               :style="{ color: 'var(--ac-link, #3b82f6)' }"
-              :disabled="toolGroupsLoading || toolGroupsBusy"
+              :disabled="toolGroupsLoading || toolGroupsBusy || !canSave"
               @click="handleResetToolGroups"
             >
               Reset defaults
@@ -397,12 +397,16 @@ const props = defineProps<{
   managementInfo: AgentManagementInfo | null;
   isLoading: boolean;
   isSaving: boolean;
+  /** When false, disable all tool-setting mutations (e.g., before first message creates a session). */
+  canSave?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
   save: [optionsConfig: AgentSessionOptionsConfig];
 }>();
+
+const canSave = computed(() => props.canSave !== false);
 
 const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
 
@@ -483,6 +487,7 @@ async function handleToggleBrowserTool(
   group: ToolGroupDefinition,
   tool: ToolDefinition,
 ): Promise<void> {
+  if (!canSave.value) return;
   const groupEnabled = !!toolGroups.value?.[group.id];
   if (!groupEnabled) return;
   const currentlyEnabled = isBrowserToolEnabled(group, tool);
@@ -512,6 +517,7 @@ async function loadToolGroups(): Promise<void> {
 }
 
 async function handleToggleToolGroup(groupId: ToolGroupId): Promise<void> {
+  if (!canSave.value) return;
   if (!toolGroups.value) {
     await loadToolGroups();
   }
@@ -530,6 +536,7 @@ async function handleToggleToolGroup(groupId: ToolGroupId): Promise<void> {
 }
 
 async function handleResetToolGroups(): Promise<void> {
+  if (!canSave.value) return;
   toolGroupsBusy.value = true;
   toolGroupsError.value = null;
   try {
@@ -635,6 +642,7 @@ function isAgentGroupEnabled(groupId: string): boolean {
 }
 
 function handleToggleAgentGroup(groupId: string): void {
+  if (!canSave.value) return;
   localAgentGroupEnabled.value = {
     ...localAgentGroupEnabled.value,
     [groupId]: !isAgentGroupEnabled(groupId),
@@ -662,6 +670,7 @@ function isClaudeToolEnabled(tool: string): boolean {
 }
 
 function handleToggleClaudeTool(tool: string): void {
+  if (!canSave.value) return;
   const normalized = String(tool || '').trim();
   if (!normalized) return;
 
@@ -705,6 +714,7 @@ const isClaudeDirty = computed(() => {
 });
 
 function handleRestoreClaudeTools(): void {
+  if (!canSave.value) return;
   localAgentGroupEnabled.value = { runtime: false };
   localClaudeDisallowedTools.value = [...RUNTIME_TOOLS];
   localClaudeSelectedTools.value = [];

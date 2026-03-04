@@ -245,6 +245,7 @@ async function saveGateway(): Promise<void> {
   showToast(t('settingsGatewaySavedNotification'));
 }
 
+// TODO: persist values in SQLite DB
 async function saveEmos(): Promise<void> {
   const base = baseUrl.value.trim();
   const key = apiKey.value.trim();

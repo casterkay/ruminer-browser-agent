@@ -48,11 +48,19 @@
             </span>
             <!-- Model Badge -->
             <span
-              v-if="session.model"
+              v-if="session.engineName !== 'openclaw' && session.model"
               class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded"
               :style="modelBadgeStyle"
             >
               {{ session.model }}
+            </span>
+            <!-- OpenClaw Agent Badge -->
+            <span
+              v-if="session.engineName === 'openclaw' && openclawAgentId"
+              class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+              :style="modelBadgeStyle"
+            >
+              agent:{{ openclawAgentId }}
             </span>
             <!-- Running Badge -->
             <span
@@ -193,6 +201,14 @@ const renameInputRef = ref<HTMLInputElement | null>(null);
 const displayName = computed(() => {
   if (props.session.name) return props.session.name;
   return 'Unnamed Session';
+});
+
+const openclawAgentId = computed(() => {
+  if (props.session.engineName !== 'openclaw') return '';
+  const options: any = props.session.optionsConfig ?? {};
+  const raw = options?.openclaw?.sessionKey ?? options?.openclawSessionKey;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed || 'main';
 });
 
 const engineIconUrl = computed((): string => {

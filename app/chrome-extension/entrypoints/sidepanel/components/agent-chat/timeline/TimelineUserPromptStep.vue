@@ -1,80 +1,82 @@
 <template>
-  <div ref="rootRef" class="py-1 space-y-2">
-    <!-- Text content -->
-    <div
-      v-if="hasText"
-      class="text-sm leading-relaxed markdown-content"
-      :style="{
-        color: 'var(--ac-text)',
-        fontFamily: 'var(--ac-font-body)',
-      }"
-    >
-      <MarkdownRender
-        :content="item.text"
-        :max-live-nodes="0"
-        :render-batch-size="16"
-        :render-batch-delay="8"
-      />
-    </div>
-
-    <!-- Image-only message fallback text -->
-    <span
-      v-else-if="item.attachments.length > 0"
-      class="text-xs italic"
-      :style="{ color: 'var(--ac-text-subtle)' }"
-    >
-      Sent {{ item.attachments.length }} image{{ item.attachments.length === 1 ? '' : 's' }}
-    </span>
-
-    <!-- Attachment thumbnails -->
-    <div v-if="item.attachments.length > 0" class="flex flex-wrap gap-2 mt-2">
-      <button
-        v-for="attachment in item.attachments"
-        :key="`${attachment.messageId}:${attachment.index}`"
-        type="button"
-        class="relative group w-16 h-16 rounded-lg overflow-hidden transition-opacity hover:opacity-90 cursor-pointer"
+  <div ref="rootRef" class="py-1 flex justify-end">
+    <div class="user-message-bubble space-y-2">
+      <!-- Text content -->
+      <div
+        v-if="hasText"
+        class="text-sm leading-relaxed markdown-content"
         :style="{
-          backgroundColor: 'var(--ac-surface-muted)',
-          border: 'var(--ac-border-width) solid var(--ac-border)',
+          color: 'var(--ac-text-inverse, #ffffff)',
+          fontFamily: 'var(--ac-font-body)',
         }"
-        :title="attachment.originalName"
-        @click="openViewer(attachment)"
       >
-        <img
-          v-if="getAttachmentUrl(attachment)"
-          :src="getAttachmentUrl(attachment)!"
-          :alt="attachment.originalName"
-          class="w-full h-full object-cover"
-          loading="lazy"
+        <MarkdownRender
+          :content="item.text"
+          :max-live-nodes="0"
+          :render-batch-size="16"
+          :render-batch-delay="8"
         />
-        <!-- Fallback placeholder when server not ready -->
-        <div
-          v-else
-          class="w-full h-full flex items-center justify-center"
-          :style="{ color: 'var(--ac-text-subtle)' }"
-          title="Server not ready"
-        >
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
-        </div>
+      </div>
 
-        <!-- Filename overlay on hover -->
-        <div
-          class="absolute bottom-0 left-0 right-0 px-0.5 py-0.5 text-[8px] truncate opacity-0 group-hover:opacity-100 transition-opacity"
+      <!-- Image-only message fallback text -->
+      <span
+        v-else-if="item.attachments.length > 0"
+        class="text-xs italic"
+        :style="{ color: 'var(--ac-text-subtle)' }"
+      >
+        Sent {{ item.attachments.length }} image{{ item.attachments.length === 1 ? '' : 's' }}
+      </span>
+
+      <!-- Attachment thumbnails -->
+      <div v-if="item.attachments.length > 0" class="flex flex-wrap gap-2 mt-2">
+        <button
+          v-for="attachment in item.attachments"
+          :key="`${attachment.messageId}:${attachment.index}`"
+          type="button"
+          class="relative group w-16 h-16 rounded-lg overflow-hidden transition-opacity hover:opacity-90 cursor-pointer"
           :style="{
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            color: 'white',
+            backgroundColor: 'var(--ac-surface-muted)',
+            border: 'var(--ac-border-width) solid var(--ac-border)',
           }"
+          :title="attachment.originalName"
+          @click="openViewer(attachment)"
         >
-          {{ attachment.originalName }}
-        </div>
-      </button>
+          <img
+            v-if="getAttachmentUrl(attachment)"
+            :src="getAttachmentUrl(attachment)!"
+            :alt="attachment.originalName"
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
+          <!-- Fallback placeholder when server not ready -->
+          <div
+            v-else
+            class="w-full h-full flex items-center justify-center"
+            :style="{ color: 'var(--ac-text-subtle)' }"
+            title="Server not ready"
+          >
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+
+          <!-- Filename overlay on hover -->
+          <div
+            class="absolute bottom-0 left-0 right-0 px-0.5 py-0.5 text-[8px] truncate opacity-0 group-hover:opacity-100 transition-opacity"
+            :style="{
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              color: 'white',
+            }"
+          >
+            {{ attachment.originalName }}
+          </div>
+        </button>
+      </div>
     </div>
 
     <!-- Image Viewer Modal (teleported to avoid stacking context issues) -->
@@ -214,6 +216,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.user-message-bubble {
+  border-radius: var(--ac-radius-card);
+  padding: 10px 12px;
+  background-color: var(--ac-accent-subtle);
+  background-color: color-mix(in srgb, var(--ac-accent) 50%, transparent);
+  color: var(--ac-text-inverse, #ffffff);
+}
+
+.user-message-bubble :deep(*) {
+  color: inherit;
+}
+
+.markdown-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .markdown-content :deep(pre) {
   background-color: var(--ac-code-bg);
   border: var(--ac-border-width) solid var(--ac-code-border);
@@ -226,6 +246,8 @@ onMounted(() => {
   font-family: var(--ac-font-mono);
   font-size: 0.875em;
   color: var(--ac-code-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-content :deep(p) {
@@ -274,6 +296,9 @@ onMounted(() => {
   border-collapse: collapse;
   margin: 0.5em 0;
   width: 100%;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
 }
 
 .markdown-content :deep(th),

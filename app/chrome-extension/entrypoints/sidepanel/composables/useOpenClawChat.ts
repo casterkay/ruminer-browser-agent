@@ -1,5 +1,5 @@
 import {
-  getEffectiveEnabledToolIds,
+  getEffectiveDisabledToolIds,
   getIndividualToolState,
   getToolGroupState,
   type IndividualToolState,
@@ -428,19 +428,19 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
     toolGroups: ToolGroupState,
     individualToolState?: IndividualToolState | null,
   ): string {
-    const allowedTools = getEffectiveEnabledToolIds(toolGroups, individualToolState ?? null);
+    const disabledTools = getEffectiveDisabledToolIds(toolGroups, individualToolState ?? null);
     const restrictionText =
-      allowedTools.length === 0
+      disabledTools.length === 0
         ? [
             'Tool restrictions (enforced at runtime):',
-            '- No tools are currently allowed.',
+            '- No tools are currently disabled.',
             '',
-            'Ask the user to enable the required tools in Ruminer → Tools before using them.',
+            'If a tool fails at runtime, ask the user to enable it in Ruminer → Tools.',
           ].join('\n')
         : [
             'Tool restrictions (enforced at runtime):',
-            `- Allowed tools: ${allowedTools.join(', ')}`,
-            '- Do not use any other tools.',
+            `- Disabled tools: ${disabledTools.join(', ')}`,
+            '- Do not use any disabled tools.',
             '',
             'Ask the user to enable a tool in Ruminer → Tools before using it.',
           ].join('\n');

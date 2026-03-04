@@ -515,3 +515,31 @@ export function getEffectiveEnabledToolIds(
   enabled.sort();
   return enabled;
 }
+
+export function getPolicyToolCatalogIds(): string[] {
+  const ids = new Set<string>();
+
+  for (const schema of TOOL_SCHEMAS) {
+    if (typeof schema?.name === 'string' && schema.name.length > 0) {
+      ids.add(schema.name);
+    }
+  }
+
+  for (const group of TOOL_GROUP_DEFINITIONS) {
+    for (const tool of group.tools) {
+      if (typeof tool.id === 'string' && tool.id.length > 0) {
+        ids.add(tool.id);
+      }
+    }
+  }
+
+  return Array.from(ids).sort();
+}
+
+export function getEffectiveDisabledToolIds(
+  state: ToolGroupState,
+  individualState?: IndividualToolState | null,
+): string[] {
+  const enabled = new Set(getEffectiveEnabledToolIds(state, individualState ?? null));
+  return getPolicyToolCatalogIds().filter((id) => !enabled.has(id));
+}

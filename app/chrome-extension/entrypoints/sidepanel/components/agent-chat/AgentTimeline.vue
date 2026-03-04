@@ -1,7 +1,7 @@
 <template>
-  <div class="pl-1 space-y-3">
+  <div class="space-y-3">
     <!-- Timeline container -->
-    <div class="relative pl-5 space-y-4 ml-1">
+    <div class="relative space-y-4">
       <AgentTimelineItem
         v-for="(item, index) in items"
         :key="item.id"

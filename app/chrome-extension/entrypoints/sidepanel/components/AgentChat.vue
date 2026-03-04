@@ -78,12 +78,6 @@
             :can-send="chat.canSend.value"
             :placeholder="composerPlaceholder"
             :engine-name="selectedEngineName"
-            :openclaw-agents="openclawAgents"
-            :selected-openclaw-agent-id="currentOpenClawAgentId"
-            :selected-model="currentSessionModel"
-            :available-models="currentAvailableModels"
-            :reasoning-effort="currentReasoningEffort"
-            :available-reasoning-efforts="currentAvailableReasoningEfforts"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
             @update:model-value="chat.input.value = $event"
             @submit="handleSend"
@@ -95,9 +89,6 @@
             @attachment:paste="attachments.handlePaste"
             @attachment:dragover="attachments.handleDragOver"
             @attachment:dragleave="attachments.handleDragLeave"
-            @model:change="handleComposerModelChange"
-            @openclaw-agent:change="handleComposerOpenClawAgentChange"
-            @reasoning-effort:change="handleComposerReasoningEffortChange"
             @tools:open="handleComposerOpenTools"
             @session:reset="handleComposerReset"
           />
@@ -166,8 +157,10 @@
     <!-- Session Settings Panel -->
     <AgentSessionSettingsPanel
       :open="sessionSettingsOpen"
-      :session="sessions.selectedSession.value"
+      :session="sessionForPanels"
       :management-info="currentManagementInfo"
+      :openclaw-agents="openclawAgents"
+      :selected-openclaw-agent-id="currentOpenClawAgentId"
       :is-loading="sessionSettingsLoading"
       :is-saving="sessionSettingsSaving"
       @close="handleCloseSessionSettings"
@@ -176,16 +169,36 @@
 
     <AgentToolSelectionPanel
       :open="toolSelectionOpen"
-      :session="sessions.selectedSession.value"
+      :session="sessionForPanels"
       :management-info="currentManagementInfo"
       :is-loading="toolSelectionLoading"
       :is-saving="toolSelectionSaving"
+      :can-save="hasSession"
       @close="handleCloseToolSelection"
       @save="handleSaveToolSelection"
     />
 
     <!-- Attachment Cache Panel -->
     <AttachmentCachePanel :open="attachmentCacheOpen" @close="handleCloseAttachmentCache" />
+
+    <!-- Toast (in-app notifications) -->
+    <transition name="agent-toast">
+      <div
+        v-if="toastMessage"
+        class="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-[520px] px-3 py-2 text-xs"
+        :style="{
+          backgroundColor: 'var(--ac-surface, #ffffff)',
+          border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+          borderRadius: 'var(--ac-radius-card, 12px)',
+          boxShadow: 'var(--ac-shadow-float, 0 4px 20px -2px rgba(0,0,0,0.15))',
+          color: 'var(--ac-text, #1a1a1a)',
+        }"
+        role="status"
+        aria-live="polite"
+      >
+        {{ toastMessage }}
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -196,6 +209,7 @@ import type {
   AgentMessage,
   CodexReasoningEffort,
   AgentManagementInfo,
+  AgentSession,
   AgentSessionOptionsConfig,
   OpenClawAgentDto,
 } from 'chrome-mcp-shared';
@@ -259,6 +273,20 @@ const useCcr = ref(false);
 const enableChromeMcp = ref(true);
 const isSavingPreference = ref(false);
 
+// Toast state (in-app notifications; avoid alert())
+const toastMessage = ref('');
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(message: string): void {
+  toastMessage.value = String(message || '').trim();
+  if (!toastMessage.value) return;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastTimer = null;
+    toastMessage.value = '';
+  }, 2600);
+}
+
 /**
  * Get normalized model value that is valid for the current CLI.
  * Returns empty string if:
@@ -306,6 +334,9 @@ const toolSelectionOpen = ref(false);
 const toolSelectionLoading = ref(false);
 const toolSelectionSaving = ref(false);
 const currentManagementInfo = ref<AgentManagementInfo | null>(null);
+
+// Draft session settings (used in new-chat state before a session is created on first send)
+const draftSessionSettings = ref<SessionSettings | null>(null);
 
 // Attachment cache panel state
 const attachmentCacheOpen = ref(false);
@@ -626,6 +657,37 @@ const currentAvailableReasoningEfforts = computed(() => {
   return getCodexReasoningEfforts(effectiveModel);
 });
 
+const sessionForPanels = computed<AgentSession | null>(() => {
+  if (hasSession.value) return sessions.selectedSession.value;
+  if (!viewRoute.isChatView.value) return null;
+
+  const projectId = projects.selectedProjectId.value || '';
+  const now = new Date().toISOString();
+  const draft = draftSessionSettings.value;
+  const draftModel = draft?.model?.trim() || '';
+  const engineName = selectedEngineName.value as AgentSession['engineName'];
+
+  const modelForUi =
+    draftModel || getNormalizedModel() || (engineName ? getDefaultModelForCli(engineName) : '');
+  return {
+    id: '__new__',
+    projectId,
+    engineName,
+    engineSessionId: undefined,
+    name: undefined,
+    preview: undefined,
+    previewMeta: undefined,
+    model: modelForUi,
+    permissionMode: draft?.permissionMode || 'default',
+    allowDangerouslySkipPermissions: false,
+    systemPromptConfig: draft?.systemPromptConfig ?? null,
+    optionsConfig: draft?.optionsConfig,
+    managementInfo: undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
+});
+
 // ============================================================
 // OpenClaw Agents (per-session sessionKey)
 // ============================================================
@@ -636,7 +698,9 @@ const openclawAgentsError = ref<string | null>(null);
 
 const currentOpenClawAgentId = computed(() => {
   const session = sessions.selectedSession.value;
-  const options: any = session?.optionsConfig ?? {};
+  const options: any = hasSession.value
+    ? (session?.optionsConfig ?? {})
+    : (draftSessionSettings.value?.optionsConfig ?? {});
   const raw = options?.openclaw?.sessionKey ?? options?.openclawSessionKey;
   return typeof raw === 'string' && raw.trim() ? raw.trim() : 'main';
 });
@@ -699,7 +763,7 @@ async function fetchOpenClawAgents(): Promise<void> {
 }
 
 watch(
-  [currentEngineName, () => server.serverPort.value],
+  [selectedEngineName, () => server.serverPort.value],
   ([engineName]) => {
     if (engineName !== 'openclaw') return;
     ensureOpenClawAgentOption(currentOpenClawAgentId.value);
@@ -851,7 +915,7 @@ async function handleSessionOpenProject(sessionId: string): Promise<void> {
     // User has default preference, open directly
     const result = await openProjectPreference.openBySession(sessionId, defaultTarget);
     if (!result.success) {
-      alert(`Failed to open project: ${result.error}`);
+      showToast(`Failed to open project: ${result.error}`);
     }
   } else {
     // No default, show menu
@@ -889,7 +953,7 @@ async function handleOpenProjectSelect(target: OpenProjectTarget): Promise<void>
   }
 
   if (!result.success) {
-    alert(`Failed to open project: ${result.error}`);
+    showToast(`Failed to open project: ${result.error}`);
   }
 }
 
@@ -974,7 +1038,6 @@ async function handleOpenSessionSettings(sessionId: string): Promise<void> {
 
 async function handleOpenToolSelection(): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
-  if (!sessionId) return;
 
   closeMenus();
   toolSelectionOpen.value = true;
@@ -982,8 +1045,8 @@ async function handleOpenToolSelection(): Promise<void> {
   currentManagementInfo.value = null;
 
   try {
-    const session = sessions.sessions.value.find((s) => s.id === sessionId);
-    if (session?.engineName === 'claude') {
+    const session = sessionId ? sessions.sessions.value.find((s) => s.id === sessionId) : null;
+    if (sessionId && session?.engineName === 'claude') {
       const info = await sessions.fetchClaudeInfo(sessionId);
       if (info) {
         currentManagementInfo.value = info.managementInfo;
@@ -1004,44 +1067,19 @@ async function handleResetSession(sessionId: string): Promise<void> {
   }
 }
 
-// Composer direct model/reasoning effort change handlers
-async function handleComposerModelChange(modelId: string): Promise<void> {
-  const sessionId = sessions.selectedSessionId.value;
-  if (!sessionId || !hasSession.value) {
-    model.value = modelId || '';
-    return;
-  }
-
-  await sessions.updateSession(sessionId, { model: modelId || null });
-}
-
-async function handleComposerReasoningEffortChange(effort: CodexReasoningEffort): Promise<void> {
-  const sessionId = sessions.selectedSessionId.value;
-  const session = sessions.selectedSession.value;
-  if (!sessionId || !hasSession.value || !session) {
-    reasoningEffort.value = effort;
-    return;
-  }
-
-  const existingOptions = session.optionsConfig ?? {};
-  const existingCodexConfig = existingOptions.codexConfig ?? {};
-  await sessions.updateSession(sessionId, {
-    optionsConfig: {
-      ...existingOptions,
-      codexConfig: {
-        ...existingCodexConfig,
-        reasoningEffort: effort,
-      },
-    },
-  });
-}
-
 // Composer session settings/reset handlers (without sessionId parameter)
 function handleComposerOpenSettings(): void {
   const sessionId = sessions.selectedSessionId.value;
   if (sessionId) {
     handleOpenSessionSettings(sessionId);
+    return;
   }
+
+  // Sessionless new chat: allow viewing settings, but don't save.
+  closeMenus();
+  sessionSettingsOpen.value = true;
+  sessionSettingsLoading.value = false;
+  currentManagementInfo.value = null;
 }
 
 function handleTopBarOpenSettings(): void {
@@ -1071,7 +1109,14 @@ function handleCloseToolSelection(): void {
 
 async function handleSaveSessionSettings(settings: SessionSettings): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
-  if (!sessionId) return;
+  if (!sessionId) {
+    // New chat (no session yet): store as draft, apply on first send.
+    draftSessionSettings.value = settings;
+    sessionSettingsOpen.value = false;
+    currentManagementInfo.value = null;
+    showToast('Send your first message to start the session, then settings will be applied.');
+    return;
+  }
 
   sessionSettingsSaving.value = true;
   try {
@@ -1451,28 +1496,6 @@ async function handleAttachmentScreenshot(): Promise<void> {
   }
 }
 
-async function handleComposerOpenClawAgentChange(agentId: string): Promise<void> {
-  const sessionId = sessions.selectedSessionId.value;
-  const session = sessions.selectedSession.value;
-  if (!sessionId || !session) return;
-  if (session.engineName !== 'openclaw') return;
-
-  const nextId = (agentId || '').trim();
-  if (!nextId) return;
-
-  const existingOptions: any = session.optionsConfig ?? {};
-  const existingOpenClaw: any = existingOptions.openclaw ?? {};
-  await sessions.updateSession(sessionId, {
-    optionsConfig: {
-      ...existingOptions,
-      openclaw: {
-        ...existingOpenClaw,
-        sessionKey: nextId,
-      },
-    },
-  });
-}
-
 async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
   if (!canPickEngine.value) return;
 
@@ -1505,25 +1528,53 @@ async function handleSend(): Promise<void> {
         | 'qwen'
         | 'glm') || 'openclaw';
 
-    const optionsConfig =
-      typedEngineName === 'codex'
-        ? {
-            codexConfig: {
-              reasoningEffort: getNormalizedReasoningEffort(),
-            },
-          }
-        : typedEngineName === 'claude'
-          ? {
-              tools: { type: 'preset', preset: 'claude_code' },
-            }
-          : undefined;
+    const draft = draftSessionSettings.value;
+    const draftOptions = draft?.optionsConfig;
 
-    const normalizedModel = getNormalizedModel();
+    const optionsConfig: AgentSessionOptionsConfig | undefined = (() => {
+      const base = draftOptions ? { ...draftOptions } : undefined;
+
+      if (typedEngineName === 'codex') {
+        const existingCodex = base?.codexConfig ?? {};
+        return {
+          ...(base ?? {}),
+          codexConfig: {
+            ...existingCodex,
+            reasoningEffort: existingCodex.reasoningEffort ?? getNormalizedReasoningEffort(),
+          },
+        };
+      }
+
+      if (typedEngineName === 'claude') {
+        // Default to Claude Code preset tools unless user explicitly overrides.
+        if (base?.tools) return base;
+        return { ...(base ?? {}), tools: { type: 'preset', preset: 'claude_code' } };
+      }
+
+      if (typedEngineName === 'openclaw') {
+        const existingOpenClaw = (base as any)?.openclaw ?? {};
+        const sessionKey =
+          (existingOpenClaw?.sessionKey as string | undefined) || currentOpenClawAgentId.value;
+        return {
+          ...(base ?? {}),
+          openclaw: {
+            ...existingOpenClaw,
+            sessionKey: sessionKey || 'main',
+          },
+        };
+      }
+
+      return base;
+    })();
+
+    const normalizedModel = (draft?.model || '').trim() || getNormalizedModel();
 
     const created = await sessions.createSession(projectId, {
       engineName: typedEngineName,
       name: `Session ${sessions.sessions.value.length + 1}`,
       model: normalizedModel || undefined,
+      permissionMode: (draft?.permissionMode || '').trim() || undefined,
+      systemPromptConfig: draft?.systemPromptConfig ?? undefined,
       optionsConfig,
     });
 
@@ -1534,6 +1585,7 @@ async function handleSend(): Promise<void> {
 
     dbSessionId = created.id;
     viewRoute.setSessionId(created.id);
+    draftSessionSettings.value = null; // Clear draft after session created
   }
 
   // Capture input before clearing for preview update
@@ -1805,5 +1857,24 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscape);
   emosSuggestions.clear();
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
 });
 </script>
+
+<style scoped>
+.agent-toast-enter-active,
+.agent-toast-leave-active {
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+}
+
+.agent-toast-enter-from,
+.agent-toast-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+</style>

@@ -257,6 +257,25 @@ export async function setEmosSettings(
     userId: patch.userId ?? current.userId,
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.EMOS_SETTINGS]: next });
+
+  // Best-effort: persist EverMemOS settings into OpenClaw's evermemos plugin config.
+  // This is intentionally non-blocking so the UI can still save local settings even
+  // when native-server/OpenClaw isn't available.
+  try {
+    const port = await getNativeServerPort();
+    await fetch(`http://127.0.0.1:${port}/agent/openclaw/plugins/evermemos/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        evermemosBaseUrl: next.baseUrl,
+        apiKey: next.apiKey,
+        defaultUserId: next.userId,
+      }),
+    });
+  } catch {
+    // ignore
+  }
+
   return next;
 }
 

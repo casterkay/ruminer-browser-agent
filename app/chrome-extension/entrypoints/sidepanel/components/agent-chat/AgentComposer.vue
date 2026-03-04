@@ -154,92 +154,6 @@
             <ILucidePaperclip class="w-4 h-4" />
           </button>
 
-          <!-- OpenClaw Agent Selector (auto-width) -->
-          <div
-            v-if="isOpenClawEngine && (openclawAgents?.length || 0) > 0"
-            class="relative"
-            data-tooltip="Switch agent"
-          >
-            <span
-              ref="openclawAgentWidthRef"
-              class="invisible absolute whitespace-nowrap px-1.5 text-[10px]"
-              :style="{ fontFamily: 'var(--ac-font-mono)' }"
-            >
-              {{ selectedOpenClawAgentName }}
-            </span>
-            <select
-              :value="selectedOpenclawAgentId"
-              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
-              :style="{
-                color: 'var(--ac-text-muted)',
-                fontFamily: 'var(--ac-font-mono)',
-                width: openclawAgentSelectWidth,
-                borderRadius: 'var(--ac-radius-button)',
-              }"
-              @change="handleOpenClawAgentChange"
-            >
-              <option v-for="a in openclawAgents" :key="a.id" :value="a.id">
-                {{ a.name || a.id }}
-              </option>
-            </select>
-            <ILucideChevronDown
-              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
-              :style="{ color: 'var(--ac-text-subtle)' }"
-            />
-          </div>
-
-          <!-- Model Selector (auto-width) -->
-          <div v-if="availableModels.length > 0" class="relative" data-tooltip="Switch model">
-            <!-- Hidden span to measure text width -->
-            <span
-              ref="modelWidthRef"
-              class="invisible absolute whitespace-nowrap px-1.5 text-[10px]"
-              :style="{ fontFamily: 'var(--ac-font-mono)' }"
-            >
-              {{ selectedModelName }}
-            </span>
-            <select
-              :value="selectedModel"
-              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
-              :style="{
-                color: 'var(--ac-text-muted)',
-                fontFamily: 'var(--ac-font-mono)',
-                width: modelSelectWidth,
-                borderRadius: 'var(--ac-radius-button)',
-              }"
-              @change="handleModelChange"
-            >
-              <option v-for="m in availableModels" :key="m.id" :value="m.id">
-                {{ m.name }}
-              </option>
-            </select>
-            <!-- Dropdown arrow -->
-            <ILucideChevronDown
-              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
-              :style="{ color: 'var(--ac-text-subtle)' }"
-            />
-          </div>
-
-          <!-- Reasoning Effort (Codex only) -->
-          <select
-            v-if="
-              isCodexEngine && availableReasoningEfforts && availableReasoningEfforts.length > 0
-            "
-            :value="reasoningEffort"
-            class="px-1.5 py-0.5 text-[10px] border-none bg-transparent cursor-pointer"
-            :style="{
-              color: 'var(--ac-text-muted)',
-              fontFamily: 'var(--ac-font-mono)',
-              borderRadius: 'var(--ac-radius-button)',
-            }"
-            data-tooltip="Reasoning effort"
-            @change="handleReasoningEffortChange"
-          >
-            <option v-for="effort in availableReasoningEfforts" :key="effort" :value="effort">
-              {{ effort }}
-            </option>
-          </select>
-
           <!-- Tools Button -->
           <button
             class="p-1 ac-btn"
@@ -316,54 +230,6 @@
             <ILucidePaperclip class="w-4 h-4" />
           </button>
 
-          <!-- OpenClaw Agent Selector -->
-          <div
-            v-if="isOpenClawEngine && (openclawAgents?.length || 0) > 0"
-            class="relative"
-            data-tooltip="Switch agent"
-          >
-            <select
-              :value="selectedOpenclawAgentId"
-              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
-              :style="{
-                color: 'var(--ac-text-muted)',
-                fontFamily: 'var(--ac-font-mono)',
-                borderRadius: 'var(--ac-radius-button)',
-              }"
-              @change="handleOpenClawAgentChange"
-            >
-              <option v-for="a in openclawAgents" :key="a.id" :value="a.id">
-                {{ a.name || a.id }}
-              </option>
-            </select>
-            <ILucideChevronDown
-              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
-              :style="{ color: 'var(--ac-text-subtle)' }"
-            />
-          </div>
-
-          <!-- Model Selector -->
-          <div v-if="availableModels.length > 0" class="relative" data-tooltip="Switch model">
-            <select
-              :value="selectedModel"
-              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
-              :style="{
-                color: 'var(--ac-text-muted)',
-                fontFamily: 'var(--ac-font-mono)',
-                borderRadius: 'var(--ac-radius-button)',
-              }"
-              @change="handleModelChange"
-            >
-              <option v-for="m in availableModels" :key="m.id" :value="m.id">
-                {{ m.name }}
-              </option>
-            </select>
-            <ILucideChevronDown
-              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
-              :style="{ color: 'var(--ac-text-subtle)' }"
-            />
-          </div>
-
           <!-- Status Text -->
           <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
             <span
@@ -381,8 +247,7 @@
 
 <script lang="ts" setup>
 import { ref, computed, watch, nextTick, toRef } from 'vue';
-import type { CodexReasoningEffort, OpenClawAgentDto } from 'chrome-mcp-shared';
-import type { ModelDefinition } from '@/common/agent-models';
+import type { CodexReasoningEffort } from 'chrome-mcp-shared';
 import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import type { RequestState } from '../../composables/useAgentChat';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
@@ -412,16 +277,7 @@ const props = defineProps<{
   canCancel: boolean;
   canSend: boolean;
   placeholder?: string;
-  // Model selection props
   engineName?: string;
-  selectedModel: string;
-  availableModels: ModelDefinition[];
-  // OpenClaw agent selection props
-  openclawAgents?: OpenClawAgentDto[];
-  selectedOpenclawAgentId?: string;
-  // Codex reasoning effort props
-  reasoningEffort?: CodexReasoningEffort;
-  availableReasoningEfforts?: readonly CodexReasoningEffort[];
   // Fake caret feature flag
   enableFakeCaret?: boolean;
 }>();
@@ -439,7 +295,6 @@ const isRequestActive = computed(() => {
 });
 
 const isCodexEngine = computed(() => props.engineName === 'codex');
-const isOpenClawEngine = computed(() => props.engineName === 'openclaw');
 
 // Image upload is supported for Claude, Codex, and OpenClaw engines
 const supportsImages = computed(() => {
@@ -448,51 +303,6 @@ const supportsImages = computed(() => {
 });
 
 // Model selector auto-width
-const modelWidthRef = ref<HTMLSpanElement | null>(null);
-const modelSelectWidth = ref('auto');
-
-// OpenClaw agent selector auto-width
-const openclawAgentWidthRef = ref<HTMLSpanElement | null>(null);
-const openclawAgentSelectWidth = ref('auto');
-
-const selectedModelName = computed(() => {
-  const model = props.availableModels.find((m) => m.id === props.selectedModel);
-  return model?.name || props.selectedModel || '';
-});
-
-const selectedOpenClawAgentName = computed(() => {
-  const selectedId = (props.selectedOpenclawAgentId || '').trim();
-  if (!selectedId) return '';
-  const agent = (props.openclawAgents || []).find((a) => a.id === selectedId);
-  return agent?.name || agent?.id || selectedId;
-});
-
-// Update width when model changes
-watch(
-  [selectedModelName, () => props.availableModels],
-  async () => {
-    await nextTick();
-    if (modelWidthRef.value) {
-      const width = modelWidthRef.value.offsetWidth;
-      // Add extra space for dropdown arrow (16px)
-      modelSelectWidth.value = `${width + 16}px`;
-    }
-  },
-  { immediate: true },
-);
-
-// Update width when OpenClaw agent changes
-watch(
-  [selectedOpenClawAgentName, () => props.openclawAgents],
-  async () => {
-    await nextTick();
-    if (openclawAgentWidthRef.value) {
-      const width = openclawAgentWidthRef.value.offsetWidth;
-      openclawAgentSelectWidth.value = `${Math.max(width + 16, 48)}px`;
-    }
-  },
-  { immediate: true },
-);
 
 const statusText = computed(() => {
   if (props.sending) return 'Sending...';
@@ -575,9 +385,6 @@ const emit = defineEmits<{
   'attachment:paste': [event: ClipboardEvent];
   'attachment:dragover': [event: DragEvent];
   'attachment:dragleave': [event: DragEvent];
-  'model:change': [modelId: string];
-  'openclaw-agent:change': [agentId: string];
-  'reasoning-effort:change': [effort: CodexReasoningEffort];
   'tools:open': [];
   'session:reset': [];
 }>();
@@ -662,21 +469,6 @@ function handlePrimaryAction(): void {
   } else {
     handleSubmit();
   }
-}
-
-function handleModelChange(event: Event): void {
-  const modelId = (event.target as HTMLSelectElement).value;
-  emit('model:change', modelId);
-}
-
-function handleOpenClawAgentChange(event: Event): void {
-  const agentId = (event.target as HTMLSelectElement).value;
-  emit('openclaw-agent:change', agentId);
-}
-
-function handleReasoningEffortChange(event: Event): void {
-  const effort = (event.target as HTMLSelectElement).value as CodexReasoningEffort;
-  emit('reasoning-effort:change', effort);
 }
 
 function handleReset(): void {

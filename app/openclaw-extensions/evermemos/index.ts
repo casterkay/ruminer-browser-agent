@@ -64,6 +64,9 @@ function buildPayload(
 }
 
 async function postToEverMem(cfg: PluginConfig, body: EverMemSingleMessage): Promise<Response> {
+  if (!cfg.evermemosBaseUrl || !cfg.apiKey) {
+    throw new Error('EverMemOS plugin is not configured (missing evermemosBaseUrl/apiKey)');
+  }
   const url = `${cfg.evermemosBaseUrl.replace(/\/$/, '')}/api/v1/memories`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -75,6 +78,9 @@ async function postToEverMem(cfg: PluginConfig, body: EverMemSingleMessage): Pro
 }
 
 async function searchEverMem(cfg: PluginConfig, body: SearchMemPayload): Promise<any> {
+  if (!cfg.evermemosBaseUrl || !cfg.apiKey) {
+    throw new Error('EverMemOS plugin is not configured (missing evermemosBaseUrl/apiKey)');
+  }
   const url = `${cfg.evermemosBaseUrl.replace(/\/$/, '')}/api/v1/memories/search`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -130,23 +136,33 @@ export default function register(api: OpenClawPluginApi) {
   const queue = new PersistentQueue(queueDir);
   const backlogWarn = cfg.backlogWarning ?? 100;
 
-  api.on('message_received', async (ev, ctx) => {
-    const payload = buildPayload(cfg, ev, ctx);
-    try {
-      const res = await postToEverMem(cfg, payload);
-      if (!res.ok) {
+  const isConfigured = !!(cfg.evermemosBaseUrl && cfg.apiKey);
+  if (!isConfigured) {
+    api.logger.warn(
+      'evermemos plugin is installed but not configured; set plugins.entries.evermemos.config.evermemosBaseUrl and apiKey',
+    );
+  }
+
+  if (isConfigured) {
+    api.on('message_received', async (ev, ctx) => {
+      const payload = buildPayload(cfg, ev, ctx);
+      try {
+        const res = await postToEverMem(cfg, payload);
+        if (!res.ok) {
+          await queue.enqueue(payload);
+          api.logger.warn('EverMemOS POST non-200, queued', { status: res.status });
+        }
+      } catch (err) {
         await queue.enqueue(payload);
-        api.logger.warn('EverMemOS POST non-200, queued', { status: res.status });
+        api.logger.warn('EverMemOS POST error, queued', { err: String(err) });
       }
-    } catch (err) {
-      await queue.enqueue(payload);
-      api.logger.warn('EverMemOS POST error, queued', { err: String(err) });
-    }
-  });
+    });
+  }
 
   api.registerService({
     id: 'evermemos-retry',
     start: async () => {
+      if (!isConfigured) return;
       void processQueue(queue, cfg, api.logger);
       startRetryLoop(queue, cfg, api);
     },
@@ -159,12 +175,23 @@ export default function register(api: OpenClawPluginApi) {
     queue
       .list()
       .then((files) => {
-        respond(true, { pending: files.length });
+        respond(true, {
+          configured: isConfigured,
+          pending: files.length,
+          evermemosBaseUrl: cfg.evermemosBaseUrl || null,
+        });
       })
       .catch((err) => respond(false, { error: String(err) }));
   });
 
   api.registerGatewayMethod('evermemos.addMemory', ({ payload, respond }) => {
+    if (!isConfigured) {
+      respond(false, {
+        error:
+          'EverMemOS plugin is not configured. Set plugins.entries.evermemos.config.evermemosBaseUrl and apiKey.',
+      });
+      return;
+    }
     const body = (payload || {}) as AddMemoryPayload;
     if (!body.message_id || !body.create_time || !body.sender || !body.content) {
       respond(false, {
@@ -182,6 +209,13 @@ export default function register(api: OpenClawPluginApi) {
   });
 
   api.registerGatewayMethod('evermemos.searchMemory', ({ payload, respond }) => {
+    if (!isConfigured) {
+      respond(false, {
+        error:
+          'EverMemOS plugin is not configured. Set plugins.entries.evermemos.config.evermemosBaseUrl and apiKey.',
+      });
+      return;
+    }
     const body = (payload || {}) as SearchMemPayload;
     if (!body.query) {
       respond(false, { error: 'Missing required field: query' });

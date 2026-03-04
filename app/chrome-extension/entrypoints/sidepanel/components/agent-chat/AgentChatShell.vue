@@ -15,7 +15,7 @@
     <!-- Content Area -->
     <main
       ref="contentRef"
-      class="flex-1 overflow-y-auto ac-scroll"
+      class="flex-1 overflow-y-auto overflow-x-hidden ac-scroll"
       :style="{
         paddingBottom: composerHeight + 'px',
       }"

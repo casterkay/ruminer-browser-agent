@@ -62,7 +62,14 @@
             >
               Session Info
             </label>
-            <div class="text-xs space-y-1" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+            <div
+              class="text-xs space-y-1 p-2 mt-2"
+              :style="{
+                color: 'var(--ac-text, #1a1a1a)',
+                backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
+                borderRadius: 'var(--ac-radius-inner, 8px)',
+              }"
+            >
               <div class="flex justify-between">
                 <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Engine</span>
                 <span
@@ -76,7 +83,14 @@
                   {{ session?.engineName || 'Unknown' }}
                 </span>
               </div>
-              <div v-if="localModel" class="flex justify-between">
+              <div v-if="isOpenClawEngine && localOpenClawAgentId" class="flex justify-between">
+                <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Agent</span>
+                <span class="font-mono text-[10px]">{{ localOpenClawAgentId }}</span>
+              </div>
+              <div
+                v-if="localModel && (isClaudeEngine || isCodexEngine)"
+                class="flex justify-between"
+              >
                 <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Model</span>
                 <span class="font-mono text-[10px]">{{ localModel }}</span>
               </div>
@@ -97,20 +111,13 @@
             >
               EverMemOS
             </label>
-            <div
-              class="flex items-start justify-between gap-3 p-3"
-              :style="{
-                backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
-                borderRadius: 'var(--ac-radius-inner, 8px)',
-              }"
-            >
+            <div class="flex items-start justify-between gap-3 p-2 -mb-2">
               <div class="min-w-0">
                 <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
                   Save Conversation to EverMemOS
                 </div>
                 <div class="text-[10px] mt-0.5" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                  When enabled, user + assistant chat messages in this session are automatically
-                  saved.
+                  When enabled, chat messages in this session are automatically saved to EverMemOS.
                 </div>
               </div>
 
@@ -135,8 +142,8 @@
             </div>
           </div>
 
-          <!-- Model Selection -->
-          <div class="space-y-2">
+          <!-- Model Selection (not applicable to OpenClaw) -->
+          <div v-if="!isOpenClawEngine" class="space-y-2">
             <label
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
@@ -145,7 +152,7 @@
             </label>
             <select
               v-model="localModel"
-              class="w-full px-2 py-1.5 text-xs"
+              class="w-full px-2 py-1.5 mt-2 text-xs"
               :style="{
                 backgroundColor: 'var(--ac-surface, #ffffff)',
                 border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
@@ -153,9 +160,32 @@
                 color: 'var(--ac-text, #1a1a1a)',
               }"
             >
-              <option value="">Default (server setting)</option>
               <option v-for="m in availableModels" :key="m.id" :value="m.id">
                 {{ m.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- OpenClaw Agent (OpenClaw only) -->
+          <div v-if="isOpenClawEngine && (openclawAgents?.length || 0) > 0" class="space-y-2">
+            <label
+              class="text-[10px] font-bold uppercase tracking-wider"
+              :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
+            >
+              OpenClaw Agent
+            </label>
+            <select
+              v-model="localOpenClawAgentId"
+              class="w-full px-2 py-1.5 mt-2 text-xs"
+              :style="{
+                backgroundColor: 'var(--ac-surface, #ffffff)',
+                border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+                borderRadius: 'var(--ac-radius-button, 8px)',
+                color: 'var(--ac-text, #1a1a1a)',
+              }"
+            >
+              <option v-for="a in openclawAgents" :key="a.id" :value="a.id">
+                {{ a.name || a.id }}
               </option>
             </select>
           </div>
@@ -170,7 +200,7 @@
             </label>
             <select
               v-model="localReasoningEffort"
-              class="w-full px-2 py-1.5 text-xs"
+              class="w-full px-2 py-1.5 mt-2 text-xs"
               :style="{
                 backgroundColor: 'var(--ac-surface, #ffffff)',
                 border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
@@ -200,7 +230,7 @@
             </label>
             <select
               v-model="localPermissionMode"
-              class="w-full px-2 py-1.5 text-xs"
+              class="w-full px-2 py-1.5 mt-2 text-xs"
               :style="{
                 backgroundColor: 'var(--ac-surface, #ffffff)',
                 border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
@@ -216,7 +246,7 @@
               <option value="dontAsk">dontAsk - No confirmation</option>
             </select>
             <p class="text-[10px]" :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }">
-              Controls how the Claude SDK handles tool approval requests.
+              Controls how the system handles tool approval requests.
             </p>
           </div>
 
@@ -228,7 +258,7 @@
             >
               System Prompt
             </label>
-            <div class="space-y-2">
+            <div class="space-y-2 mt-2">
               <label class="flex items-center gap-2 text-xs cursor-pointer">
                 <input
                   type="radio"
@@ -285,7 +315,7 @@
           </div>
 
           <!-- Management Info (Claude only, read-only) -->
-          <div v-if="isClaudeEngine && managementInfo" class="space-y-2">
+          <div v-if="isClaudeEngine && managementInfo" class="space-y-2 mt-2">
             <label
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
@@ -422,6 +452,7 @@ import type {
   AgentSystemPromptConfig,
   CodexReasoningEffort,
   AgentSessionOptionsConfig,
+  OpenClawAgentDto,
 } from 'chrome-mcp-shared';
 import {
   getModelsForCli,
@@ -433,6 +464,8 @@ const props = defineProps<{
   open: boolean;
   session: AgentSession | null;
   managementInfo: AgentManagementInfo | null;
+  openclawAgents?: OpenClawAgentDto[];
+  selectedOpenclawAgentId?: string;
   isLoading: boolean;
   isSaving: boolean;
 }>();
@@ -453,7 +486,8 @@ export interface SessionSettings {
 const localModel = ref('');
 const localPermissionMode = ref('');
 const localReasoningEffort = ref<CodexReasoningEffort>('medium');
-const localSaveConversationToEverMemOS = ref(true);
+const localSaveConversationToEverMemOS = ref(false);
+const localOpenClawAgentId = ref('main');
 const localUseCustomPrompt = ref(false);
 const localCustomPrompt = ref('');
 const localAppendToPrompt = ref(false);
@@ -473,6 +507,7 @@ function toggleStyle(enabled: boolean) {
 // Computed
 const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
 const isCodexEngine = computed(() => props.session?.engineName === 'codex');
+const isOpenClawEngine = computed(() => props.session?.engineName === 'openclaw');
 
 // Get available reasoning efforts based on selected model
 const availableReasoningEfforts = computed<readonly CodexReasoningEffort[]>(() => {
@@ -502,7 +537,10 @@ watch(
       localModel.value = session.model || '';
       localPermissionMode.value = session.permissionMode || '';
       localSaveConversationToEverMemOS.value =
-        session.optionsConfig?.saveConversationToEverMemOS !== false;
+        session.optionsConfig?.saveConversationToEverMemOS === true;
+
+      const selectedAgent = (props.selectedOpenclawAgentId || '').trim();
+      localOpenClawAgentId.value = selectedAgent || localOpenClawAgentId.value || 'main';
 
       // Initialize reasoning effort from session's codex config
       const codexConfig = session.optionsConfig?.codexConfig;
@@ -533,6 +571,16 @@ watch(
         localPromptAppend.value = '';
       }
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.selectedOpenclawAgentId,
+  (next) => {
+    const trimmed = (next || '').trim();
+    if (!trimmed) return;
+    localOpenClawAgentId.value = trimmed;
   },
   { immediate: true },
 );
@@ -584,6 +632,9 @@ function handleSave(): void {
 
   const existingOptions = props.session?.optionsConfig ?? {};
   const existingCodexConfig = existingOptions.codexConfig ?? {};
+  const existingOpenClaw = existingOptions.openclaw ?? {};
+
+  const openclawAgentId = localOpenClawAgentId.value.trim();
 
   const optionsConfig: AgentSessionOptionsConfig = {
     ...existingOptions,
@@ -593,6 +644,14 @@ function handleSave(): void {
           codexConfig: {
             ...existingCodexConfig,
             reasoningEffort: normalizedReasoningEffort.value,
+          },
+        }
+      : {}),
+    ...(isOpenClawEngine.value && openclawAgentId
+      ? {
+          openclaw: {
+            ...existingOpenClaw,
+            sessionKey: openclawAgentId,
           },
         }
       : {}),
