@@ -1,92 +1,105 @@
-# Contract — Tool Groups (prompt + runtime enforcement)
+# Contract — Tool Selection (prompt allowlist + runtime enforcement)
 
-Tool groups define permission boundaries for browser actions. Ruminer enforces them in **two
-layers**, both inside the extension:
+Tool selection is the user-controlled permission boundary for browser automation tools. Ruminer
+enforces it in **two layers**, both inside the extension:
 
-1. **Prompt layer** (soft): sidepanel chat prepends instructions to `chat.send`
-2. **Runtime layer** (hard): background script tool executor rejects MCP tool calls for disabled groups
+1. **Prompt layer (soft)**: when the sidepanel sends `chat.send` to OpenClaw, it prepends a system
+   instruction that includes an **allowlist** of browser tools currently enabled.
+2. **Runtime layer (hard)**: the extension background rejects MCP tool calls that are not allowed by
+   the current selection.
 
-All browser tools including RR‑V3 are exposed via MCP on the native server. The `browser-ext`
-OpenClaw plugin must remain unaware of tool groups.
+OpenClaw’s `mcp-client` plugin and Ruminer’s native server do **not** enforce tool selection. The
+extension background is the source of truth for enforcement.
 
-## 1) Groups and defaults
+---
+
+## 1) UI model: groups + per-tool overrides
+
+Ruminer exposes tool selection as:
+
+- **Tool groups** (coarse toggles): `observe | navigate | interact | execute | workflow`
+- **Per-tool overrides** (fine toggles): disable individual tool IDs within enabled groups
+
+Default group state:
 
 | Group    | Default | Description                                  |
 | -------- | ------- | -------------------------------------------- |
-| Observe  | On      | Read-only (snapshots, list tabs, history…)   |
+| Observe  | On      | Read-only (snapshot, list tabs, history…)    |
 | Navigate | On      | Change active tab/page (navigate/open/close) |
-| Interact | Off     | DOM manipulation (click/type/scroll/dialogs) |
-| Execute  | Off     | Code/network/file I/O (cookie network, JS)   |
-| Workflow | On      | RR‑V3 flow/trigger/run management            |
+| Interact | Off     | DOM interaction (click/type/dialogs)         |
+| Execute  | Off     | Script/network/file-like actions             |
+| Workflow | On      | Record/Replay (flows, runs, triggers)        |
 
-State is persisted in `chrome.storage.local`.
+---
 
-## 2) Runtime mapping: route → group
+## 2) Storage contract (chrome.storage.local)
 
-This mapping is authoritative for the dispatcher.
+Selection is persisted in two keys:
 
-### Observe
+- `toolGroupState` (`STORAGE_KEYS.TOOL_GROUP_STATE`)
+  - Shape: `{ observe, navigate, interact, execute, workflow, updatedAt }`
+- `individualToolState` (`STORAGE_KEYS.INDIVIDUAL_TOOL_STATE`)
+  - Shape: `{ overrides: Record<string, boolean>, updatedAt }`
+  - Convention: only `false` is persisted as an override (absence means “not individually disabled”).
 
-- `/snapshot`
-- `/tabs/*` (list only)
-- `/bookmarks/*` (read/search only)
-- `/history/*` (read/search only)
-- `/ledger/*` (status/query)
+Legacy tool IDs may be migrated to canonical MCP tool names (e.g. `chrome_file_upload →
+chrome_upload_file`).
 
-### Navigate
+---
 
-- `/navigate`
-- `/tabs/switch`
-- `/tabs/close`
+## 3) Effective allowlist contract (itemwise)
 
-### Interact
+Define `enabledToolIds` as the effective allowlist:
 
-- `/act`
-- `/element-selection/*`
+- A tool is enabled **iff** its **group toggle** is on **and** `overrides[toolId] !== false`.
+- Unknown/unmapped tool IDs are **disabled by default** (security-by-default).
+- Tool names may be normalized via a legacy-alias table before evaluation.
 
-### Execute
+---
 
-- `/network/*`
-- `/javascript/*`
-- `/file/*` (if introduced)
+## 4) Runtime enforcement contract (hard)
 
-### Workflow
+**Enforcement point (authoritative)**:
 
-- `/rr_v3/*`
+- Extension background Native Messaging handler for `NativeMessageType.CALL_TOOL` (MCP tool calls
+  coming from the native server), in `app/chrome-extension/entrypoints/background/native-host.ts`.
+- Also applies to the UI bridge message `{ type: 'call_tool' }` for direct UI → background tool calls.
 
-## 3) Runtime rejection contract
+**Behavior**:
 
-If a route’s group is disabled:
+- If tool is disabled:
+  - Return a normal MCP `ToolResult` with `isError=true`
+  - Error message: `Disabled tool: <toolName>. Enable it in Ruminer → Tools.`
+  - Native Messaging envelope still responds with `status: 'success'` so the MCP caller receives a
+    regular tool result (not a transport error).
+- If tool is enabled: execute normally.
 
-- Return `ok=false`
-- Use `error.code = "tool_group_disabled"`
-- Use `error.message` like:
-  - `"Disabled by tool group: Interact"`
-- Include `details` with `{ groupId, path, method }` for debugging.
+**Scope boundary**:
 
-## 4) Prompt restriction contract (chat.send injection)
+- Enforcement applies to **MCP tool calls only**.
+- Internal RR‑V3 workflow execution (scanner/ingest runs inside the extension) must **not** be
+  blocked by chat/tool selection.
 
-When the user submits a message from the sidepanel:
+---
 
-- Determine disabled groups
-- Prepend a system instruction that:
-  - Names the disabled groups
-  - Lists example actions that are forbidden
-  - Instructs the model to ask the user to enable the group if needed
+## 5) Prompt restriction contract (soft)
 
-**Example (conceptual)**:
+When the user sends a message from the sidepanel Chat tab, the extension prepends:
 
 ```text
-Tool group restrictions:
-- Interact: disabled (do not click/type/scroll or request element selection)
-- Execute: disabled (do not run JS, do not make cookie-auth network requests)
+Browser tool restrictions (enforced at runtime):
+- Allowed browser tools: <comma-separated tool IDs>
+- Do not use any other browser tools.
 
-If you need a disabled tool, ask the user to enable the group first.
+Ask the user to enable a tool in Ruminer → Tools before using it.
 ```
 
-## 5) Workflows vs chat tool groups
+If no tools are enabled, it must state that explicitly and instruct the agent to ask for enabling
+tools.
 
-Per spec (FR-025):
+---
 
-- Workflows have a fixed set of declared tools at authoring time.
-- Workflow execution must be independent of chat tool group toggles.
+## 6) Workflows and approvals
+
+Workflows may declare `flow.meta.requiredTools` (MCP tool IDs) and the UI may require re-approval
+before enqueueing if the required tool list changes.

@@ -191,11 +191,11 @@ tools are restricted immediately.
    into EMOS via OpenClaw's EMOS plugin.
 
 6. **Given** tool group toggles are visible in the chat header,
-   **When** the user disables a tool group (e.g., Interact), **Then**
-   the extension updates its enforcement table immediately, the next
+   **When** the user disables a tool (or disables its group), **Then**
+   the extension updates its effective allowlist immediately, the next
    message sent to OpenClaw includes the updated restriction prompt,
-   and attempts to use disabled tools fail with a clear
-   "disabled by tool group" error.
+   and attempts to use a disabled tool fail with a clear runtime
+   error like `Disabled tool: <toolName>. Enable it in Ruminer → Tools.`
 
 7. **Given** the user is in chat mode, **When** they click "New chat",
    **Then** the panel returns to empty state / search mode.
@@ -479,7 +479,7 @@ a flow, run the flow, and verify it executes the recorded actions.
 - **FR-005**: Chat tab MUST provide a "New chat" action to return to
   empty state / search mode.
 
-**Tool Groups**
+**Tool Selection (Groups + Per-Tool)**
 
 - **FR-006**: Browser tools MUST be divided into five groups by
   side-effect level: Observe (snapshots, screenshots, tab listing,
@@ -490,14 +490,16 @@ a flow, run the flow, and verify it executes the recorded actions.
   requests, file upload — default Off), Workflow (RR-V3 flow/trigger/
   run management, run queue controls — default On).
 - **FR-007**: Users MUST be able to toggle tool groups on/off from the
-  sidepanel chat header. When a group is disabled, the extension MUST
-  prevent the agent from successfully executing tools in that
-  group (prompt restriction + runtime rejection).
+  sidepanel chat header and disable individual tools. When a tool is
+  disabled (directly or via its group), the extension MUST prevent the
+  agent from successfully executing that tool (prompt restriction +
+  runtime rejection).
 - **FR-008**: Tool group defaults MUST be safe: Observe and Navigate on,
   Interact and Execute off, Workflow on.
-- **FR-009**: Tool group state MUST be persisted locally and applied
-  immediately to both the restriction prompt sent to OpenClaw and the
-  runtime enforcement table.
+- **FR-009**: Tool selection state (group toggles + per-tool overrides)
+  MUST be persisted locally and applied immediately to both the
+  restriction prompt sent to OpenClaw (allowlist) and runtime
+  enforcement in the background.
 
 **Sidepanel Memory & Workflows**
 
@@ -657,14 +659,15 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **FR-030**: OpenClaw Gateway access MUST be localhost-only (no LAN
   exposure). The extension MUST connect via authenticated WebSocket
-  with a WS auth token. Tool group enforcement MUST happen at two
-  layers in the extension: (1) prompt layer — the extension injects
-  disabled tool instructions into the system prompt when sending
+  with a WS auth token. Tool selection enforcement MUST happen at two
+  layers in the extension: (1) prompt layer — the extension injects an
+  allowlist of enabled tools into the system prompt when sending
   `chat.send` to OpenClaw, and (2) runtime layer — the background
-  script's tool executor rejects MCP tool calls for tools in disabled
-  groups. All browser tools including RR‑V3 are exposed via MCP on the
-  native server; the `browser-ext` plugin has no knowledge of tool
-  groups.
+  service rejects MCP tool calls at the Native Messaging boundary when
+  the requested tool is disabled by the current selection (groups +
+  per-tool overrides). All browser tools including RR‑V3 are exposed
+  via MCP on the native server; OpenClaw calls them via the
+  `mcp-client` plugin, which has no knowledge of tool selection.
 - **FR-031**: Host permissions MUST use `<all_urls>` in the manifest,
   granted at install time with no per-site prompts. The extension MUST
   NOT be restricted to a fixed allowlist of AI chat platform domains.
@@ -704,7 +707,7 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **Ingestion Ledger Entry**: A local record tracking the idempotency
   status of each extracted item. Attributes: item_key (platform:conversation_id:message_index),
-  content_hash (sha256), canonical_url, group_id ({platform}:{conversation_id}),
+  content_hash (sha256), source_url, group_id ({platform}:{conversation_id}),
   sender (me or platform name), evermemos_message_id, first_seen_at,
   last_seen_at, last_ingested_at, status (ingested/skipped/failed), last_error.
 

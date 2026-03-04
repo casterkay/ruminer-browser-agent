@@ -87,7 +87,7 @@ Keyed by `item_key` (unique).
 
 - **item_key**: string (PK)
 - **content_hash**: string (sha256 hex)
-- **canonical_url**: string | null
+- **source_url**: string | null
 - **group_id**: string
 - **sender**: `'me' | 'agent' | 'chatgpt' | 'gemini' | 'claude' | 'deepseek'`
 - **evermemos_message_id**: string
