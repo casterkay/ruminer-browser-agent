@@ -80,7 +80,7 @@
       <slot name="composer" />
 
       <!-- Usage & Version label -->
-      <div
+      <!-- <div
         class="text-[10px] text-center mt-2 font-medium tracking-wide flex items-center justify-center gap-2"
         :style="{ color: 'var(--ac-text-subtle)' }"
       >
@@ -98,7 +98,7 @@
           </span>
           <span class="opacity-50">·</span>
         </template>
-      </div>
+      </div> -->
     </footer>
   </div>
 </template>

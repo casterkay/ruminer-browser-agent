@@ -11,13 +11,10 @@ export class OpenClawEngine implements AgentEngine {
   async initializeAndRun(options: EngineInitOptions, ctx: EngineExecutionContext): Promise<void> {
     const { sessionId, instruction, signal, requestId, optionsConfig } = options;
 
-    const isDebugEnabled =
-      process.env.RUMINER_OPENCLAW_DEBUG === '1' || process.env.RUMINER_OPENCLAW_DEBUG === 'true';
+    const isDebugEnabled = true;
     const debugLog = (...args: unknown[]): void => {
       if (!isDebugEnabled) return;
-      // Avoid logging secrets; keep this scoped to ids/states only.
-
-      console.debug('[OpenClawEngine]', ...args);
+      console.error('[OpenClawEngine]', ...args);
     };
 
     if (signal?.aborted) {
@@ -51,6 +48,18 @@ export class OpenClawEngine implements AgentEngine {
     let lastEmitted: { content: string; isFinal: boolean } | null = null;
 
     const getString = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+    const doesSessionKeyMatch = (
+      payloadSessionKey: string,
+      expectedSessionKey: string,
+    ): boolean => {
+      const normalizedPayload = payloadSessionKey.trim();
+      const normalizedExpected = expectedSessionKey.trim();
+      if (!normalizedPayload || !normalizedExpected) return false;
+      if (normalizedPayload === normalizedExpected) return true;
+      const parts = normalizedPayload.split(':');
+      return parts[1] === normalizedExpected;
+    };
 
     const getStatus = (payload: any): string => {
       // Gateway payloads evolved over time:
@@ -267,23 +276,32 @@ export class OpenClawEngine implements AgentEngine {
       const isChatEvent = evt.event === 'chat';
 
       const payload = evt.payload as any;
-      const payloadSessionKey = typeof payload?.sessionKey === 'string' ? payload.sessionKey : '';
-      if (!payloadSessionKey || payloadSessionKey !== openClawSessionKey) {
-        if (isDebugEnabled) {
-          debugLog('ignore: sessionKey mismatch', {
-            got: payloadSessionKey,
-            expected: openClawSessionKey,
-          });
-        }
-        return;
-      }
-
       const payloadRunId =
         typeof payload?.runId === 'string'
           ? payload.runId
           : typeof payload?.requestId === 'string'
             ? payload.requestId
             : '';
+
+      const payloadSessionKey = typeof payload?.sessionKey === 'string' ? payload.sessionKey : '';
+      const isCorrelatedRun =
+        !!payloadRunId &&
+        (payloadRunId === clientRunId || (!!ackRunId && payloadRunId === ackRunId));
+      const isMatchingSessionKey = doesSessionKeyMatch(payloadSessionKey, openClawSessionKey);
+
+      // Prefer strict sessionKey matching, but allow runId-correlated events even when
+      // the gateway emits a composite session key format.
+      if (!isMatchingSessionKey && !isCorrelatedRun) {
+        debugLog('ignore: sessionKey mismatch', {
+          got: payloadSessionKey,
+          expected: openClawSessionKey,
+          runId: payloadRunId,
+          clientRunId,
+          ackRunId,
+        });
+        return;
+      }
+
       // Prefer strict runId matching when present.
       // - pushed `chat` events typically use clientRunId
       // - some gateway implementations may use the ACK's run id

@@ -8,7 +8,7 @@ import {
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 class EmosReadMemoriesTool {
-  name = TOOL_NAMES.MEMORY.READ_MEMORIES;
+  name = TOOL_NAMES.MEMORY.GET_MEMORIES;
 
   async execute(args: any): Promise<ToolResult> {
     const params = (args ?? {}) as EmosGetMemoriesRequest;

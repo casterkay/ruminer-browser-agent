@@ -284,10 +284,10 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
     defaultEnabled: true,
     tools: [
       {
-        id: TOOL_NAMES.MEMORY.READ_MEMORIES,
+        id: TOOL_NAMES.MEMORY.GET_MEMORIES,
         name: 'Read Memories',
         description:
-          toolSchemaDescription(TOOL_NAMES.MEMORY.READ_MEMORIES) ?? 'Read memories from EverMemOS',
+          toolSchemaDescription(TOOL_NAMES.MEMORY.GET_MEMORIES) ?? 'Read memories from EverMemOS',
       },
       {
         id: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,

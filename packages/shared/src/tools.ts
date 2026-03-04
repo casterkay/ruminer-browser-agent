@@ -41,7 +41,7 @@ export const TOOL_NAMES = {
     GIF_RECORDER: 'chrome_gif_recorder',
   },
   MEMORY: {
-    READ_MEMORIES: 'emos_read_memories',
+    GET_MEMORIES: 'emos_get_memories',
     SEARCH_MEMORIES: 'emos_search_memories',
   },
   RECORD_REPLAY: {
@@ -64,7 +64,7 @@ export const TOOL_SCHEMAS: Tool[] = [
     },
   },
   {
-    name: TOOL_NAMES.MEMORY.READ_MEMORIES,
+    name: TOOL_NAMES.MEMORY.GET_MEMORIES,
     description:
       'Read memories from EverMemOS (list/query by user_id/group_id/time range/etc). Uses your configured EMOS base URL + API key.',
     inputSchema: {
