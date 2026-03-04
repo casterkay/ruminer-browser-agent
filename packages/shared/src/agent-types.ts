@@ -218,6 +218,11 @@ export type AgentToolsConfig = string[] | { type: 'preset'; preset: 'claude_code
  */
 export interface AgentSessionOptionsConfig {
   settingSources?: string[];
+  /**
+   * When true (default when unset), automatically save user+assistant chat messages
+   * from this session into EverMemOS.
+   */
+  saveConversationToEverMemOS?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
   tools?: AgentToolsConfig;

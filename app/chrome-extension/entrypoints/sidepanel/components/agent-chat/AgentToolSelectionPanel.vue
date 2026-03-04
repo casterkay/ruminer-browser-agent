@@ -125,6 +125,91 @@
           </div>
         </section>
 
+        <!-- Memory Tools (EverMemOS) -->
+        <section v-if="memoryToolGroupDefinitions.length > 0" class="space-y-2">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <h3
+              class="text-[10px] font-bold uppercase tracking-wider"
+              :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
+            >
+              Memory Tools
+            </h3>
+          </div>
+
+          <div v-if="toolGroupsLoading" class="py-4 text-center text-[10px]">
+            <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Loading tools…</span>
+          </div>
+
+          <div v-else class="space-y-2">
+            <div
+              v-for="group in memoryToolGroupDefinitions"
+              :key="group.id"
+              class="rounded-lg overflow-hidden"
+              :style="cardStyle"
+            >
+              <div
+                class="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                :style="headerStyle"
+                @click="toggleBrowserGroupExpanded(group.id)"
+              >
+                <ILucideChevronRight
+                  class="w-4 h-4 flex-shrink-0 transition-transform"
+                  :class="{ 'rotate-90': browserGroupExpanded[group.id] }"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                />
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                    {{ group.label }}
+                  </div>
+                  <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
+                    {{ browserGroupEnabledCount(group) }} / {{ group.tools.length }} enabled
+                  </div>
+                </div>
+                <button
+                  class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
+                  :style="toggleStyle(!!toolGroups?.[group.id])"
+                  :disabled="toolGroupsBusy"
+                  @click.stop="handleToggleToolGroup(group.id)"
+                >
+                  <span
+                    class="inline-block w-3.5 h-3.5 rounded-full"
+                    :style="{
+                      backgroundColor: '#ffffff',
+                      transform: toolGroups?.[group.id] ? 'translateX(18px)' : 'translateX(2px)',
+                      transition: 'transform 120ms ease-out',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                    }"
+                  />
+                </button>
+              </div>
+
+              <div
+                v-show="browserGroupExpanded[group.id]"
+                class="p-2 space-y-0.5 max-h-48 overflow-y-auto ac-scroll"
+                :style="bodyStyle"
+              >
+                <label
+                  v-for="tool in group.tools"
+                  :key="tool.id"
+                  class="flex items-center gap-2.5 py-1.5 px-2 rounded cursor-pointer hover:bg-black/5"
+                  :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="isBrowserToolEnabled(group, tool)"
+                    :disabled="!toolGroups?.[group.id] || toolGroupsBusy"
+                    @change="handleToggleBrowserTool(group, tool)"
+                  />
+                  <span class="text-xs truncate flex-1">{{ tool.name }}</span>
+                  <span class="font-mono text-[9px] truncate max-w-[100px] opacity-70">
+                    {{ tool.id }}
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Browser Tools (collapsible groups with toggle) -->
         <section class="space-y-2">
           <div class="flex items-center justify-between gap-3 mb-2">
@@ -158,7 +243,7 @@
 
           <div v-else class="space-y-2">
             <div
-              v-for="group in toolGroupDefinitions"
+              v-for="group in browserToolGroupDefinitions"
               :key="group.id"
               class="rounded-lg overflow-hidden"
               :style="cardStyle"
@@ -368,6 +453,12 @@ function toggleBrowserGroupExpanded(groupId: ToolGroupId): void {
 // -----------------------------------------------------------------------------
 
 const toolGroupDefinitions = TOOL_GROUP_DEFINITIONS as readonly ToolGroupDefinition[];
+const memoryToolGroupDefinitions = computed(() =>
+  toolGroupDefinitions.filter((g) => g.id === 'memory'),
+);
+const browserToolGroupDefinitions = computed(() =>
+  toolGroupDefinitions.filter((g) => g.id !== 'memory'),
+);
 const toolGroups = ref<ToolGroupState | null>(null);
 const individualToolState = ref<IndividualToolState | null>(null);
 const toolGroupsLoading = ref(false);
@@ -450,6 +541,7 @@ async function handleResetToolGroups(): Promise<void> {
         interact: defaults.interact,
         execute: defaults.execute,
         workflow: defaults.workflow,
+        memory: defaults.memory,
       }),
       clearIndividualToolOverrides(),
     ]);

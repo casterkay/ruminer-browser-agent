@@ -16,7 +16,7 @@ function makeGroupState(patch: Partial<Omit<ToolGroupState, 'updatedAt'>>): Tool
   return {
     observe: true,
     navigate: true,
-    interact: false,
+    interact: true,
     execute: false,
     workflow: true,
     updatedAt: new Date().toISOString(),

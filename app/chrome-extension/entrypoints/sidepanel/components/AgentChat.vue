@@ -78,6 +78,8 @@
             :can-send="chat.canSend.value"
             :placeholder="composerPlaceholder"
             :engine-name="currentEngineName"
+            :openclaw-agents="openclawAgents"
+            :selected-openclaw-agent-id="currentOpenClawAgentId"
             :selected-model="currentSessionModel"
             :available-models="currentAvailableModels"
             :reasoning-effort="currentReasoningEffort"
@@ -87,12 +89,14 @@
             @submit="handleSend"
             @cancel="chat.cancelCurrentRequest()"
             @attachment:add="handleAttachmentAdd"
+            @attachment:screenshot="handleAttachmentScreenshot"
             @attachment:remove="attachments.removeAttachment"
             @attachment:drop="attachments.handleDrop"
             @attachment:paste="attachments.handlePaste"
             @attachment:dragover="attachments.handleDragOver"
             @attachment:dragleave="attachments.handleDragLeave"
             @model:change="handleComposerModelChange"
+            @openclaw-agent:change="handleComposerOpenClawAgentChange"
             @reasoning-effort:change="handleComposerReasoningEffortChange"
             @tools:open="handleComposerOpenTools"
             @session:reset="handleComposerReset"
@@ -193,6 +197,7 @@ import type {
   CodexReasoningEffort,
   AgentManagementInfo,
   AgentSessionOptionsConfig,
+  OpenClawAgentDto,
 } from 'chrome-mcp-shared';
 
 // Composables
@@ -241,6 +246,10 @@ import {
 } from '@/common/agent-models';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { getMessage } from '@/utils/i18n';
+import {
+  emosUpsertMemory,
+  type EmosSingleMessage,
+} from '@/entrypoints/background/ruminer/emos-client';
 
 // Local UI state
 const selectedCli = ref('');
@@ -403,6 +412,114 @@ const isSearchMode = computed(
   () => viewRoute.isChatView.value && threadState.threads.value.length === 0,
 );
 
+// ============================================================
+// EverMemOS autosave (per-session)
+// ============================================================
+
+const isEmosAutosaveEnabled = computed(() => {
+  const session = sessions.selectedSession.value;
+  if (!session) return false;
+  return session.optionsConfig?.saveConversationToEverMemOS !== false;
+});
+
+let queuedEmosMessageIds = new Set<string>();
+let emosAutosaveQueue: Promise<void> = Promise.resolve();
+
+function buildEmosGroupId(): string {
+  const session = sessions.selectedSession.value;
+  if (!session) return '';
+  return `${session.engineName}:${session.id}`;
+}
+
+function buildEmosMessageId(messageId: string): string {
+  const session = sessions.selectedSession.value;
+  if (!session) return '';
+  return `${session.engineName}:${session.id}:${messageId}`;
+}
+
+function shouldAutosaveToEmos(msg: AgentMessage): boolean {
+  if (!msg) return false;
+  if (msg.messageType !== 'chat') return false;
+  if (msg.role !== 'user' && msg.role !== 'assistant') return false;
+  if (msg.role === 'assistant' && msg.isFinal !== true) return false;
+  if (typeof msg.content !== 'string' || !msg.content.trim()) return false;
+  return true;
+}
+
+function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
+  const session = sessions.selectedSession.value;
+  if (!session) return null;
+
+  const group_id = buildEmosGroupId();
+  if (!group_id) return null;
+
+  return {
+    message_id: buildEmosMessageId(msg.id),
+    create_time: msg.createdAt,
+    sender: msg.role,
+    content: msg.content,
+    group_id,
+    group_name: session.name || session.preview || undefined,
+    source_url: null,
+  };
+}
+
+function queueEmosUpsert(item: EmosSingleMessage): void {
+  emosAutosaveQueue = emosAutosaveQueue
+    .then(async () => {
+      await emosUpsertMemory(item);
+    })
+    .catch((error) => {
+      console.warn('[EverMemOS autosave] Upsert failed:', error);
+    });
+}
+
+function enqueueEligibleEmosMessages(): void {
+  const session = sessions.selectedSession.value;
+  if (!session) return;
+  if (!isEmosAutosaveEnabled.value) return;
+
+  for (const msg of chat.messages.value) {
+    if (!shouldAutosaveToEmos(msg)) continue;
+    const emosId = buildEmosMessageId(msg.id);
+    if (!emosId) continue;
+    if (queuedEmosMessageIds.has(emosId)) continue;
+
+    const emosMsg = toEmosMessage(msg);
+    if (!emosMsg) continue;
+
+    queuedEmosMessageIds.add(emosId);
+    queueEmosUpsert(emosMsg);
+  }
+}
+
+watch(
+  () => sessions.selectedSessionId.value,
+  () => {
+    queuedEmosMessageIds = new Set<string>();
+    emosAutosaveQueue = Promise.resolve();
+    enqueueEligibleEmosMessages();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => isEmosAutosaveEnabled.value,
+  (enabled) => {
+    if (!enabled) return;
+    enqueueEligibleEmosMessages();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => chat.messages.value,
+  () => {
+    enqueueEligibleEmosMessages();
+  },
+  { deep: true },
+);
+
 const composerPlaceholder = computed(() =>
   threadState.threads.value.length === 0
     ? getMessage('chatPlaceholderEmpty')
@@ -476,6 +593,96 @@ const currentAvailableReasoningEfforts = computed(() => {
   const effectiveModel = currentSessionModel.value || getDefaultModelForCli('codex');
   return getCodexReasoningEfforts(effectiveModel);
 });
+
+// ============================================================
+// OpenClaw Agents (per-session sessionKey)
+// ============================================================
+
+const openclawAgents = ref<OpenClawAgentDto[]>([]);
+const openclawAgentsLoading = ref(false);
+const openclawAgentsError = ref<string | null>(null);
+
+const currentOpenClawAgentId = computed(() => {
+  const session = sessions.selectedSession.value;
+  const options: any = session?.optionsConfig ?? {};
+  const raw = options?.openclaw?.sessionKey ?? options?.openclawSessionKey;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : 'main';
+});
+
+function ensureOpenClawAgentOption(id: string): void {
+  const trimmed = id.trim();
+  if (!trimmed) return;
+  if (openclawAgents.value.some((a) => a.id === trimmed)) return;
+  openclawAgents.value = [{ id: trimmed }, ...openclawAgents.value];
+}
+
+function normalizeOpenClawAgents(list: OpenClawAgentDto[]): OpenClawAgentDto[] {
+  const map = new Map<string, OpenClawAgentDto>();
+  for (const entry of list) {
+    const id = typeof entry?.id === 'string' ? entry.id.trim() : '';
+    if (!id) continue;
+    const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+    map.set(id, name ? { id, name } : { id });
+  }
+  if (!map.has('main')) {
+    map.set('main', { id: 'main', name: 'main' });
+  }
+  const selected = currentOpenClawAgentId.value;
+  if (selected && !map.has(selected)) {
+    map.set(selected, { id: selected });
+  }
+  const agents = Array.from(map.values());
+  agents.sort((a, b) => {
+    if (a.id === selected) return -1;
+    if (b.id === selected) return 1;
+    if (a.id === 'main') return -1;
+    if (b.id === 'main') return 1;
+    return (a.name || a.id).localeCompare(b.name || b.id);
+  });
+  return agents;
+}
+
+async function fetchOpenClawAgents(): Promise<void> {
+  const serverPort = server.serverPort.value;
+  if (!serverPort) return;
+
+  openclawAgentsLoading.value = true;
+  openclawAgentsError.value = null;
+  try {
+    const url = `http://127.0.0.1:${serverPort}/agent/openclaw/agents`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const agents = Array.isArray(data?.agents) ? (data.agents as OpenClawAgentDto[]) : [];
+    openclawAgents.value = normalizeOpenClawAgents(agents);
+  } catch (err) {
+    openclawAgentsError.value = err instanceof Error ? err.message : String(err);
+    openclawAgents.value = normalizeOpenClawAgents(openclawAgents.value);
+  } finally {
+    openclawAgentsLoading.value = false;
+  }
+}
+
+watch(
+  [currentEngineName, () => server.serverPort.value],
+  ([engineName]) => {
+    if (engineName !== 'openclaw') return;
+    ensureOpenClawAgentOption(currentOpenClawAgentId.value);
+    void fetchOpenClawAgents();
+  },
+  { immediate: true },
+);
+
+watch(
+  currentOpenClawAgentId,
+  (nextId) => {
+    ensureOpenClawAgentOption(nextId);
+  },
+  { immediate: true },
+);
 
 // Track pending history load with nonce to prevent A→B→A race conditions
 let historyLoadNonce = 0;
@@ -1215,15 +1422,66 @@ function handleAttachmentAdd(): void {
   input.click();
 }
 
-async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
-  if (threadState.threads.value.length > 0) {
-    return;
+async function handleAttachmentScreenshot(): Promise<void> {
+  try {
+    attachments.error.value = null;
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(chrome.windows.WINDOW_ID_CURRENT, { format: 'png' }, (url) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message));
+          return;
+        }
+        if (!url || typeof url !== 'string') {
+          reject(new Error('Failed to capture screenshot'));
+          return;
+        }
+        resolve(url);
+      });
+    });
+
+    const blob = await (await fetch(dataUrl)).blob();
+    const safeStamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = new File([blob], `screenshot-${safeStamp}.png`, { type: 'image/png' });
+    await attachments.handleFiles([file]);
+  } catch (err) {
+    attachments.error.value = err instanceof Error ? err.message : String(err);
   }
+}
+
+async function handleComposerOpenClawAgentChange(agentId: string): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  const session = sessions.selectedSession.value;
+  if (!sessionId || !session) return;
+  if (session.engineName !== 'openclaw') return;
+
+  const nextId = (agentId || '').trim();
+  if (!nextId) return;
+
+  const existingOptions: any = session.optionsConfig ?? {};
+  const existingOpenClaw: any = existingOptions.openclaw ?? {};
+  await sessions.updateSession(sessionId, {
+    optionsConfig: {
+      ...existingOptions,
+      openclaw: {
+        ...existingOpenClaw,
+        sessionKey: nextId,
+      },
+    },
+  });
+}
+
+async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
+  const currentSession = sessions.selectedSession.value;
+
+  // Only allow engine switching when this conversation is truly empty.
+  // `threads` can be empty briefly during load, so also guard on `preview`.
+  if (threadState.threads.value.length > 0 || currentSession?.preview) return;
 
   const normalizedEngineName = engineName.trim();
   if (!normalizedEngineName) return;
 
-  const currentSession = sessions.selectedSession.value;
   const projectId = projects.selectedProjectId.value || currentSession?.projectId;
   if (!projectId) return;
 
@@ -1240,6 +1498,9 @@ async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
   // So switching engine means selecting (or creating) a session for that engine.
   clearRequestState();
 
+  const oldSessionId = currentSession?.id || '';
+  const oldEngineName = currentSession?.engineName || '';
+
   const candidateSessions = sessions.sessions.value.filter(
     (s) => s.projectId === projectId && s.engineName === normalizedEngineName,
   );
@@ -1252,12 +1513,62 @@ async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
     chat.setMessages([]);
     await sessions.selectSession(target.id);
     engineMenuOpen.value = false;
+
+    // If we switched away from a brand-new empty session, delete it to avoid clutter.
+    if (oldSessionId && oldSessionId !== target.id && !currentSession?.preview) {
+      void sessions.deleteSession(oldSessionId);
+    }
     return;
   }
 
   // No matching session exists yet.
-  // Do NOT create an empty session here; we'll create/select on first send.
+  // Create-and-switch immediately so the header/composer reflect the chosen engine.
+  // To avoid accumulating empty sessions, delete the abandoned empty session after switch.
+  const typedEngineName = normalizedEngineName as
+    | 'openclaw'
+    | 'claude'
+    | 'codex'
+    | 'cursor'
+    | 'qwen'
+    | 'glm';
+
+  const optionsConfig =
+    typedEngineName === 'codex'
+      ? {
+          codexConfig: {
+            reasoningEffort: getNormalizedReasoningEffort(),
+          },
+        }
+      : typedEngineName === 'claude'
+        ? {
+            tools: { type: 'preset', preset: 'claude_code' },
+          }
+        : undefined;
+
+  const created = await sessions.createSession(projectId, {
+    engineName: typedEngineName,
+    name: `Session ${sessions.sessions.value.length + 1}`,
+    optionsConfig,
+  });
+
+  if (created) {
+    chat.setMessages([]);
+    await sessions.selectSession(created.id);
+  }
+
   engineMenuOpen.value = false;
+
+  // Only delete if we actually switched engines from an empty session.
+  if (
+    oldSessionId &&
+    created?.id &&
+    oldSessionId !== created.id &&
+    oldEngineName &&
+    oldEngineName !== normalizedEngineName &&
+    !currentSession?.preview
+  ) {
+    void sessions.deleteSession(oldSessionId);
+  }
 }
 
 // Send handler

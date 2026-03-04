@@ -1,11 +1,11 @@
 import { createErrorResponse, type ToolResult } from '@/common/tool-handler';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
 import {
   emosGetMemories,
   emosSearchMemories,
   type EmosGetMemoriesRequest,
   type EmosSearchRequest,
 } from '@/entrypoints/background/ruminer/emos-client';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 class EmosReadMemoriesTool {
   name = TOOL_NAMES.MEMORY.READ_MEMORIES;

@@ -96,6 +96,7 @@
         <MemoryItemDetails
           :item="memory.selectedItem.value"
           @open="openCanonicalUrl"
+          @delete="handleDeleteItem"
           @close="closeDetails"
         />
       </div>
@@ -231,6 +232,16 @@ function closeDetails(): void {
 function openCanonicalUrl(item: MemoryItem): void {
   if (!item.source_url) return;
   void chrome.tabs.create({ url: item.source_url });
+}
+
+async function handleDeleteItem(item: MemoryItem): Promise<void> {
+  const ok = confirm('Delete this memory item?');
+  if (!ok) return;
+
+  const removed = await memory.remove(item);
+  if (removed) {
+    detailsOpen.value = false;
+  }
 }
 
 function formatSender(sender?: string): string {

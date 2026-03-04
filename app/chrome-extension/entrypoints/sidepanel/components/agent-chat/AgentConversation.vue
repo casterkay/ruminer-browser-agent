@@ -29,7 +29,7 @@
             No matching memory yet.
           </div>
 
-          <template v-else>
+          <TransitionGroup v-else name="memory-cards" tag="div" class="memory-suggestion-cards">
             <button
               v-for="suggestion in memorySuggestions"
               :key="suggestion.id"
@@ -46,7 +46,7 @@
               </div>
               <p class="memory-suggestion-content">{{ compactSnippet(suggestion.content) }}</p>
             </button>
-          </template>
+          </TransitionGroup>
         </div>
       </div>
       <div v-else class="empty-state-placeholder">
@@ -228,6 +228,12 @@ function formatSource(suggestion: MemorySuggestion): string {
   overflow-y: auto;
 }
 
+.memory-suggestion-cards {
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
 .memory-suggestion-header {
   padding: 0 0.125rem;
   display: flex;
@@ -249,18 +255,34 @@ function formatSource(suggestion: MemorySuggestion): string {
   width: 100%;
   text-align: left;
   padding: 10px 12px;
-  border: none;
-  border-bottom: var(--ac-border-width) solid var(--ac-border);
-  background: transparent;
+  border: var(--ac-border-width) solid var(--ac-border);
+  border-radius: var(--ac-radius-card);
+  background: var(--ac-surface);
   cursor: pointer;
-}
-
-.memory-suggestion-item:last-child {
-  border-bottom: 0;
 }
 
 .memory-suggestion-item:hover {
   background-color: var(--ac-hover-bg);
+}
+
+.memory-cards-enter-active {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.memory-cards-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.memory-cards-enter-to {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.memory-cards-move {
+  transition: transform 160ms ease;
 }
 
 .memory-suggestion-meta {

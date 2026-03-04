@@ -303,7 +303,7 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
 const DEFAULT_TOOL_GROUP_STATE: ToolGroupState = {
   observe: true,
   navigate: true,
-  interact: false,
+  interact: true,
   execute: false,
   workflow: true,
   memory: true,

@@ -40,14 +40,14 @@
             <ILucideImage class="w-6 h-6" />
           </div>
         </div>
-        <!-- Remove button (appears on hover) -->
+        <!-- Remove button -->
         <button
-          class="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity cursor-pointer z-10 shadow-sm"
           :style="{
-            backgroundColor: 'var(--ac-error)',
+            backgroundColor: 'var(--ac-error, #e55353)',
             color: 'white',
           }"
-          title="Remove image"
+          title="Remove"
           @click="$emit('attachment:remove', index)"
         >
           <ILucideX class="w-2.5 h-2.5" />
@@ -132,16 +132,61 @@
       <div class="flex items-center justify-between px-2 pb-2">
         <!-- Left Tools -->
         <div class="flex items-center gap-1">
+          <!-- Screenshot Button -->
+          <button
+            v-if="supportsImages"
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Take screenshot"
+            @click="$emit('attachment:screenshot')"
+          >
+            <ILucideCamera class="w-4 h-4" />
+          </button>
+
           <!-- Attach Button -->
           <button
             v-if="supportsImages"
             class="p-1.5 ac-btn"
             :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Attach image"
+            data-tooltip="Attach file"
             @click="$emit('attachment:add')"
           >
-            <ILucideImage class="w-4 h-4" />
+            <ILucidePaperclip class="w-4 h-4" />
           </button>
+
+          <!-- OpenClaw Agent Selector (auto-width) -->
+          <div
+            v-if="isOpenClawEngine && (openclawAgents?.length || 0) > 0"
+            class="relative"
+            data-tooltip="Switch agent"
+          >
+            <span
+              ref="openclawAgentWidthRef"
+              class="invisible absolute whitespace-nowrap px-1.5 text-[10px]"
+              :style="{ fontFamily: 'var(--ac-font-mono)' }"
+            >
+              {{ selectedOpenClawAgentName }}
+            </span>
+            <select
+              :value="selectedOpenclawAgentId"
+              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
+              :style="{
+                color: 'var(--ac-text-muted)',
+                fontFamily: 'var(--ac-font-mono)',
+                width: openclawAgentSelectWidth,
+                borderRadius: 'var(--ac-radius-button)',
+              }"
+              @change="handleOpenClawAgentChange"
+            >
+              <option v-for="a in openclawAgents" :key="a.id" :value="a.id">
+                {{ a.name || a.id }}
+              </option>
+            </select>
+            <ILucideChevronDown
+              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
+              :style="{ color: 'var(--ac-text-subtle)' }"
+            />
+          </div>
 
           <!-- Model Selector (auto-width) -->
           <div v-if="availableModels.length > 0" class="relative" data-tooltip="Switch model">
@@ -204,16 +249,6 @@
           >
             <ILucideWrench class="w-3.5 h-3.5" />
           </button>
-
-          <!-- Status Text -->
-          <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
-            <span
-              v-if="sending || isRequestActive"
-              class="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-              :style="{ backgroundColor: 'var(--ac-accent)' }"
-            />
-            {{ statusText }}
-          </div>
         </div>
 
         <!-- Right Actions -->
@@ -259,16 +294,53 @@
     >
       <template #left-actions>
         <div class="flex items-center gap-1">
+          <!-- Screenshot Button -->
+          <button
+            v-if="supportsImages"
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Take screenshot"
+            @click="$emit('attachment:screenshot')"
+          >
+            <ILucideCamera class="w-4 h-4" />
+          </button>
+
           <!-- Attach Button -->
           <button
             v-if="supportsImages"
             class="p-1.5 ac-btn"
             :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Attach image"
+            data-tooltip="Attach file"
             @click="$emit('attachment:add')"
           >
-            <ILucideImage class="w-4 h-4" />
+            <ILucidePaperclip class="w-4 h-4" />
           </button>
+
+          <!-- OpenClaw Agent Selector -->
+          <div
+            v-if="isOpenClawEngine && (openclawAgents?.length || 0) > 0"
+            class="relative"
+            data-tooltip="Switch agent"
+          >
+            <select
+              :value="selectedOpenclawAgentId"
+              class="py-0.5 text-[10px] border-none bg-transparent cursor-pointer appearance-none pr-4 pl-1.5"
+              :style="{
+                color: 'var(--ac-text-muted)',
+                fontFamily: 'var(--ac-font-mono)',
+                borderRadius: 'var(--ac-radius-button)',
+              }"
+              @change="handleOpenClawAgentChange"
+            >
+              <option v-for="a in openclawAgents" :key="a.id" :value="a.id">
+                {{ a.name || a.id }}
+              </option>
+            </select>
+            <ILucideChevronDown
+              class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
+              :style="{ color: 'var(--ac-text-subtle)' }"
+            />
+          </div>
 
           <!-- Model Selector -->
           <div v-if="availableModels.length > 0" class="relative" data-tooltip="Switch model">
@@ -309,12 +381,14 @@
 
 <script lang="ts" setup>
 import { ref, computed, watch, nextTick, toRef } from 'vue';
-import type { CodexReasoningEffort } from 'chrome-mcp-shared';
+import type { CodexReasoningEffort, OpenClawAgentDto } from 'chrome-mcp-shared';
 import type { ModelDefinition } from '@/common/agent-models';
 import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import type { RequestState } from '../../composables/useAgentChat';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import ILucideWrench from '~icons/lucide/wrench';
+import ILucidePaperclip from '~icons/lucide/paperclip';
+import ILucideCamera from '~icons/lucide/camera';
 import ILucideImage from '~icons/lucide/image';
 import ILucideX from '~icons/lucide/x';
 import ILucideMaximize2 from '~icons/lucide/maximize-2';
@@ -342,6 +416,9 @@ const props = defineProps<{
   engineName?: string;
   selectedModel: string;
   availableModels: ModelDefinition[];
+  // OpenClaw agent selection props
+  openclawAgents?: OpenClawAgentDto[];
+  selectedOpenclawAgentId?: string;
   // Codex reasoning effort props
   reasoningEffort?: CodexReasoningEffort;
   availableReasoningEfforts?: readonly CodexReasoningEffort[];
@@ -362,20 +439,32 @@ const isRequestActive = computed(() => {
 });
 
 const isCodexEngine = computed(() => props.engineName === 'codex');
+const isOpenClawEngine = computed(() => props.engineName === 'openclaw');
 
-// Image upload is supported for Claude and Codex engines
+// Image upload is supported for Claude, Codex, and OpenClaw engines
 const supportsImages = computed(() => {
   const engine = props.engineName;
-  return engine === 'claude' || engine === 'codex';
+  return engine === 'claude' || engine === 'codex' || engine === 'openclaw';
 });
 
 // Model selector auto-width
 const modelWidthRef = ref<HTMLSpanElement | null>(null);
 const modelSelectWidth = ref('auto');
 
+// OpenClaw agent selector auto-width
+const openclawAgentWidthRef = ref<HTMLSpanElement | null>(null);
+const openclawAgentSelectWidth = ref('auto');
+
 const selectedModelName = computed(() => {
   const model = props.availableModels.find((m) => m.id === props.selectedModel);
   return model?.name || props.selectedModel || '';
+});
+
+const selectedOpenClawAgentName = computed(() => {
+  const selectedId = (props.selectedOpenclawAgentId || '').trim();
+  if (!selectedId) return '';
+  const agent = (props.openclawAgents || []).find((a) => a.id === selectedId);
+  return agent?.name || agent?.id || selectedId;
 });
 
 // Update width when model changes
@@ -387,6 +476,19 @@ watch(
       const width = modelWidthRef.value.offsetWidth;
       // Add extra space for dropdown arrow (16px)
       modelSelectWidth.value = `${width + 16}px`;
+    }
+  },
+  { immediate: true },
+);
+
+// Update width when OpenClaw agent changes
+watch(
+  [selectedOpenClawAgentName, () => props.openclawAgents],
+  async () => {
+    await nextTick();
+    if (openclawAgentWidthRef.value) {
+      const width = openclawAgentWidthRef.value.offsetWidth;
+      openclawAgentSelectWidth.value = `${Math.max(width + 16, 48)}px`;
     }
   },
   { immediate: true },
@@ -467,12 +569,14 @@ const emit = defineEmits<{
   submit: [];
   cancel: [];
   'attachment:add': [];
+  'attachment:screenshot': [];
   'attachment:remove': [index: number];
   'attachment:drop': [event: DragEvent];
   'attachment:paste': [event: ClipboardEvent];
   'attachment:dragover': [event: DragEvent];
   'attachment:dragleave': [event: DragEvent];
   'model:change': [modelId: string];
+  'openclaw-agent:change': [agentId: string];
   'reasoning-effort:change': [effort: CodexReasoningEffort];
   'tools:open': [];
   'session:reset': [];
@@ -563,6 +667,11 @@ function handlePrimaryAction(): void {
 function handleModelChange(event: Event): void {
   const modelId = (event.target as HTMLSelectElement).value;
   emit('model:change', modelId);
+}
+
+function handleOpenClawAgentChange(event: Event): void {
+  const agentId = (event.target as HTMLSelectElement).value;
+  emit('openclaw-agent:change', agentId);
 }
 
 function handleReasoningEffortChange(event: Event): void {

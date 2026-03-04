@@ -89,6 +89,52 @@
             </div>
           </div>
 
+          <!-- EverMemOS -->
+          <div class="space-y-2">
+            <label
+              class="text-[10px] font-bold uppercase tracking-wider"
+              :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
+            >
+              EverMemOS
+            </label>
+            <div
+              class="flex items-start justify-between gap-3 p-3"
+              :style="{
+                backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
+                borderRadius: 'var(--ac-radius-inner, 8px)',
+              }"
+            >
+              <div class="min-w-0">
+                <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                  Save Conversation to EverMemOS
+                </div>
+                <div class="text-[10px] mt-0.5" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
+                  When enabled, user + assistant chat messages in this session are automatically
+                  saved.
+                </div>
+              </div>
+
+              <button
+                class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
+                :style="toggleStyle(localSaveConversationToEverMemOS)"
+                :disabled="isSaving"
+                @click="localSaveConversationToEverMemOS = !localSaveConversationToEverMemOS"
+              >
+                <span
+                  class="inline-block w-3.5 h-3.5 rounded-full"
+                  :style="{
+                    backgroundColor: '#ffffff',
+                    transform: localSaveConversationToEverMemOS
+                      ? 'translateX(18px)'
+                      : 'translateX(2px)',
+                    transition: 'transform 120ms ease-out',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                  }"
+                />
+              </button>
+            </div>
+          </div>
+
           <!-- Model Selection -->
           <div class="space-y-2">
             <label
@@ -407,10 +453,22 @@ export interface SessionSettings {
 const localModel = ref('');
 const localPermissionMode = ref('');
 const localReasoningEffort = ref<CodexReasoningEffort>('medium');
+const localSaveConversationToEverMemOS = ref(true);
 const localUseCustomPrompt = ref(false);
 const localCustomPrompt = ref('');
 const localAppendToPrompt = ref(false);
 const localPromptAppend = ref('');
+
+function toggleStyle(enabled: boolean) {
+  return {
+    backgroundColor: enabled ? 'var(--ac-accent, #c87941)' : 'var(--ac-border, #e5e5e5)',
+    borderRadius: '9999px',
+    border: enabled
+      ? 'var(--ac-border-width, 1px) solid var(--ac-accent, #c87941)'
+      : 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+    padding: '1px',
+  };
+}
 
 // Computed
 const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
@@ -443,6 +501,8 @@ watch(
     if (session) {
       localModel.value = session.model || '';
       localPermissionMode.value = session.permissionMode || '';
+      localSaveConversationToEverMemOS.value =
+        session.optionsConfig?.saveConversationToEverMemOS !== false;
 
       // Initialize reasoning effort from session's codex config
       const codexConfig = session.optionsConfig?.codexConfig;
@@ -522,19 +582,21 @@ function handleSave(): void {
     };
   }
 
-  let optionsConfig: AgentSessionOptionsConfig | undefined;
+  const existingOptions = props.session?.optionsConfig ?? {};
+  const existingCodexConfig = existingOptions.codexConfig ?? {};
 
-  if (isCodexEngine.value) {
-    const existingOptions = props.session?.optionsConfig ?? {};
-    const existingCodexConfig = existingOptions.codexConfig ?? {};
-    optionsConfig = {
-      ...existingOptions,
-      codexConfig: {
-        ...existingCodexConfig,
-        reasoningEffort: normalizedReasoningEffort.value,
-      },
-    };
-  }
+  const optionsConfig: AgentSessionOptionsConfig = {
+    ...existingOptions,
+    saveConversationToEverMemOS: localSaveConversationToEverMemOS.value,
+    ...(isCodexEngine.value
+      ? {
+          codexConfig: {
+            ...existingCodexConfig,
+            reasoningEffort: normalizedReasoningEffort.value,
+          },
+        }
+      : {}),
+  };
 
   const settings: SessionSettings = {
     model: localModel.value.trim(),

@@ -432,15 +432,15 @@ export function useOpenClawChat(gateway: UseOpenClawGateway): UseOpenClawChat {
     const restrictionText =
       allowedTools.length === 0
         ? [
-            'Browser tool restrictions (enforced at runtime):',
-            '- No browser tools are currently allowed.',
+            'Tool restrictions (enforced at runtime):',
+            '- No tools are currently allowed.',
             '',
             'Ask the user to enable the required tools in Ruminer → Tools before using them.',
           ].join('\n')
         : [
-            'Browser tool restrictions (enforced at runtime):',
-            `- Allowed browser tools: ${allowedTools.join(', ')}`,
-            '- Do not use any other browser tools.',
+            'Tool restrictions (enforced at runtime):',
+            `- Allowed tools: ${allowedTools.join(', ')}`,
+            '- Do not use any other tools.',
             '',
             'Ask the user to enable a tool in Ruminer → Tools before using it.',
           ].join('\n');
