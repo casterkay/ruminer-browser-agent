@@ -7,6 +7,7 @@ export interface EmosSingleMessage {
   content: string;
   group_id: string;
   group_name?: string;
+  source_url?: string | null;
   sender_name?: string;
   role?: string | null;
   refer_list?: string[];
@@ -24,6 +25,18 @@ export interface EmosSearchRequest {
 export interface EmosSearchResponse {
   memories?: unknown[];
   total?: number;
+  [key: string]: unknown;
+}
+
+export interface EmosGetMemoriesRequest {
+  user_id?: string;
+  group_id?: string;
+  memory_type?: string;
+  limit?: number;
+  offset?: number;
+  start_time?: string;
+  end_time?: string;
+  version_range?: string;
   [key: string]: unknown;
 }
 
@@ -130,6 +143,61 @@ export async function emosDeleteMemory(messageId: string): Promise<unknown> {
   const payload = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(`EMOS delete failed (${response.status}) ${JSON.stringify(payload)}`);
+  }
+
+  return payload;
+}
+
+export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}): Promise<unknown> {
+  const settings = await getEmosSettings();
+  const baseUrl = await getBaseUrl();
+  const headers = await buildHeaders();
+
+  const params = new URLSearchParams();
+  if (paramsInput.group_id) params.append('group_id', paramsInput.group_id);
+  if (paramsInput.memory_type) params.append('memory_type', paramsInput.memory_type);
+  if (typeof paramsInput.limit === 'number') params.append('limit', String(paramsInput.limit));
+  if (typeof paramsInput.offset === 'number') params.append('offset', String(paramsInput.offset));
+  if (paramsInput.start_time) params.append('start_time', paramsInput.start_time);
+  if (paramsInput.end_time) params.append('end_time', paramsInput.end_time);
+  if (paramsInput.version_range) params.append('version_range', paramsInput.version_range);
+
+  const requestedUserId =
+    typeof paramsInput.user_id === 'string' && paramsInput.user_id.trim()
+      ? paramsInput.user_id.trim()
+      : '';
+  const fallbackUserId = settings.userId.trim();
+  const effectiveUserId = requestedUserId || fallbackUserId;
+  if (effectiveUserId) {
+    params.append('user_id', effectiveUserId);
+  }
+
+  Object.entries(paramsInput).forEach(([key, value]) => {
+    if (
+      ![
+        'user_id',
+        'group_id',
+        'memory_type',
+        'limit',
+        'offset',
+        'start_time',
+        'end_time',
+        'version_range',
+      ].includes(key) &&
+      value !== undefined
+    ) {
+      params.append(key, String(value));
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/api/v0/memories?${params.toString()}`, {
+    method: 'GET',
+    headers,
+  });
+
+  const payload = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(`EMOS get memories failed (${response.status}) ${JSON.stringify(payload)}`);
   }
 
   return payload;

@@ -1,6 +1,6 @@
-import { computed, ref, type Ref } from 'vue';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
+import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { computed, ref, type Ref } from 'vue';
 
 export interface MemoryItem {
   id: string;
@@ -10,7 +10,7 @@ export interface MemoryItem {
   create_time?: string;
   group_id?: string;
   group_name?: string;
-  canonical_url?: string;
+  source_url?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -72,9 +72,9 @@ function normalizeItem(raw: any): MemoryItem {
                 typeof raw.metadata.title === 'string'
               ? raw.metadata.title
               : undefined,
-    canonical_url:
-      typeof raw?.canonical_url === 'string'
-        ? raw.canonical_url
+    source_url:
+      typeof raw?.source_url === 'string'
+        ? raw.source_url
         : typeof raw?.url === 'string'
           ? raw.url
           : undefined,

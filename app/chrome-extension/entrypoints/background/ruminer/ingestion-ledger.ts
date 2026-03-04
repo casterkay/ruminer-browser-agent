@@ -1,7 +1,7 @@
 export interface IngestionLedgerEntry {
   item_key: string;
   content_hash: string;
-  canonical_url: string | null;
+  source_url: string | null;
   group_id: string;
   sender: string;
   evermemos_message_id: string;

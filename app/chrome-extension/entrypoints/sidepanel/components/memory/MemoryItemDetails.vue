@@ -7,7 +7,7 @@
         <button
           class="icon-btn ac-btn ac-focus-ring"
           :style="iconBtnStyle"
-          :disabled="!item?.canonical_url"
+          :disabled="!item?.source_url"
           title="Open canonical URL"
           aria-label="Open canonical URL"
           @click="handleOpen"
@@ -118,7 +118,7 @@ function formatTimestamp(value?: string): string {
 }
 
 function handleOpen(): void {
-  if (!props.item?.canonical_url) {
+  if (!props.item?.source_url) {
     return;
   }
   emit('open', props.item);

@@ -40,6 +40,10 @@ export const TOOL_NAMES = {
     PERFORMANCE_ANALYZE_INSIGHT: 'performance_analyze_insight',
     GIF_RECORDER: 'chrome_gif_recorder',
   },
+  MEMORY: {
+    READ_MEMORIES: 'emos_read_memories',
+    SEARCH_MEMORIES: 'emos_search_memories',
+  },
   RECORD_REPLAY: {
     RECORD_START: 'flow_record_start',
     RECORD_STOP: 'flow_record_stop',
@@ -57,6 +61,71 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.MEMORY.READ_MEMORIES,
+    description:
+      'Read memories from EverMemOS (list/query by user_id/group_id/time range/etc). Uses your configured EMOS base URL + API key.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_id: {
+          type: 'string',
+          description: 'Optional user ID (defaults to EMOS settings userId if omitted).',
+        },
+        group_id: {
+          type: 'string',
+          description: 'Optional group ID to filter memories (e.g., platform/session scope).',
+        },
+        memory_type: {
+          type: 'string',
+          description: 'Optional memory type filter (server-specific).',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max number of items to return (optional).',
+        },
+        offset: {
+          type: 'number',
+          description: 'Pagination offset (optional).',
+        },
+        start_time: {
+          type: 'string',
+          description: 'Start time (inclusive), ISO-8601 string (optional).',
+        },
+        end_time: {
+          type: 'string',
+          description: 'End time (inclusive), ISO-8601 string (optional).',
+        },
+        version_range: {
+          type: 'string',
+          description: 'Optional version range filter (server-specific).',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
+    description:
+      'Search memories in EverMemOS using a text query. Uses your configured EMOS base URL + API key.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query text.' },
+        user_id: {
+          type: 'string',
+          description: 'Optional user ID (defaults to EMOS settings userId if omitted).',
+        },
+        group_id: { type: 'string', description: 'Optional group ID filter.' },
+        limit: { type: 'number', description: 'Max number of items to return (optional).' },
+        retrieve_method: {
+          type: 'string',
+          description: 'Optional retrieval strategy hint (server-specific).',
+        },
+      },
+      required: ['query'],
     },
   },
   {

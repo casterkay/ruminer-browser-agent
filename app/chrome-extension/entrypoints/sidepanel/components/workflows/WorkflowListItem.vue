@@ -8,7 +8,19 @@
     <div class="workflow-content">
       <!-- Title and description -->
       <div class="workflow-info">
-        <div class="workflow-name" :style="nameStyle">{{ flow.name || 'Untitled' }}</div>
+        <div class="flex items-center gap-2">
+          <div class="workflow-name" :style="nameStyle">{{ flow.name || 'Untitled' }}</div>
+          <span
+            v-if="activeRun?.isInProgress"
+            class="text-[10px] px-1.5 py-0.5 rounded"
+            :style="{
+              backgroundColor: 'var(--ac-primary-light, #dbeafe)',
+              color: 'var(--ac-primary, #3b82f6)',
+            }"
+          >
+            Running
+          </span>
+        </div>
         <div class="workflow-desc" :style="descStyle">{{
           flow.description || 'No description'
         }}</div>
@@ -26,11 +38,51 @@
             {{ tag }}
           </span>
         </div>
+
+        <!-- Schedule (cron presets) -->
+        <div
+          class="mt-2 flex items-center gap-2 text-xs"
+          :style="{ color: 'var(--ac-text-subtle)' }"
+        >
+          <span class="flex-shrink-0">Schedule</span>
+          <select
+            class="px-2 py-1 rounded"
+            :style="scheduleSelectStyle"
+            :value="schedulePreset"
+            @change="onSchedulePresetChange(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="off">Off</option>
+            <option value="every6h">Every 6h</option>
+            <option value="daily2am">Daily 2am</option>
+            <option v-if="schedulePreset === 'custom'" value="custom" disabled>Custom</option>
+          </select>
+          <label class="flex items-center gap-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              class="workflow-checkbox"
+              :checked="scheduleEnabled"
+              @change="onScheduleEnabledChange(($event.target as HTMLInputElement).checked)"
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
       </div>
 
       <!-- Actions -->
       <div class="workflow-actions" :class="{ 'workflow-actions-visible': showActions }">
         <button
+          v-if="activeRun?.isInProgress"
+          class="workflow-action workflow-action-danger"
+          :style="actionDangerStyle"
+          @click.stop="$emit('stopRun', { runId: activeRun.id, status: activeRun.status })"
+          title="Stop workflow"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M6 6h12v12H6z" />
+          </svg>
+        </button>
+        <button
+          v-else
           class="workflow-action workflow-action-primary"
           :style="actionPrimaryStyle"
           @click.stop="$emit('run', flow.id)"
@@ -123,7 +175,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 
 interface FlowLite {
   id: string;
@@ -138,17 +190,92 @@ interface FlowLite {
 
 const props = defineProps<{
   flow: FlowLite;
+  activeRun?: { id: string; status: string; isInProgress?: boolean } | null;
+  scheduleTrigger?: { id: string; enabled?: boolean; cron?: string } | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'run', id: string): void;
+  (e: 'stopRun', payload: { runId: string; status: string }): void;
   (e: 'edit', id: string): void;
   (e: 'delete', id: string): void;
   (e: 'export', id: string): void;
+  (e: 'scheduleChange', payload: { flowId: string; cron: string | null; enabled: boolean }): void;
 }>();
 
 const showActions = ref(false);
 const showMoreMenu = ref(false);
+
+type SchedulePreset = 'off' | 'every6h' | 'daily2am' | 'custom';
+
+const schedulePreset = ref<SchedulePreset>('off');
+const scheduleEnabled = ref(false);
+
+const CRON_PRESETS: Record<Exclude<SchedulePreset, 'custom'>, string | null> = {
+  off: null,
+  every6h: '0 */6 * * *',
+  daily2am: '0 2 * * *',
+};
+
+function presetForCron(cron: string | undefined): SchedulePreset {
+  if (!cron) return 'off';
+  if (cron === CRON_PRESETS.every6h) return 'every6h';
+  if (cron === CRON_PRESETS.daily2am) return 'daily2am';
+  return 'custom';
+}
+
+function applyScheduleFromTrigger(): void {
+  schedulePreset.value = presetForCron(props.scheduleTrigger?.cron);
+  scheduleEnabled.value = props.scheduleTrigger?.enabled === true;
+}
+
+onMounted(() => {
+  applyScheduleFromTrigger();
+});
+
+// Keep local state in sync with upstream trigger changes.
+watch(
+  () => props.scheduleTrigger,
+  () => applyScheduleFromTrigger(),
+);
+
+function emitScheduleChange(next: { cron: string | null; enabled: boolean }): void {
+  emit('scheduleChange', { flowId: props.flow.id, ...next });
+}
+
+function onSchedulePresetChange(nextPresetRaw: string): void {
+  const nextPreset = (nextPresetRaw as SchedulePreset) || 'off';
+
+  if (nextPreset === 'off') {
+    schedulePreset.value = 'off';
+    scheduleEnabled.value = false;
+    emitScheduleChange({ cron: null, enabled: false });
+    return;
+  }
+
+  if (nextPreset === 'custom') {
+    // Custom presets are managed via the trigger builder/editor.
+    schedulePreset.value = presetForCron(props.scheduleTrigger?.cron);
+    return;
+  }
+
+  schedulePreset.value = nextPreset;
+  scheduleEnabled.value = true;
+  emitScheduleChange({ cron: CRON_PRESETS[nextPreset], enabled: true });
+}
+
+function onScheduleEnabledChange(enabled: boolean): void {
+  scheduleEnabled.value = enabled;
+
+  let cron: string | null = props.scheduleTrigger?.cron ?? null;
+  if (!cron && enabled) {
+    // Enabling from scratch: pick a reasonable default.
+    schedulePreset.value = 'daily2am';
+    cron = CRON_PRESETS.daily2am;
+  }
+
+  emitScheduleChange({ cron, enabled });
+}
 
 const hasTags = computed(() => {
   return props.flow.meta?.domain || (props.flow.meta?.tags?.length ?? 0) > 0;
@@ -221,6 +348,18 @@ const actionPrimaryStyle = computed(() => ({
   borderRadius: 'var(--ac-radius-button, 8px)',
 }));
 
+const actionDangerStyle = computed(() => ({
+  backgroundColor: 'var(--ac-danger, #ef4444)',
+  color: 'var(--ac-accent-contrast, #ffffff)',
+  borderRadius: 'var(--ac-radius-button, 8px)',
+}));
+
+const scheduleSelectStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted, #f2f0eb)',
+  color: 'var(--ac-text-muted, #6e6e6e)',
+  border: '1px solid var(--ac-border, #e7e5e4)',
+}));
+
 const menuStyle = computed(() => ({
   backgroundColor: 'var(--ac-surface, #ffffff)',
   border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4)',
@@ -238,6 +377,22 @@ const menuItemDangerStyle = computed(() => ({
 </script>
 
 <style scoped>
+.workflow-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4);
+  appearance: none;
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 120ms) ease;
+}
+
+.workflow-checkbox:checked {
+  background-color: var(--ac-accent, #d97757);
+  border-color: var(--ac-accent, #d97757);
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+}
+
 .workflow-item {
   padding: 16px;
   cursor: pointer;

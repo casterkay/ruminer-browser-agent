@@ -3,7 +3,7 @@ import type { IngestionLedgerEntry } from './ingestion-ledger';
 export interface LedgerCandidate {
   item_key: string;
   content_hash: string;
-  canonical_url: string | null;
+  source_url: string | null;
   group_id: string;
   sender: string;
   evermemos_message_id: string;
@@ -31,7 +31,7 @@ export function applyLedgerPolicy(
       nextEntry: {
         item_key: candidate.item_key,
         content_hash: candidate.content_hash,
-        canonical_url: candidate.canonical_url,
+        source_url: candidate.source_url,
         group_id: candidate.group_id,
         sender: candidate.sender,
         evermemos_message_id: candidate.evermemos_message_id,
@@ -52,7 +52,7 @@ export function applyLedgerPolicy(
       nextEntry: {
         ...existing,
         content_hash: candidate.content_hash,
-        canonical_url: candidate.canonical_url,
+        source_url: candidate.source_url,
         group_id: candidate.group_id,
         sender: candidate.sender,
         evermemos_message_id: candidate.evermemos_message_id,
@@ -70,7 +70,7 @@ export function applyLedgerPolicy(
     shouldAdvanceCursor: true,
     nextEntry: {
       ...existing,
-      canonical_url: candidate.canonical_url,
+      source_url: candidate.source_url,
       group_id: candidate.group_id,
       sender: candidate.sender,
       evermemos_message_id: candidate.evermemos_message_id,
@@ -90,7 +90,7 @@ export function toFailedLedgerEntry(
   return {
     item_key: candidate.item_key,
     content_hash: candidate.content_hash,
-    canonical_url: candidate.canonical_url,
+    source_url: candidate.source_url,
     group_id: candidate.group_id,
     sender: candidate.sender,
     evermemos_message_id: candidate.evermemos_message_id,

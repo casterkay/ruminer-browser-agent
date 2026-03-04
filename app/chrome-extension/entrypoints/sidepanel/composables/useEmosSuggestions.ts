@@ -1,6 +1,6 @@
-import { computed, onUnmounted, ref, type Ref } from 'vue';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
+import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { computed, onUnmounted, ref, type Ref } from 'vue';
 
 export interface MemorySuggestion {
   id: string;
@@ -67,8 +67,8 @@ function normalizeSuggestion(raw: any): MemorySuggestion {
               ? raw.metadata.title
               : undefined,
     canonicalUrl:
-      typeof raw.canonical_url === 'string'
-        ? raw.canonical_url
+      typeof raw.source_url === 'string'
+        ? raw.source_url
         : typeof raw.url === 'string'
           ? raw.url
           : undefined,

@@ -17,6 +17,8 @@ export {
   type AgentStatusEvent,
   type AgentStoredMessage,
   type GetOpenClawGatewaySettingsResponse,
+  type ListOpenClawAgentsResponse,
+  type OpenClawAgentDto,
   type OpenClawGatewaySettingsDto,
   type RealtimeEvent,
   type StreamTransport,

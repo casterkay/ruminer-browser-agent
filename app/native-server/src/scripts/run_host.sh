@@ -42,6 +42,7 @@ STDERR_LOG="${LOG_DIR}/native_host_stderr_unix_${TIMESTAMP}.log"
     echo "LOG_DIR: ${LOG_DIR}"
     echo "NODE_SCRIPT: ${NODE_SCRIPT}"
     echo "Initial PATH: ${PATH}"
+    echo "RUMINER_OPENCLAW_DEBUG: ${RUMINER_OPENCLAW_DEBUG:-<unset>}"
     echo "CHROME_MCP_NODE_PATH: ${CHROME_MCP_NODE_PATH:-<unset>}"
     echo "VOLTA_HOME: ${VOLTA_HOME:-<unset>}"
     echo "ASDF_DATA_DIR: ${ASDF_DATA_DIR:-<unset>}"
@@ -50,6 +51,13 @@ STDERR_LOG="${LOG_DIR}/native_host_stderr_unix_${TIMESTAMP}.log"
     echo "User: $(whoami)"
     echo "Current PWD: $(pwd)"
 } > "${WRAPPER_LOG}"
+
+# Debug toggles (use a file marker because Chrome-launched native hosts often
+# don't inherit the env from your shell)
+if [ -z "${RUMINER_OPENCLAW_DEBUG:-}" ] && [ -f "${LOG_DIR}/enable_openclaw_debug" ]; then
+    export RUMINER_OPENCLAW_DEBUG="1"
+    echo "Enabled RUMINER_OPENCLAW_DEBUG=1 via ${LOG_DIR}/enable_openclaw_debug" >> "${WRAPPER_LOG}"
+fi
 
 # Node.js discovery
 NODE_EXEC=""

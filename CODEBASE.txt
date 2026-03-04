@@ -84,6 +84,7 @@ app/
 │   │   │   │   ├── index.ts
 │   │   │   │   └── storage
 │   │   │   ├── ruminer
+│   │   │   │   ├── builtin-flows
 │   │   │   │   ├── emos-client.ts
 │   │   │   │   ├── hash.ts
 │   │   │   │   ├── ingestion-ledger.ts
@@ -97,6 +98,7 @@ app/
 │   │   │   │   ├── browser
 │   │   │   │   ├── flow-learn.ts
 │   │   │   │   ├── index.ts
+│   │   │   │   ├── memory.ts
 │   │   │   │   ├── record-replay.ts
 │   │   │   │   └── step-supplement.ts
 │   │   │   ├── utils
@@ -144,6 +146,7 @@ app/
 │   │   │       ├── openclaw-device-auth.ts
 │   │   │       ├── openclaw-settings.ts
 │   │   │       ├── rr-flow-convert.ts
+│   │   │       ├── stable-json.ts
 │   │   │       ├── system-settings.ts
 │   │   │       └── tool-groups.ts
 │   │   ├── sidepanel
@@ -423,4 +426,4 @@ app/
         ├── index.ts
         └── openclaw.plugin.json
 
-97 directories, 302 files
+98 directories, 304 files

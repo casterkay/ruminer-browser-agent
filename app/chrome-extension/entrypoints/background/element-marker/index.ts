@@ -176,6 +176,8 @@ export function initElementMarkerListeners() {
               text?: string;
               keys?: string;
               button?: 'left' | 'right' | 'middle';
+              waitForNavigation?: boolean;
+              timeoutMs?: number;
               bubbles?: boolean;
               cancelable?: boolean;
               modifiers?: any;
@@ -183,12 +185,9 @@ export function initElementMarkerListeners() {
               offsetX?: number;
               offsetY?: number;
               relativeTo?: 'element' | 'viewport';
+              scrollDirection?: 'up' | 'down' | 'left' | 'right';
+              scrollAmount?: number;
             };
-            // enrich typing with optional nav + scroll params
-            (req as any).waitForNavigation = (message as any).waitForNavigation;
-            (req as any).timeoutMs = (message as any).timeoutMs;
-            (req as any).scrollDirection = (message as any).scrollDirection;
-            (req as any).scrollAmount = (message as any).scrollAmount;
             const selector = String(req.selector || '').trim();
             const selectorType = (req.selectorType || 'css') as 'css' | 'xpath';
             const action = req.action as MarkerValidationAction;
@@ -310,10 +309,8 @@ export function initElementMarkerListeners() {
                   break;
                 }
                 case 'scroll': {
-                  const direction = (req as any).scrollDirection || 'down';
-                  const amount = Number.isFinite((req as any).scrollAmount)
-                    ? Number((req as any).scrollAmount)
-                    : 300;
+                  const direction = req.scrollDirection || 'down';
+                  const amount = Number.isFinite(req.scrollAmount) ? Number(req.scrollAmount) : 300;
                   const payload = coords
                     ? {
                         action: 'scroll',

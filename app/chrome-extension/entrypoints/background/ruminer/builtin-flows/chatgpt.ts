@@ -1,10 +1,13 @@
 import type { FlowV3, NodeV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import { FLOW_SCHEMA_VERSION } from '@/entrypoints/background/record-replay-v3/domain/flow';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 const CHATGPT_DOMAIN_BINDINGS = [
   { kind: 'domain' as const, value: 'chat.openai.com' },
   { kind: 'domain' as const, value: 'chatgpt.com' },
 ];
+
+const CHATGPT_DEFAULT_REQUIRED_TOOLS = [TOOL_NAMES.BROWSER.NAVIGATE];
 
 const CHATGPT_LIST_SCRIPT = `
 // ChatGPT conversation list scraper.
@@ -92,7 +95,7 @@ return Boolean(composer);
 const CHATGPT_EXTRACT_MESSAGES_SCRIPT = `
 // ChatGPT conversation message extractor.
 // input: unused (array) - present for compatibility.
-// returns: [{ sender, content, role, message_index, group_name, canonical_url }]
+// returns: [{ sender, content, role, message_index, group_name, source_url }]
 
 function cleanText(raw) {
   return String(raw || '').replace(/\\s+\\n/g, '\\n').replace(/\\n\\s+/g, '\\n').replace(/\\s+/g, ' ').trim();
@@ -122,7 +125,7 @@ for (let i = 0; i < nodes.length; i++) {
     content,
     message_index: out.length,
     group_name: title || null,
-    canonical_url: url || null,
+    source_url: url || null,
   });
 }
 
@@ -142,6 +145,9 @@ function createBaseFlow(
       ...(partial.meta ?? {}),
       tags: Array.from(new Set([...(partial.meta?.tags ?? []), 'builtin', 'chatgpt'])),
       bindings: partial.meta?.bindings?.length ? partial.meta.bindings : CHATGPT_DOMAIN_BINDINGS,
+      requiredTools: partial.meta?.requiredTools?.length
+        ? partial.meta.requiredTools
+        : CHATGPT_DEFAULT_REQUIRED_TOOLS,
     },
   };
 }

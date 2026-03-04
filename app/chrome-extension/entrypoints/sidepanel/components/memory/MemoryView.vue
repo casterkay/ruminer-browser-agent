@@ -229,8 +229,8 @@ function closeDetails(): void {
 }
 
 function openCanonicalUrl(item: MemoryItem): void {
-  if (!item.canonical_url) return;
-  void chrome.tabs.create({ url: item.canonical_url });
+  if (!item.source_url) return;
+  void chrome.tabs.create({ url: item.source_url });
 }
 
 function formatSender(sender?: string): string {

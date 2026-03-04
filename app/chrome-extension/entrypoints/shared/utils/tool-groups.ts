@@ -1,7 +1,7 @@
 import { STORAGE_KEYS } from '@/common/constants';
 import { TOOL_NAMES, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 
-export type ToolGroupId = 'observe' | 'navigate' | 'interact' | 'execute' | 'workflow';
+export type ToolGroupId = 'observe' | 'navigate' | 'interact' | 'execute' | 'workflow' | 'memory';
 
 export interface ToolDefinition {
   id: string;
@@ -23,6 +23,7 @@ export interface ToolGroupState {
   interact: boolean;
   execute: boolean;
   workflow: boolean;
+  memory: boolean;
   updatedAt: string;
 }
 
@@ -276,6 +277,27 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
       },
     ],
   },
+  {
+    id: 'memory',
+    label: 'Memory',
+    description: 'EverMemOS memory read/search tools',
+    defaultEnabled: true,
+    tools: [
+      {
+        id: TOOL_NAMES.MEMORY.READ_MEMORIES,
+        name: 'Read Memories',
+        description:
+          toolSchemaDescription(TOOL_NAMES.MEMORY.READ_MEMORIES) ?? 'Read memories from EverMemOS',
+      },
+      {
+        id: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
+        name: 'Search Memories',
+        description:
+          toolSchemaDescription(TOOL_NAMES.MEMORY.SEARCH_MEMORIES) ??
+          'Search memories in EverMemOS',
+      },
+    ],
+  },
 ];
 
 const DEFAULT_TOOL_GROUP_STATE: ToolGroupState = {
@@ -284,6 +306,7 @@ const DEFAULT_TOOL_GROUP_STATE: ToolGroupState = {
   interact: false,
   execute: false,
   workflow: true,
+  memory: true,
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -310,6 +333,7 @@ export async function getToolGroupState(): Promise<ToolGroupState> {
     interact: normalizeBoolean(raw.interact, DEFAULT_TOOL_GROUP_STATE.interact),
     execute: normalizeBoolean(raw.execute, DEFAULT_TOOL_GROUP_STATE.execute),
     workflow: normalizeBoolean(raw.workflow, DEFAULT_TOOL_GROUP_STATE.workflow),
+    memory: normalizeBoolean(raw.memory, DEFAULT_TOOL_GROUP_STATE.memory),
     updatedAt:
       typeof raw.updatedAt === 'string' && raw.updatedAt.length > 0
         ? raw.updatedAt
@@ -445,6 +469,9 @@ export function buildToolGroupRestrictionText(
         break;
       case 'workflow':
         lines.push('- Workflow: disabled (no RR-V3 flow/trigger/run actions)');
+        break;
+      case 'memory':
+        lines.push('- Memory: disabled (no EverMemOS memory read/search tools)');
         break;
     }
   }

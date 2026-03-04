@@ -128,7 +128,7 @@ function toMemoryItem(suggestion: MemorySuggestion): MemoryItem {
     create_time: suggestion.createTime,
     group_id: suggestion.groupId,
     group_name: suggestion.groupName,
-    canonical_url: suggestion.canonicalUrl,
+    source_url: suggestion.canonicalUrl,
     metadata: suggestion.metadata,
   };
 }
@@ -142,8 +142,8 @@ function closeDetails(): void {
 }
 
 function openCanonicalUrl(item: MemoryItem): void {
-  if (!item.canonical_url) return;
-  void chrome.tabs.create({ url: item.canonical_url });
+  if (!item.source_url) return;
+  void chrome.tabs.create({ url: item.source_url });
 }
 
 function formatAbsoluteTime(value?: string): string {

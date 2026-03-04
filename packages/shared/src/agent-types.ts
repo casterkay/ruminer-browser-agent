@@ -231,10 +231,30 @@ export interface AgentSessionOptionsConfig {
   sandbox?: Record<string, unknown>;
   env?: Record<string, string>;
   /**
+   * OpenClaw-specific configuration.
+   * `sessionKey` is the OpenClaw agent id used for Gateway `chat.*` calls.
+   */
+  openclaw?: {
+    sessionKey?: string;
+  };
+  /**
    * Optional Codex-specific configuration overrides.
    * Only applicable when using CodexEngine.
    */
   codexConfig?: Partial<CodexEngineConfig>;
+}
+
+// ============================================================
+// OpenClaw Agents API
+// ============================================================
+
+export interface OpenClawAgentDto {
+  id: string;
+  name?: string;
+}
+
+export interface ListOpenClawAgentsResponse {
+  agents: OpenClawAgentDto[];
 }
 
 /**

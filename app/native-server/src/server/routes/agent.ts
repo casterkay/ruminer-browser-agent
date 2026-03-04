@@ -13,6 +13,8 @@ import type {
   AttachmentCleanupResponse,
   AttachmentStatsResponse,
   GetOpenClawGatewaySettingsResponse,
+  ListOpenClawAgentsResponse,
+  OpenClawAgentDto,
   OpenProjectRequest,
   OpenProjectTarget,
   TestOpenClawGatewayResponse,
@@ -240,6 +242,69 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         deviceId: identity.deviceId,
       };
       reply.status(HTTP_STATUS.OK).send(resBody);
+    }
+  });
+
+  fastify.get('/agent/openclaw/agents', async (_request, reply) => {
+    try {
+      const settings = await getOpenClawGatewaySettings();
+      const client = new OpenClawGatewayClient({
+        wsUrl: settings.wsUrl,
+        authToken: settings.authToken,
+        clientInfo: {
+          id: 'node-host',
+          version: '0.1.0',
+          platform: process.platform,
+          mode: 'node',
+        },
+      });
+
+      await client.connect();
+
+      let raw: any;
+      try {
+        raw = await client.request<any>('agents.list');
+      } catch (err) {
+        // Some gateway builds require an empty object parameter.
+        raw = await client.request<any>('agents.list', {});
+      } finally {
+        client.close();
+      }
+
+      const safeString = (value: unknown): string => (typeof value === 'string' ? value : '');
+      const normalize = (value: any): OpenClawAgentDto | null => {
+        if (!value || typeof value !== 'object') return null;
+        const id = safeString(value.id || value.agentId || value.key).trim();
+        if (!id) return null;
+        const name = safeString(value.name || value.title || value.label).trim();
+        return name ? { id, name } : { id };
+      };
+
+      const list: any[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.agents)
+          ? raw.agents
+          : Array.isArray(raw?.items)
+            ? raw.items
+            : [];
+
+      const agents = Array.from(
+        new Map(
+          list
+            .map(normalize)
+            .filter(Boolean)
+            .map((a) => [a!.id, a!] as const),
+        ).values(),
+      );
+
+      const resBody: ListOpenClawAgentsResponse = {
+        agents,
+      };
+      reply.status(HTTP_STATUS.OK).send(resBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fastify.log.error({ err: error }, 'Failed to list OpenClaw agents');
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
     }
   });
 

@@ -140,10 +140,14 @@
           v-for="flow in filteredFlows"
           :key="flow.id"
           :flow="flow"
+          :active-run="activeRunByFlowId.get(flow.id) ?? null"
+          :schedule-trigger="scheduleTriggerByFlowId.get(flow.id) ?? null"
           @run="$emit('run', $event)"
+          @stop-run="$emit('stopRun', $event)"
           @edit="$emit('edit', $event)"
           @delete="$emit('delete', $event)"
           @export="$emit('export', $event)"
+          @schedule-change="$emit('scheduleChange', $event)"
         />
       </div>
 
@@ -244,18 +248,146 @@
                       class="text-xs py-1"
                       :style="{ color: 'var(--ac-text-muted)' }"
                     >
-                      <div class="flex items-center gap-2">
-                        <span>状态: {{ getRunStatusText(run) }}</span>
-                        <span v-if="run.finishedAt"
-                          >• 耗时:
-                          {{
-                            Math.round(
-                              (new Date(run.finishedAt).getTime() -
-                                new Date(run.startedAt).getTime()) /
-                                1000,
-                            )
-                          }}s</span
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                          <span>状态: {{ getRunStatusText(run) }}</span>
+                          <span v-if="run.finishedAt"
+                            >• 耗时:
+                            {{
+                              Math.round(
+                                (new Date(run.finishedAt).getTime() -
+                                  new Date(run.startedAt).getTime()) /
+                                  1000,
+                              )
+                            }}s</span
+                          >
+                          <span v-if="run.currentNodeId">• 当前节点: {{ run.currentNodeId }}</span>
+                          <span
+                            v-if="run.flowVersionHash"
+                            :title="run.flowVersionHash"
+                            class="truncate"
+                            >• hash: {{ formatHash(run.flowVersionHash) }}</span
+                          >
+                        </div>
+
+                        <button
+                          v-if="run.isInProgress"
+                          class="text-xs px-2 py-1 rounded"
+                          :style="{
+                            backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                            color: 'var(--ac-danger, #ef4444)',
+                          }"
+                          @click.stop="$emit('stopRun', { runId: run.id, status: run.status })"
+                          title="Stop this run"
                         >
+                          Stop
+                        </button>
+                      </div>
+
+                      <div
+                        v-if="run.repair?.needed"
+                        class="mt-2 text-xs px-2 py-1 rounded"
+                        :style="{
+                          backgroundColor: 'var(--ac-warning-light, #fef3c7)',
+                          color: 'var(--ac-warning, #d97706)',
+                        }"
+                      >
+                        Needs repair • node={{ run.repair.nodeId }}
+                      </div>
+
+                      <div
+                        v-if="run.error?.message"
+                        class="mt-2 text-xs px-2 py-1 rounded"
+                        :style="{
+                          backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                          color: 'var(--ac-danger, #ef4444)',
+                        }"
+                      >
+                        {{ run.error.message }}
+                      </div>
+
+                      <div class="mt-2">
+                        <div
+                          v-if="openRunEventsLoading"
+                          class="text-xs py-1"
+                          :style="{ color: 'var(--ac-text-subtle)' }"
+                        >
+                          Loading events…
+                        </div>
+                        <div
+                          v-else-if="openRunEvents.length === 0"
+                          class="text-xs py-1"
+                          :style="{ color: 'var(--ac-text-subtle)' }"
+                        >
+                          No events yet
+                        </div>
+                        <div v-else class="space-y-1">
+                          <div
+                            v-for="(event, idx) in openRunEvents"
+                            :key="eventKey(event, idx)"
+                            class="text-xs px-2 py-1 rounded"
+                            :style="{
+                              backgroundColor: 'var(--ac-surface-muted)',
+                              color: 'var(--ac-text-muted)',
+                            }"
+                          >
+                            <div class="flex items-start justify-between gap-2">
+                              <div class="min-w-0">
+                                <div class="truncate">{{ formatEventLabel(event) }}</div>
+                                <div
+                                  v-if="event.type === 'log' && event.message"
+                                  class="mt-0.5"
+                                  :style="{ color: 'var(--ac-text-subtle)' }"
+                                >
+                                  {{ event.message }}
+                                </div>
+                              </div>
+                              <div
+                                class="flex-shrink-0"
+                                :style="{ color: 'var(--ac-text-subtle)' }"
+                              >
+                                {{ formatEventTime(event) }}
+                              </div>
+                            </div>
+
+                            <div
+                              v-if="event.type === 'artifact.screenshot' && event.data"
+                              class="mt-2"
+                            >
+                              <img
+                                :src="screenshotSrc(event.data)"
+                                alt="artifact screenshot"
+                                class="w-full rounded"
+                                style="max-height: 220px; object-fit: cover"
+                              />
+                            </div>
+
+                            <details
+                              v-if="event.type === 'artifact.html_snippet' && event.data"
+                              class="mt-2"
+                            >
+                              <summary class="cursor-pointer">HTML snippet</summary>
+                              <pre class="mt-2 whitespace-pre-wrap break-words">{{
+                                event.data
+                              }}</pre>
+                            </details>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-if="run.args?.conversationUrl" class="mt-2">
+                        <button
+                          class="text-xs px-2 py-1 rounded"
+                          :style="{
+                            backgroundColor: 'var(--ac-surface-muted)',
+                            color: 'var(--ac-text-muted)',
+                            border: '1px solid var(--ac-border)',
+                          }"
+                          @click.stop="openRunUrl(run.args.conversationUrl)"
+                          title="Open the failing page in a new tab"
+                        >
+                          Open page
+                        </button>
                       </div>
                     </div>
                     <!-- V2: Show entries -->
@@ -409,7 +541,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import WorkflowListItem from './WorkflowListItem.vue';
 
 interface FlowLite {
@@ -426,6 +558,7 @@ interface FlowLite {
 interface RunLite {
   id: string;
   flowId: string;
+  flowVersionHash?: string;
   startedAt: string;
   finishedAt?: string;
   success?: boolean;
@@ -433,12 +566,17 @@ interface RunLite {
   isInProgress?: boolean;
   /** V3 run status */
   status?: 'queued' | 'running' | 'paused' | 'succeeded' | 'failed' | 'canceled';
+  args?: any;
+  error?: any;
+  repair?: any;
+  currentNodeId?: string;
   entries: any[];
 }
 
 interface Trigger {
   id: string;
   type: string;
+  kind?: string;
   flowId: string;
   enabled?: boolean;
   [key: string]: any;
@@ -450,15 +588,18 @@ const props = defineProps<{
   triggers: Trigger[];
   onlyBound: boolean;
   openRunId: string | null;
+  getRunEvents: (runId: string) => Promise<unknown[]>;
 }>();
 
 const emit = defineEmits<{
   (e: 'refresh'): void;
   (e: 'create'): void;
   (e: 'run', id: string): void;
+  (e: 'stopRun', payload: { runId: string; status: string }): void;
   (e: 'edit', id: string): void;
   (e: 'delete', id: string): void;
   (e: 'export', id: string): void;
+  (e: 'scheduleChange', payload: { flowId: string; cron: string | null; enabled: boolean }): void;
   (e: 'update:onlyBound', value: boolean): void;
   (e: 'toggleRun', id: string): void;
   (e: 'createTrigger'): void;
@@ -469,6 +610,87 @@ const emit = defineEmits<{
 // Local state
 const searchQuery = ref('');
 const expandedSections = ref<Set<string>>(new Set());
+
+const activeRunByFlowId = computed(() => {
+  const map = new Map<string, RunLite>();
+  const inProgress = props.runs.filter((run) => run.isInProgress);
+  for (const run of inProgress) {
+    const existing = map.get(run.flowId);
+    if (!existing) {
+      map.set(run.flowId, run);
+      continue;
+    }
+    if (new Date(run.startedAt).getTime() > new Date(existing.startedAt).getTime()) {
+      map.set(run.flowId, run);
+    }
+  }
+  return map;
+});
+
+const scheduleTriggerByFlowId = computed(() => {
+  const map = new Map<string, Trigger>();
+  for (const trigger of props.triggers) {
+    if (trigger.kind !== 'cron' && trigger.type !== 'cron') continue;
+    if (!trigger.flowId) continue;
+    const desiredId = `cron:${trigger.flowId}`;
+    if (trigger.id === desiredId) {
+      map.set(trigger.flowId, trigger);
+    }
+  }
+  return map;
+});
+
+const openRunEvents = ref<any[]>([]);
+const openRunEventsLoading = ref(false);
+let openRunEventsPoll: ReturnType<typeof setInterval> | null = null;
+let openRunEventsToken = 0;
+
+async function loadOpenRunEvents(runId: string): Promise<void> {
+  const token = (openRunEventsToken += 1);
+  openRunEventsLoading.value = true;
+  openRunEvents.value = [];
+
+  try {
+    const events = await props.getRunEvents(runId);
+    if (token !== openRunEventsToken) return;
+    openRunEvents.value = Array.isArray(events) ? (events as any[]) : [];
+  } finally {
+    if (token === openRunEventsToken) {
+      openRunEventsLoading.value = false;
+    }
+  }
+}
+
+function clearOpenRunEventsPoll(): void {
+  if (openRunEventsPoll) {
+    clearInterval(openRunEventsPoll);
+    openRunEventsPoll = null;
+  }
+}
+
+watch(
+  () => props.openRunId,
+  async (runId) => {
+    clearOpenRunEventsPoll();
+    openRunEventsToken += 1;
+    openRunEvents.value = [];
+
+    if (!runId) return;
+    await loadOpenRunEvents(runId);
+
+    const run = props.runs.find((r) => r.id === runId);
+    if (run?.isInProgress) {
+      openRunEventsPoll = setInterval(() => {
+        void loadOpenRunEvents(runId);
+      }, 2_000);
+    }
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  clearOpenRunEventsPoll();
+});
 
 // Filtered flows based on search
 const filteredFlows = computed(() => {
@@ -491,6 +713,51 @@ const filteredFlows = computed(() => {
 function getFlowName(flowId: string): string {
   const flow = props.flows.find((f) => f.id === flowId);
   return flow?.name || flowId;
+}
+
+function eventKey(event: any, idx: number): string {
+  const seq = typeof event?.seq === 'number' ? String(event.seq) : '';
+  const ts = typeof event?.ts === 'number' ? String(event.ts) : '';
+  return seq || `${event?.type || 'evt'}:${ts}:${idx}`;
+}
+
+function formatEventTime(event: any): string {
+  const ts = event?.ts;
+  if (typeof ts !== 'number') return '';
+  return formatTime(new Date(ts).toISOString());
+}
+
+function formatEventLabel(event: any): string {
+  const type = String(event?.type || '');
+  if (!type) return 'event';
+  const nodeId = typeof event?.nodeId === 'string' ? event.nodeId : null;
+  if (nodeId && (type.startsWith('node.') || type.startsWith('artifact.'))) {
+    return `${type} • ${nodeId}`;
+  }
+  return type;
+}
+
+function screenshotMime(base64: string): string {
+  if (base64.startsWith('/9j/')) return 'image/jpeg';
+  if (base64.startsWith('iVBORw0')) return 'image/png';
+  return 'image/png';
+}
+
+function screenshotSrc(base64: string): string {
+  const mime = screenshotMime(String(base64 || ''));
+  return `data:${mime};base64,${base64}`;
+}
+
+function openRunUrl(url: string): void {
+  const next = String(url || '').trim();
+  if (!next) return;
+  void chrome.tabs.create({ url: next });
+}
+
+function formatHash(hash: string): string {
+  const value = String(hash || '').trim();
+  if (!value) return '';
+  return value.length <= 12 ? value : value.slice(0, 12);
 }
 
 /**
