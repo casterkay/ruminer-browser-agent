@@ -52,7 +52,10 @@ type OpenClawPluginApi = {
     warn: (message: string, meta?: unknown) => void;
     error: (message: string, meta?: unknown) => void;
   };
+  // OpenClaw passes the full config here.
   config: unknown;
+  // OpenClaw passes plugin-scoped config (plugins.entries.<id>.config) here.
+  pluginConfig?: unknown;
 };
 
 const DEFAULT_MCP_URL = 'http://127.0.0.1:12306/mcp';
@@ -240,7 +243,9 @@ async function callToolViaMcp(
 }
 
 export default function register(api: OpenClawPluginApi) {
-  const config = normalizeConfig(api.config);
+  // OpenClaw plugin API provides plugin-scoped config via `pluginConfig`.
+  // Fall back to `config` for backward compatibility with older runtimes.
+  const config = normalizeConfig(api.pluginConfig ?? api.config);
 
   api.registerGatewayMethod('mcp-client.status', ({ respond }) => {
     respond(true, {

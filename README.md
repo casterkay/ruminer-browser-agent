@@ -1,162 +1,178 @@
-# Ruminer Browser Agent 🚀
+# Ruminer Browser Agent
 
-> Ruminer is a sidepanel-first browser agent that connects to OpenClaw Gateway for chat/memory and exposes browser automation through a local MCP server.
+Ruminer Browser Agent is your browser agent with:
 
-**Status**: This repository is now detached from the original `mcp-chrome` direction and is being refactored as a dedicated Ruminer codebase.
+- A sidepanel chat UI that talks to an OpenClaw Gateway (local WebSocket)
+- A local MCP server at `http://127.0.0.1:12306/mcp` for browser automation tools
+- EverMemOS (EMOS) integration (search + ingestion)
+- RR-V3 workflows that survive MV3 service worker restarts
 
----
+This repository is a pnpm monorepo. It is not “installable via npm” as a single upstream package in the way the old mcp-chrome docs suggest. Use the local build + registration flow below.
 
-## 🎯 What is Ruminer Browser Agent?
+## Architecture (quick mental model)
 
-Ruminer Browser Agent is a Chrome extension architecture for OpenClaw-based chat, memory, and workflows:
+1. Your MCP client (OpenClaw via plugin, Codex CLI, Claude Code) calls Ruminer MCP at `http://127.0.0.1:12306/mcp`.
 
-- Gateway WebSocket transport (`chat.*`, memory plugins)
-- Local MCP server (`/mcp`) for browser tools (Claude Code, Codex, OpenClaw via mcp-client plugin)
-- Extension-side runtime tool-group gates
-- EMOS memory search and ingestion flows
+2. The local native server (app/native-server) forwards tool calls to the extension background service worker via Native Messaging.
 
-## ✨ Core Features
+3. The extension executes the browser action (tabs, scripting, debugger, etc.) and returns results.
 
-- 😁 **Chatbot/Model Agnostic**: Let any LLM or chatbot client or agent you prefer automate your browser
-- ⭐️ **Use Your Original Browser**: Seamlessly integrate with your existing browser environment (your configurations, login states, etc.)
-- 💻 **Fully Local**: Pure local MCP server ensuring user privacy
-- 🚄 **Streamable HTTP**: Streamable HTTP connection method
-- 🏎 **Cross-Tab**: Cross-tab context
-- 🧠 **Semantic Search**: Built-in vector database for intelligent browser tab content discovery
-- 🔍 **Smart Content Analysis**: AI-powered text extraction and similarity matching
-- 🌐 **20+ Tools**: Support for screenshots, network monitoring, interactive operations, bookmark management, browsing history, and 20+ other tools
-- 🚀 **SIMD-Accelerated AI**: Custom WebAssembly SIMD optimization for 4-8x faster vector operations
+OpenClaw chat uses the Gateway (default `ws://127.0.0.1:18789`) and the extension sidepanel UI.
 
-## 🆚 Comparison with Similar Projects
+## Prerequisites
 
-| Comparison Dimension    | Playwright-based MCP Server                                                                                               | Chrome Extension-based MCP Server                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Resource Usage**      | ❌ Requires launching independent browser process, installing Playwright dependencies, downloading browser binaries, etc. | ✅ No need to launch independent browser process, directly utilizes user's already open Chrome browser |
-| **User Session Reuse**  | ❌ Requires re-login                                                                                                      | ✅ Automatically uses existing login state                                                             |
-| **Browser Environment** | ❌ Clean environment lacks user settings                                                                                  | ✅ Fully preserves user environment                                                                    |
-| **API Access**          | ⚠️ Limited to Playwright API                                                                                              | ✅ Full access to Chrome native APIs                                                                   |
-| **Startup Speed**       | ❌ Requires launching browser process                                                                                     | ✅ Only needs to activate extension                                                                    |
-| **Response Speed**      | 50-200ms inter-process communication                                                                                      | ✅ Faster                                                                                              |
+- Node.js >= 22.5.0
+- pnpm (see packageManager in [package.json](package.json))
+- Chrome (or Chromium-based browser)
+- Optional but recommended:
+  - OpenClaw CLI (for sidepanel chat + OpenClaw plugin tool routing)
+  - EverMemOS base URL + API key (for memory features)
 
-## 🚀 Quick Start
+## One-shot local setup (recommended)
 
-### OpenClaw plugin modules in this repo
-
-Ruminer uses OpenClaw plugins from this repository:
-
-- `app/openclaw-extensions/evermemos` (memory search/add)
-- `app/openclaw-extensions/mcp-client` (OpenClaw → MCP client → Ruminer MCP server)
-
-Example installation (adjust absolute path to your local clone):
+Run the setup script from the repo root:
 
 ```bash
-openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"
-openclaw plugins enable evermemos
-
-openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/mcp-client"
-openclaw plugins enable mcp-client
+bash scripts/setup.sh
 ```
 
-If you want a one-shot local setup, see `scripts/setup.sh`.
-
-### Prerequisites
-
-- Node.js >= 20.0.0 and pnpm/npm
-- Chrome/Chromium browser
-
-### Installation Steps
-
-1. **Download the latest Chrome extension from GitHub**
-
-Download link: https://github.com/hangwin/mcp-chrome/releases
-
-2. **Install mcp-chrome-bridge globally**
-
-npm
+Optional: auto-configure the OpenClaw EverMemOS plugin during setup:
 
 ```bash
-npm install -g mcp-chrome-bridge
+EVERMEMOS_BASE_URL="https://your-emos.example" \
+EVERMEMOS_API_KEY="your_api_key" \
+bash scripts/setup.sh
 ```
 
-pnpm
+What this does:
+
+- Installs dependencies with pnpm
+- Builds the Chrome extension
+- Generates a stable dev extension identity (writes app/chrome-extension/.env.local with CHROME_EXTENSION_KEY)
+- Registers the Native Messaging host with the derived extension ID allowlist
+- Installs/enables OpenClaw plugins and writes plugin config (best-effort)
+
+## Load the extension (manual)
+
+Chrome does not allow “Load unpacked” via a script.
+
+1. Open `chrome://extensions`
+2. Enable Developer Mode
+3. Click “Load unpacked”
+4. Select this folder:
+
+- app/chrome-extension/.output/chrome-mv3
+
+After loading, open the Ruminer sidepanel and click Connect (or equivalent) so the native host and local MCP server become reachable.
+
+## Start OpenClaw Gateway (for sidepanel chat)
+
+Run the Gateway locally (default port expected by the extension is 18789):
 
 ```bash
-# Method 1: Enable scripts globally (recommended)
-pnpm config set enable-pre-post-scripts true
-pnpm install -g mcp-chrome-bridge
-
-# Method 2: Manual registration (if postinstall doesn't run)
-pnpm install -g mcp-chrome-bridge
-mcp-chrome-bridge register
+openclaw gateway run --port 18789 --force
 ```
 
-> Note: pnpm v7+ disables postinstall scripts by default for security. The `enable-pre-post-scripts` setting controls whether pre/post install scripts run. If automatic registration fails, use the manual registration command above.
+If you use a custom OpenClaw profile, pass `--profile <name>` consistently to both `openclaw gateway ...` and any `openclaw config/plugins/...` commands.
 
-3. **Load Chrome Extension**
-   - Open Chrome and go to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select `your/dowloaded/extension/folder`
-   - Click the extension icon to open the plugin, then click connect to see the MCP configuration
-     <img width="475" alt="Screenshot 2025-06-09 15 52 06" src="https://github.com/user-attachments/assets/241e57b8-c55f-41a4-9188-0367293dc5bc" />
+## Configure MCP clients
 
-### Usage with MCP Protocol Clients
+### OpenClaw (tools via mcp-client plugin)
 
-#### Using Streamable HTTP Connection (👍🏻 Recommended)
+Setup writes the plugin config for you, but you can verify:
 
-Add the following configuration to your MCP client configuration (using CherryStudio as an example):
+```bash
+openclaw plugins info mcp-client --json
+openclaw plugins info evermemos --json
+```
 
-> Streamable HTTP connection method is recommended
+Sanity test from OpenClaw (forces an actual MCP tool call):
+
+```bash
+openclaw agent --to main --message "Call get_windows_and_tabs and return JSON."
+```
+
+### Codex CLI
+
+Configure MCP in `~/.codex/config.json`:
 
 ```json
 {
   "mcpServers": {
-    "chrome-mcp-server": {
-      "type": "streamableHttp",
+    "ruminer-chrome": {
       "url": "http://127.0.0.1:12306/mcp"
     }
   }
 }
 ```
 
-#### Using STDIO Connection (Alternative)
+More details: [docs/mcp-cli-config.md](docs/mcp-cli-config.md)
 
-If your client only supports stdio connection method, please use the following approach:
+### Claude Code
 
-1. First, check the installation location of the npm package you just installed
-
-```sh
-# npm check method
-npm list -g mcp-chrome-bridge
-# pnpm check method
-pnpm list -g mcp-chrome-bridge
-```
-
-Assuming the command above outputs the path: /Users/xxx/Library/pnpm/global/5
-Then your final path would be: /Users/xxx/Library/pnpm/global/5/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js
-
-2. Replace the configuration below with the final path you just obtained
+Configure MCP in `~/.claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "chrome-mcp-stdio": {
-      "command": "npx",
-      "args": [
-        "node",
-        "/Users/xxx/Library/pnpm/global/5/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
-      ]
+    "ruminer-chrome": {
+      "url": "http://127.0.0.1:12306/mcp"
     }
   }
 }
 ```
 
-eg：config in augment:
+More details: [docs/mcp-cli-config.md](docs/mcp-cli-config.md)
 
-<img width="494" alt="截屏2025-06-22 22 11 25" src="https://github.com/user-attachments/assets/48eefc0c-a257-4d3b-8bbe-d7ff716de2bf" />
+## EverMemOS (EMOS) integration
 
-## 🛠️ Available Tools
+Ruminer has two EMOS integration paths (they are intentionally separate):
 
-Complete tool list: [Complete Tool List](docs/TOOLS.md)
+1. OpenClaw EverMemOS plugin (used when OpenClaw agent wants memory tools)
+2. Extension direct EMOS client (used by ingestion workflows and the Memory UI)
+
+### 1) OpenClaw EverMemOS plugin config
+
+If you didn’t pass env vars to setup, configure via OpenClaw:
+
+```bash
+openclaw config set plugins.entries.evermemos.config.evermemosBaseUrl "https://your-emos.example"
+openclaw config set plugins.entries.evermemos.config.apiKey "your_api_key"
+```
+
+Then validate:
+
+```bash
+openclaw plugins info evermemos --json
+```
+
+### 2) Extension EMOS settings
+
+Open the extension Options/Settings UI and set:
+
+- EverMemOS base URL
+- API key
+- Default user id (if required by your EMOS deployment)
+
+This enables memory search in the sidepanel and allows RR-V3 ingestion workflows to write to EMOS without OpenClaw.
+
+## RR-V3 workflows (browser automation)
+
+RR-V3 is the workflow runtime used by the extension to keep runs resilient under MV3 service worker restarts.
+
+After the extension is loaded and connected:
+
+1. Open the sidepanel
+2. Go to the Workflows tab
+3. Create or import a flow and run it
+
+Workflows can call the same browser tools exposed over MCP, plus Ruminer-specific nodes for extraction/ingestion.
+
+## Tool reference
+
+- Full tool list: [docs/TOOLS.md](docs/TOOLS.md)
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Troubleshooting: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 <details>
 <summary><strong>📊 Browser Management (6 tools)</strong></summary>
@@ -210,7 +226,7 @@ Complete tool list: [Complete Tool List](docs/TOOLS.md)
 - `chrome_bookmark_delete` - Delete bookmarks
 </details>
 
-## 🧪 Usage Examples
+## Usage examples
 
 ### AI helps you summarize webpage content and automatically control Excalidraw for drawing
 
@@ -289,11 +305,11 @@ https://youtu.be/2wzUT6eNVg4
 
 https://github.com/user-attachments/assets/83de4008-bb7e-494d-9b0f-98325cfea592
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
-## 🚧 Future Roadmap
+## Roadmap
 
 We have exciting plans for the future development of Chrome MCP Server:
 
@@ -306,12 +322,12 @@ We have exciting plans for the future development of Chrome MCP Server:
 
 **Want to contribute to any of these features?** Check out our [Contributing Guide](docs/CONTRIBUTING.md) and join our development community!
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📚 More Documentation
+## More documentation
 
-- [Architecture Design](docs/ARCHITECTURE.md) - Detailed technical architecture documentation
-- [TOOLS API](docs/TOOLS.md) - Complete tool API documentation
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issue solutions
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Tool list: [docs/TOOLS.md](docs/TOOLS.md)
+- Troubleshooting: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

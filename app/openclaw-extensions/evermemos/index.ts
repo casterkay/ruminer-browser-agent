@@ -8,6 +8,11 @@ import {
   SearchMemPayload,
 } from './types';
 
+type AgentToolResult = {
+  content: Array<{ type: 'text'; text: string }>;
+  details?: unknown;
+};
+
 type OpenClawPluginApi = {
   on: (event: string, handler: (ev: OpenClawMessageEvent, ctx: HookContext) => void) => void;
   registerService: (svc: {
@@ -15,6 +20,15 @@ type OpenClawPluginApi = {
     start: () => Promise<void> | void;
     stop: () => Promise<void> | void;
   }) => void;
+  registerTool?: (
+    def: {
+      name: string;
+      description: string;
+      parameters: unknown;
+      execute: (toolCallId: string, params: unknown) => Promise<AgentToolResult>;
+    },
+    opts?: { optional?: boolean },
+  ) => void;
   registerGatewayMethod: (
     id: string,
     handler: (args: {
@@ -27,7 +41,10 @@ type OpenClawPluginApi = {
     warn: (msg: string, meta?: unknown) => void;
     error: (msg: string, meta?: unknown) => void;
   };
+  // OpenClaw passes the full config here.
   config: unknown;
+  // OpenClaw passes plugin-scoped config (plugins.entries.<id>.config) here.
+  pluginConfig?: unknown;
 };
 
 const RETRY_INTERVAL_MS = 30_000;
@@ -131,7 +148,7 @@ function startRetryLoop(
 }
 
 export default function register(api: OpenClawPluginApi) {
-  const cfg = (api.config || {}) as PluginConfig;
+  const cfg = ((api.pluginConfig ?? api.config) || {}) as PluginConfig;
   const queueDir = './data/evermemos/pending';
   const queue = new PersistentQueue(queueDir);
   const backlogWarn = cfg.backlogWarning ?? 100;
@@ -225,6 +242,123 @@ export default function register(api: OpenClawPluginApi) {
       .then((data) => respond(true, { result: data }))
       .catch((err) => respond(false, { error: String(err) }));
   });
+
+  // Register agent tools (so EverMemOS appears in the tool list).
+  if (typeof api.registerTool === 'function') {
+    api.registerTool(
+      {
+        name: 'evermemos.status',
+        description: 'Show EverMemOS plugin status and pending queue size.',
+        parameters: {
+          type: 'object',
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+        execute: async () => {
+          const files = await queue.list();
+          const payload = {
+            configured: isConfigured,
+            pending: files.length,
+            evermemosBaseUrl: cfg.evermemosBaseUrl || null,
+          };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+            details: payload,
+          };
+        },
+      },
+      { optional: false },
+    );
+
+    api.registerTool(
+      {
+        name: 'evermemos.searchMemory',
+        description: 'Search EverMemOS memories.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query.' },
+            user_id: { type: 'string' },
+            group_id: { type: 'string' },
+            retrieve_method: {
+              type: 'string',
+              enum: ['keyword', 'vector', 'hybrid', 'rrf', 'agentic'],
+            },
+            memory_types: { type: 'array', items: { type: 'string' } },
+            limit: { type: 'number' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+        execute: async (_toolCallId, params) => {
+          if (!isConfigured) {
+            throw new Error(
+              'EverMemOS plugin is not configured. Set plugins.entries.evermemos.config.evermemosBaseUrl and apiKey.',
+            );
+          }
+          const body = (params || {}) as SearchMemPayload;
+          if (!body.query) {
+            throw new Error('Missing required field: query');
+          }
+          const data = await searchEverMem(cfg, body);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+            details: data,
+          };
+        },
+      },
+      { optional: false },
+    );
+
+    api.registerTool(
+      {
+        name: 'evermemos.addMemory',
+        description: 'Add a memory (single message) to EverMemOS.',
+        parameters: {
+          type: 'object',
+          properties: {
+            message_id: { type: 'string' },
+            create_time: { type: 'string', description: 'ISO timestamp.' },
+            sender: { type: 'string' },
+            content: { type: 'string' },
+            group_id: { type: 'string' },
+            group_name: { type: 'string' },
+            sender_name: { type: 'string' },
+            role: { type: 'string' },
+            refer_list: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['message_id', 'create_time', 'sender', 'content'],
+          additionalProperties: false,
+        },
+        execute: async (_toolCallId, params) => {
+          if (!isConfigured) {
+            throw new Error(
+              'EverMemOS plugin is not configured. Set plugins.entries.evermemos.config.evermemosBaseUrl and apiKey.',
+            );
+          }
+          const body = (params || {}) as AddMemoryPayload;
+          const missing: string[] = [];
+          for (const key of ['message_id', 'create_time', 'sender', 'content'] as const) {
+            if (!(body as any)[key]) missing.push(key);
+          }
+          if (missing.length > 0) {
+            throw new Error(`Missing required field(s): ${missing.join(', ')}`);
+          }
+          const res = await postToEverMem(cfg, body as EverMemSingleMessage);
+          if (!res.ok) {
+            throw new Error(`EverMemOS POST failed: ${res.status}`);
+          }
+          const data = await res.json().catch(() => ({ ok: true }));
+          return {
+            content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+            details: data,
+          };
+        },
+      },
+      { optional: false },
+    );
+  }
 
   // TODO: add agentic retrieval methods
 
