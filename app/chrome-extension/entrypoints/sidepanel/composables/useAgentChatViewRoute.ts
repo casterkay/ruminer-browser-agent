@@ -13,9 +13,10 @@
  *
  * Example URLs:
  * - `sidepanel.html?tab=agent-chat` → sessions list
- * - `sidepanel.html?tab=agent-chat&view=chat&sessionId=xxx` → direct to chat
+ * - `sidepanel.html?tab=agent-chat&view=chat&sessionId=xxx` → direct to chat session
+ * - `sidepanel.html?tab=agent-chat&view=chat` → new chat (no session until first send)
  */
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
 
 // =============================================================================
 // Types
@@ -184,6 +185,18 @@ export function useAgentChatViewRoute(options: UseAgentChatViewRouteOptions = {}
   }
 
   /**
+   * Navigate to chat view without selecting/creating any session yet.
+   * The first send will create a session.
+   */
+  function goToNewChat(): void {
+    currentView.value = 'chat';
+    currentSessionId.value = null;
+    updateUrlParams('chat', null);
+    saveViewState('chat', null);
+    options.onRouteChange?.(routeState.value);
+  }
+
+  /**
    * Initialize route state.
    *
    * Priority:
@@ -205,14 +218,8 @@ export function useAgentChatViewRoute(options: UseAgentChatViewRouteOptions = {}
         const view = parseView(viewParam);
         const sessionId = sessionIdParam?.trim() || null;
 
-        // chat view requires a sessionId
-        if (view === 'chat' && !sessionId) {
-          currentView.value = 'sessions';
-          currentSessionId.value = null;
-        } else {
-          currentView.value = view;
-          currentSessionId.value = sessionId;
-        }
+        currentView.value = view;
+        currentSessionId.value = view === 'chat' ? sessionId : null;
         return routeState.value;
       }
 
@@ -278,6 +285,7 @@ export function useAgentChatViewRoute(options: UseAgentChatViewRouteOptions = {}
     // Actions
     goToSessions,
     goToChat,
+    goToNewChat,
     initFromUrl,
     setSessionId,
   };

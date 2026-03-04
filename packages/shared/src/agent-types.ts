@@ -283,6 +283,24 @@ export interface AgentManagementInfo {
 }
 
 /**
+ * Structured preview metadata for session list display.
+ * When present, allows rendering special styles (e.g., chip for web editor apply).
+ */
+export interface AgentSessionPreviewMeta {
+  /** Compact display text (e.g., user's message or "Apply changes") */
+  displayText?: string;
+  /** Client metadata for special rendering */
+  clientMeta?: {
+    kind?: 'web_editor_apply_batch' | 'web_editor_apply_single';
+    pageUrl?: string;
+    elementCount?: number;
+    elementLabels?: string[];
+  };
+  /** Full content for tooltip preview (truncated to avoid payload bloat) */
+  fullContent?: string;
+}
+
+/**
  * Agent session - represents an independent conversation within a project.
  */
 export interface AgentSession {
@@ -291,8 +309,8 @@ export interface AgentSession {
   engineName: AgentCliPreference;
   engineSessionId?: string;
   name?: string;
-  /** Preview text from first user message, for display in session list */
   preview?: string;
+  previewMeta?: AgentSessionPreviewMeta;
   model?: string;
   permissionMode: string;
   allowDangerouslySkipPermissions: boolean;

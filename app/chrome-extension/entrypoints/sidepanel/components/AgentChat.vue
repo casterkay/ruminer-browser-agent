@@ -35,8 +35,8 @@
             :connection-state="connectionState"
             :show-back-button="true"
             :brand-label="engineDisplayName"
-            :brand-engine-name="currentEngineName"
-            :is-empty-chat="threadState.threads.value.length === 0"
+            :brand-engine-name="selectedEngineName"
+            :is-empty-chat="canPickEngine"
             @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
             @toggle:session-menu="toggleSessionMenu"
@@ -55,7 +55,7 @@
             :memory-loading="emosSuggestions.loading.value"
             :memory-error="emosSuggestions.error.value"
             :engines="server.engines.value"
-            :current-engine="currentEngineName"
+            :current-engine="selectedEngineName"
             @engine:change="handleEmptyChatEngineChange"
           />
         </template>
@@ -77,7 +77,7 @@
             :can-cancel="!!chat.currentRequestId.value"
             :can-send="chat.canSend.value"
             :placeholder="composerPlaceholder"
-            :engine-name="currentEngineName"
+            :engine-name="selectedEngineName"
             :openclaw-agents="openclawAgents"
             :selected-openclaw-agent-id="currentOpenClawAgentId"
             :selected-model="currentSessionModel"
@@ -152,7 +152,7 @@
     <AgentEngineMenu
       :open="engineMenuOpen"
       :engines="server.engines.value"
-      :current-engine="currentEngineName"
+      :current-engine="selectedEngineName"
       @engine:select="handleEmptyChatEngineChange"
     />
 
@@ -547,9 +547,26 @@ const connectionState = computed(() => {
 // Computed values for AgentComposer
 const currentEngineName = computed(() => sessions.selectedSession.value?.engineName ?? '');
 
+// "New chat" means we haven't created a session yet.
+const hasSession = computed(
+  () => !!sessions.selectedSessionId.value && !!sessions.selectedSession.value,
+);
+
+// Engine can only be chosen before the first message is sent.
+const canPickEngine = computed(() => {
+  return viewRoute.isChatView.value && !hasSession.value && threadState.threads.value.length === 0;
+});
+
+const selectedEngineName = computed(() => {
+  if (hasSession.value) {
+    return sessions.selectedSession.value?.engineName ?? '';
+  }
+  return selectedCli.value.trim() || projects.selectedProject.value?.preferredCli || 'openclaw';
+});
+
 // Engine display name for brand/footer
 const engineDisplayName = computed(() => {
-  const name = currentEngineName.value;
+  const name = selectedEngineName.value;
   switch (name) {
     case 'openclaw':
       return 'OpenClaw';
@@ -570,26 +587,41 @@ const engineDisplayName = computed(() => {
 
 const currentSessionModel = computed(() => {
   const session = sessions.selectedSession.value;
-  if (!session) return '';
+  const engineName = selectedEngineName.value;
+  if (!engineName) return '';
+
+  // Before first send (no session yet), use local UI model.
+  if (!hasSession.value || !session) {
+    return getNormalizedModel() || getDefaultModelForCli(engineName);
+  }
+
   // Use session model if set, otherwise use default for the engine
   return session.model || getDefaultModelForCli(session.engineName);
 });
 
 const currentAvailableModels = computed(() => {
-  const session = sessions.selectedSession.value;
-  if (!session) return [];
-  return getModelsForCli(session.engineName);
+  const engineName = selectedEngineName.value;
+  if (!engineName) return [];
+  return getModelsForCli(engineName);
 });
 
 const currentReasoningEffort = computed(() => {
+  const engineName = selectedEngineName.value;
+  if (engineName !== 'codex') return 'medium' as CodexReasoningEffort;
+
+  // Before first send (no session yet), reflect UI state.
+  if (!hasSession.value) {
+    return getNormalizedReasoningEffort();
+  }
+
   const session = sessions.selectedSession.value;
   if (!session || session.engineName !== 'codex') return 'medium' as CodexReasoningEffort;
   return session.optionsConfig?.codexConfig?.reasoningEffort ?? 'medium';
 });
 
 const currentAvailableReasoningEfforts = computed(() => {
-  const session = sessions.selectedSession.value;
-  if (!session || session.engineName !== 'codex') return [] as readonly CodexReasoningEffort[];
+  const engineName = selectedEngineName.value;
+  if (engineName !== 'codex') return [] as readonly CodexReasoningEffort[];
   const effectiveModel = currentSessionModel.value || getDefaultModelForCli('codex');
   return getCodexReasoningEfforts(effectiveModel);
 });
@@ -779,9 +811,7 @@ function toggleSessionMenu(): void {
 }
 
 function toggleEngineMenu(): void {
-  if (threadState.threads.value.length > 0) {
-    return;
-  }
+  if (!canPickEngine.value) return;
   engineMenuOpen.value = !engineMenuOpen.value;
   if (engineMenuOpen.value) {
     projectMenuOpen.value = false;
@@ -890,36 +920,10 @@ async function handleNewSession(): Promise<void> {
   // Clear previous request state (in chat view, creating new session should reset state)
   clearRequestState();
 
-  const engineName =
-    (selectedCli.value as 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') ||
-    'openclaw';
-
-  // Include engine-specific defaults
-  const optionsConfig =
-    engineName === 'codex'
-      ? {
-          codexConfig: {
-            reasoningEffort: getNormalizedReasoningEffort(),
-          },
-        }
-      : engineName === 'claude'
-        ? {
-            tools: { type: 'preset', preset: 'claude_code' },
-          }
-        : undefined;
-
-  const session = await sessions.createSession(projectId, {
-    engineName,
-    name: `Session ${sessions.sessions.value.length + 1}`,
-    optionsConfig,
-  });
-
-  // Guard: only clear messages if the new session is still selected
-  // This prevents clearing messages if user switched during createSession await
-  if (session && sessions.selectedSessionId.value === session.id) {
-    chat.setMessages([]);
-    // Note: URL sync is handled by onSessionChanged callback (triggered by createSession)
-  }
+  // Do not create a session yet.
+  await sessions.clearSelectedSession();
+  chat.setMessages([]);
+  viewRoute.goToNewChat();
   closeMenus();
 }
 
@@ -1003,7 +1007,10 @@ async function handleResetSession(sessionId: string): Promise<void> {
 // Composer direct model/reasoning effort change handlers
 async function handleComposerModelChange(modelId: string): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
-  if (!sessionId) return;
+  if (!sessionId || !hasSession.value) {
+    model.value = modelId || '';
+    return;
+  }
 
   await sessions.updateSession(sessionId, { model: modelId || null });
 }
@@ -1011,7 +1018,10 @@ async function handleComposerModelChange(modelId: string): Promise<void> {
 async function handleComposerReasoningEffortChange(effort: CodexReasoningEffort): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
   const session = sessions.selectedSession.value;
-  if (!sessionId || !session) return;
+  if (!sessionId || !hasSession.value || !session) {
+    reasoningEffort.value = effort;
+    return;
+  }
 
   const existingOptions = session.optionsConfig ?? {};
   const existingCodexConfig = existingOptions.codexConfig ?? {};
@@ -1308,38 +1318,29 @@ async function handleNewSessionAndNavigate(): Promise<void> {
   // Clear previous state before creating new session
   clearRequestState();
 
-  const engineName =
-    (selectedCli.value as 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') ||
-    'openclaw';
-  const optionsConfig =
-    engineName === 'codex'
-      ? {
-          codexConfig: {
-            reasoningEffort: getNormalizedReasoningEffort(),
-          },
-        }
-      : undefined;
-
-  const session = await sessions.createSession(projects.selectedProjectId.value, {
-    engineName,
-    name: `Session ${sessions.sessions.value.length + 1}`,
-    optionsConfig,
-  });
-
-  // Guard against stale navigation if user switched during createSession await
-  if (session && sessions.selectedSessionId.value === session.id) {
-    chat.setMessages([]);
-    viewRoute.goToChat(session.id);
-
-    // Open SSE for new session
-    server.openEventSource();
-  }
+  await sessions.clearSelectedSession();
+  chat.setMessages([]);
+  viewRoute.goToNewChat();
 }
 
 /**
  * Navigate back to sessions list.
  */
-function handleBackToSessions(): void {
+async function handleBackToSessions(): Promise<void> {
+  const session = sessions.selectedSession.value;
+  const sessionId = sessions.selectedSessionId.value;
+
+  // If an empty session exists (legacy behavior), discard it when backing out.
+  if (sessionId && session && threadState.threads.value.length === 0 && !session.preview) {
+    await sessions.deleteSession(sessionId);
+  }
+
+  // If we're in a sessionless new-chat state, ensure selection stays cleared.
+  if (!sessionId) {
+    await sessions.clearSelectedSession();
+    viewRoute.setSessionId(null);
+  }
+
   viewRoute.goToSessions();
 }
 
@@ -1473,168 +1474,66 @@ async function handleComposerOpenClawAgentChange(agentId: string): Promise<void>
 }
 
 async function handleEmptyChatEngineChange(engineName: string): Promise<void> {
-  const currentSession = sessions.selectedSession.value;
-
-  // Only allow engine switching when this conversation is truly empty.
-  // `threads` can be empty briefly during load, so also guard on `preview`.
-  if (threadState.threads.value.length > 0 || currentSession?.preview) return;
+  if (!canPickEngine.value) return;
 
   const normalizedEngineName = engineName.trim();
   if (!normalizedEngineName) return;
 
-  const projectId = projects.selectedProjectId.value || currentSession?.projectId;
-  if (!projectId) return;
-
-  // No-op if already on that engine
-  if (currentSession?.engineName === normalizedEngineName) {
-    engineMenuOpen.value = false;
-    return;
-  }
-
-  // Keep UI defaults in sync (used by "New Session" creation)
+  // Only update UI state; session will be created on first send.
   selectedCli.value = normalizedEngineName;
-
-  // Sessions are engine-scoped on the server (engineName is not patchable).
-  // So switching engine means selecting (or creating) a session for that engine.
-  clearRequestState();
-
-  const oldSessionId = currentSession?.id || '';
-  const oldEngineName = currentSession?.engineName || '';
-
-  const candidateSessions = sessions.sessions.value.filter(
-    (s) => s.projectId === projectId && s.engineName === normalizedEngineName,
-  );
-
-  // Prefer an empty session (no preview = no first user message)
-  const emptyCandidate = candidateSessions.find((s) => !s.preview);
-  const target = emptyCandidate ?? null;
-
-  if (target) {
-    chat.setMessages([]);
-    await sessions.selectSession(target.id);
-    engineMenuOpen.value = false;
-
-    // If we switched away from a brand-new empty session, delete it to avoid clutter.
-    if (oldSessionId && oldSessionId !== target.id && !currentSession?.preview) {
-      void sessions.deleteSession(oldSessionId);
-    }
-    return;
-  }
-
-  // No matching session exists yet.
-  // Create-and-switch immediately so the header/composer reflect the chosen engine.
-  // To avoid accumulating empty sessions, delete the abandoned empty session after switch.
-  const typedEngineName = normalizedEngineName as
-    | 'openclaw'
-    | 'claude'
-    | 'codex'
-    | 'cursor'
-    | 'qwen'
-    | 'glm';
-
-  const optionsConfig =
-    typedEngineName === 'codex'
-      ? {
-          codexConfig: {
-            reasoningEffort: getNormalizedReasoningEffort(),
-          },
-        }
-      : typedEngineName === 'claude'
-        ? {
-            tools: { type: 'preset', preset: 'claude_code' },
-          }
-        : undefined;
-
-  const created = await sessions.createSession(projectId, {
-    engineName: typedEngineName,
-    name: `Session ${sessions.sessions.value.length + 1}`,
-    optionsConfig,
-  });
-
-  if (created) {
-    chat.setMessages([]);
-    await sessions.selectSession(created.id);
-  }
-
   engineMenuOpen.value = false;
-
-  // Only delete if we actually switched engines from an empty session.
-  if (
-    oldSessionId &&
-    created?.id &&
-    oldSessionId !== created.id &&
-    oldEngineName &&
-    oldEngineName !== normalizedEngineName &&
-    !currentSession?.preview
-  ) {
-    void sessions.deleteSession(oldSessionId);
-  }
 }
 
 // Send handler
 async function handleSend(): Promise<void> {
   let dbSessionId = sessions.selectedSessionId.value;
-  if (!dbSessionId) {
-    chat.errorMessage.value = 'No session selected.';
+
+  const projectId = projects.selectedProjectId.value || sessions.selectedSession.value?.projectId;
+  if (!projectId) {
+    chat.errorMessage.value = 'No project selected.';
     return;
   }
 
-  // If user switched engine while still in an empty chat, defer session creation
-  // until the first message is sent, to avoid producing lots of empty sessions.
-  if (threadState.threads.value.length === 0) {
-    const desiredEngine = selectedCli.value.trim();
-    const currentSession = sessions.selectedSession.value;
-    const projectId = projects.selectedProjectId.value || currentSession?.projectId;
-    const currentEngine = currentSession?.engineName;
+  // First message starts the chat: if we don't have a session yet, create it now.
+  if (!dbSessionId) {
+    const typedEngineName =
+      (selectedEngineName.value.trim() as
+        | 'openclaw'
+        | 'claude'
+        | 'codex'
+        | 'cursor'
+        | 'qwen'
+        | 'glm') || 'openclaw';
 
-    if (projectId && desiredEngine && currentEngine && desiredEngine !== currentEngine) {
-      const candidateSessions = sessions.sessions.value.filter(
-        (s) => s.projectId === projectId && s.engineName === desiredEngine,
-      );
+    const optionsConfig =
+      typedEngineName === 'codex'
+        ? {
+            codexConfig: {
+              reasoningEffort: getNormalizedReasoningEffort(),
+            },
+          }
+        : typedEngineName === 'claude'
+          ? {
+              tools: { type: 'preset', preset: 'claude_code' },
+            }
+          : undefined;
 
-      // Prefer an empty session for that engine.
-      const emptyCandidate = candidateSessions.find((s) => !s.preview);
-      const target = emptyCandidate ?? candidateSessions[0] ?? null;
+    const normalizedModel = getNormalizedModel();
 
-      if (target) {
-        await sessions.selectSession(target.id);
-        chat.setMessages([]);
-        dbSessionId = target.id;
-      } else {
-        const typedEngineName = desiredEngine as
-          | 'openclaw'
-          | 'claude'
-          | 'codex'
-          | 'cursor'
-          | 'qwen'
-          | 'glm';
+    const created = await sessions.createSession(projectId, {
+      engineName: typedEngineName,
+      name: `Session ${sessions.sessions.value.length + 1}`,
+      model: normalizedModel || undefined,
+      optionsConfig,
+    });
 
-        const optionsConfig =
-          typedEngineName === 'codex'
-            ? {
-                codexConfig: {
-                  reasoningEffort: getNormalizedReasoningEffort(),
-                },
-              }
-            : typedEngineName === 'claude'
-              ? {
-                  tools: { type: 'preset', preset: 'claude_code' },
-                }
-              : undefined;
-
-        const created = await sessions.createSession(projectId, {
-          engineName: typedEngineName,
-          name: `Session ${sessions.sessions.value.length + 1}`,
-          optionsConfig,
-        });
-
-        if (created) {
-          await sessions.selectSession(created.id);
-          chat.setMessages([]);
-          dbSessionId = created.id;
-        }
-      }
+    if (!created?.id) {
+      chat.errorMessage.value = sessions.sessionError.value || 'Failed to create session.';
+      return;
     }
+
+    dbSessionId = created.id;
+    viewRoute.setSessionId(created.id);
   }
 
   // Capture input before clearing for preview update
@@ -1841,6 +1740,11 @@ onMounted(async () => {
           // Session no longer exists — fall back to sessions list
           viewRoute.goToSessions();
         }
+      } else if (initialRoute.view === 'chat' && !initialRoute.sessionId) {
+        // New chat without a session: don't auto-select any existing session.
+        await sessions.clearSelectedSession();
+        chat.setMessages([]);
+        viewRoute.goToNewChat();
       }
 
       // Only open SSE and load history if we're in chat view with a valid session

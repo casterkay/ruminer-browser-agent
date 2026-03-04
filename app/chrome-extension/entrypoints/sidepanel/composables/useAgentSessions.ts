@@ -3,15 +3,14 @@
  * Sessions represent independent conversations within a project.
  * Each session has its own engine configuration, chat history, and resume state.
  */
-import { ref, computed, watch } from 'vue';
 import type {
+  AgentManagementInfo,
   AgentSession,
-  AgentCliPreference,
+  AgentStoredMessage,
   CreateAgentSessionInput,
   UpdateAgentSessionInput,
-  AgentStoredMessage,
-  AgentManagementInfo,
 } from 'chrome-mcp-shared';
+import { computed, ref } from 'vue';
 
 const STORAGE_KEY_SELECTED_SESSION = 'agent-selected-session-id';
 
@@ -59,6 +58,16 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
       });
     } catch (error) {
       console.error('Failed to save selected session ID:', error);
+    }
+  }
+
+  // Clear selected session (used for starting a new chat without creating a session yet)
+  async function clearSelectedSession(): Promise<void> {
+    selectedSessionId.value = '';
+    try {
+      await chrome.storage.local.remove(STORAGE_KEY_SELECTED_SESSION);
+    } catch (error) {
+      console.error('Failed to clear selected session ID:', error);
     }
   }
 
@@ -495,6 +504,7 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     // Methods
     loadSelectedSessionId,
     saveSelectedSessionId,
+    clearSelectedSession,
     fetchSessions,
     fetchAllSessions,
     createSession,
