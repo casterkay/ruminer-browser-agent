@@ -2,11 +2,6 @@
   <div class="conversation-root">
     <div v-if="threads.length === 0" class="empty-mode">
       <div v-if="trimmedQuery.length >= 3" class="memory-suggestion-layout">
-        <div class="memory-suggestion-header">
-          <strong>Memory Matches</strong>
-          <span>{{ memoryLoading ? 'Searching...' : `${memorySuggestions.length} found` }}</span>
-        </div>
-
         <div class="memory-suggestion-body ac-scroll">
           <div
             v-if="memoryLoading && memorySuggestions.length === 0"
@@ -217,21 +212,20 @@ function formatSource(suggestion: MemorySuggestion): string {
   min-height: 100%;
   display: grid;
   grid-template-rows: auto 1fr;
-  padding: 0.75rem 1.25rem 1.5rem;
+  padding: 0 1.25rem 1.5rem;
   gap: 0.5rem;
 }
 
 .memory-suggestion-body {
-  border: var(--ac-border-width) solid var(--ac-border);
-  border-radius: var(--ac-radius-card);
-  background-color: var(--ac-surface);
   overflow-y: auto;
+  padding-bottom: 2rem;
 }
 
 .memory-suggestion-cards {
-  padding: 10px;
-  display: grid;
-  gap: 10px;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .memory-suggestion-header {
@@ -254,11 +248,12 @@ function formatSource(suggestion: MemorySuggestion): string {
 .memory-suggestion-item {
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
-  border: var(--ac-border-width) solid var(--ac-border);
+  padding: 8px 12px;
+  margin: 0 -12px;
   border-radius: var(--ac-radius-card);
-  background: var(--ac-surface);
+  background: transparent;
   cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
 .memory-suggestion-item:hover {
@@ -307,9 +302,9 @@ function formatSource(suggestion: MemorySuggestion): string {
 }
 
 .details-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 1000;
   background: color-mix(in srgb, var(--ac-bg) 56%, transparent);
   display: flex;
   align-items: center;

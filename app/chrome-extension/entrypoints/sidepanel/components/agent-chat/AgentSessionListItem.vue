@@ -8,10 +8,19 @@
     <div class="flex items-start gap-3">
       <!-- Engine Badge (left side) -->
       <div
-        class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold uppercase"
+        class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
         :style="engineBadgeStyle"
       >
-        {{ engineAbbrev }}
+        <img
+          v-if="engineIconUrl"
+          :src="engineIconUrl"
+          alt=""
+          class="w-full h-full rounded-full object-cover"
+        />
+        <ILucidePointer v-else-if="session.engineName === 'cursor'" class="w-4 h-4" />
+        <ILucideSparkles v-else-if="session.engineName === 'qwen'" class="w-4 h-4" />
+        <ILucideBrain v-else-if="session.engineName === 'glm'" class="w-4 h-4" />
+        <ILucideCpu v-else class="w-4 h-4" />
       </div>
 
       <!-- Session Info (center) -->
@@ -145,6 +154,10 @@ import ILucidePaintbrush from '~icons/lucide/paintbrush';
 import ILucideFolderOpen from '~icons/lucide/folder-open';
 import ILucidePencil from '~icons/lucide/pencil';
 import ILucideTrash2 from '~icons/lucide/trash-2';
+import ILucidePointer from '~icons/lucide/mouse-pointer-2';
+import ILucideSparkles from '~icons/lucide/sparkles';
+import ILucideBrain from '~icons/lucide/brain';
+import ILucideCpu from '~icons/lucide/cpu';
 
 // =============================================================================
 // Props & Emits
@@ -182,27 +195,25 @@ const displayName = computed(() => {
   return 'Unnamed Session';
 });
 
-const engineAbbrev = computed(() => {
-  const name = props.session.engineName;
-  switch (name) {
-    case 'claude':
-      return 'CL';
-    case 'codex':
-      return 'CX';
-    case 'cursor':
-      return 'CR';
-    case 'qwen':
-      return 'QW';
-    case 'glm':
-      return 'GL';
-    default:
-      // Fallback for any unknown engine name
-      return (
-        String(name || '')
-          .slice(0, 2)
-          .toUpperCase() || 'AI'
-      );
+const engineIconUrl = computed((): string => {
+  const name = props.session.engineName?.trim();
+  const path =
+    name === 'openclaw'
+      ? 'engine-icons/openclaw.svg'
+      : name === 'claude'
+        ? 'engine-icons/claude.png'
+        : name === 'codex'
+          ? 'engine-icons/codex.svg'
+          : '';
+  if (!path) return '';
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+      return chrome.runtime.getURL(path);
+    }
+  } catch {
+    // ignore
   }
+  return `/${path}`;
 });
 
 const formattedDate = computed(() => {
@@ -273,17 +284,45 @@ const containerStyle = computed(() => ({
 }));
 
 const engineBadgeStyle = computed(() => {
-  const colors: Record<string, string> = {
-    claude: '#c87941',
-    codex: '#10a37f',
-    cursor: '#8b5cf6',
-    qwen: '#6366f1',
-    glm: '#ef4444',
-  };
-  const bg = colors[props.session.engineName] || '#6b7280';
+  const engine = props.session.engineName;
+  const defaultBg = '#6b7280';
+
+  let backgroundColor: string;
+  let color: string;
+
+  switch (engine) {
+    case 'claude':
+      backgroundColor = '#d97757';
+      color = '#ffffff';
+      break;
+    case 'codex':
+      backgroundColor = '#ffffff';
+      color = '#1f2937'; // dark text for white background
+      break;
+    case 'openclaw':
+      backgroundColor = 'transparent';
+      color = '#ffffff';
+      break;
+    case 'cursor':
+      backgroundColor = '#8b5cf6';
+      color = '#ffffff';
+      break;
+    case 'qwen':
+      backgroundColor = '#6366f1';
+      color = '#ffffff';
+      break;
+    case 'glm':
+      backgroundColor = '#ef4444';
+      color = '#ffffff';
+      break;
+    default:
+      backgroundColor = defaultBg;
+      color = '#ffffff';
+  }
+
   return {
-    backgroundColor: bg,
-    color: '#ffffff',
+    backgroundColor,
+    color,
   };
 });
 
