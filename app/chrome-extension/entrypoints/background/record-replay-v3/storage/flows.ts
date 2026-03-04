@@ -9,6 +9,24 @@ import { FLOW_SCHEMA_VERSION } from '../domain/flow';
 import { RR_ERROR_CODES, createRRError } from '../domain/errors';
 import type { FlowsStore } from '../engine/storage/storage-port';
 import { RR_V3_STORES, withTransaction } from './db';
+import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
+import { stableJson } from '@/entrypoints/shared/utils/stable-json';
+
+async function computeFlowVersionHash(flow: FlowV3): Promise<string> {
+  const { createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = flow;
+
+  const meta = rest.meta ? { ...rest.meta } : undefined;
+  if (meta) {
+    delete (meta as Partial<typeof meta>).versionHash;
+  }
+
+  const payload: Omit<FlowV3, 'createdAt' | 'updatedAt'> = {
+    ...rest,
+    ...(meta ? { meta } : {}),
+  } as Omit<FlowV3, 'createdAt' | 'updatedAt'>;
+
+  return sha256Hex(stableJson(payload));
+}
 
 /**
  * 校验 Flow 结构
@@ -87,13 +105,22 @@ export function createFlowsStore(): FlowsStore {
     },
 
     async save(flow: FlowV3): Promise<void> {
+      const versionHash = await computeFlowVersionHash(flow);
+      const normalized: FlowV3 = {
+        ...flow,
+        meta: {
+          ...(flow.meta ?? {}),
+          versionHash,
+        },
+      };
+
       // 校验
-      validateFlow(flow);
+      validateFlow(normalized);
 
       return withTransaction(RR_V3_STORES.FLOWS, 'readwrite', async (stores) => {
         const store = stores[RR_V3_STORES.FLOWS];
         return new Promise<void>((resolve, reject) => {
-          const request = store.put(flow);
+          const request = store.put(normalized);
           request.onsuccess = () => resolve();
           request.onerror = () => reject(request.error);
         });

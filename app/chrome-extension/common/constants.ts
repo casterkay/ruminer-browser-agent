@@ -240,6 +240,7 @@ export const STORAGE_KEYS = {
   RR_PUBLISHED: 'rr_published_flows',
   RR_SCHEDULES: 'rr_schedules',
   RR_TRIGGERS: 'rr_triggers',
+  FLOW_APPROVALS: 'ruminer.flowApprovals',
   // Persistent recording state (guards resume across navigations/service worker restarts)
   RR_RECORDING_STATE: 'rr_recording_state',
 } as const;

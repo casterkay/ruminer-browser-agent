@@ -395,7 +395,7 @@ describe('V3 Scheduler Integration', () => {
       expect(events._events.some((e: any) => e.type === 'run.recovered')).toBe(true);
     });
 
-    it('adopts orphan paused items after restart', async () => {
+    it('requeues orphan paused items after restart', async () => {
       const queue = createQueueStore();
       const runsStore = createRunsStore();
       const events = createMockEventsBus();
@@ -416,13 +416,20 @@ describe('V3 Scheduler Integration', () => {
         now: () => Date.now(),
       });
 
-      // Run should be adopted (stays paused)
-      expect(result.adoptedPaused).toContain('paused-run');
+      // Run should be requeued (avoid wedged paused runs after SW restart)
+      expect(result.requeuedPaused).toContain('paused-run');
 
-      // Queue item should still be paused with new owner
+      // Queue item should be back to queued and lease cleared
       const item = await queue.get('paused-run' as any);
-      expect(item?.status).toBe('paused');
-      expect(item?.lease?.ownerId).toBe(newOwnerId);
+      expect(item?.status).toBe('queued');
+      expect(item?.lease).toBeUndefined();
+
+      // RunRecord should be queued again
+      const run = await runsStore.get('paused-run' as any);
+      expect(run?.status).toBe('queued');
+
+      // Event should be emitted
+      expect(events._events.some((e: any) => e.type === 'run.recovered')).toBe(true);
     });
 
     it('preserves attempt count across recovery', async () => {

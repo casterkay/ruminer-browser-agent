@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import type { JsonObject, JsonValue } from '../../../domain/json';
 import { RR_ERROR_CODES } from '../../../domain/errors';
+import type { JsonObject, JsonValue } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
 import type { ExtractedMessage } from './types';
 import { ensureObject, runWorkflowScriptInTab, toErrorResult, toScriptFailedResult } from './utils';
@@ -85,9 +85,9 @@ function normalizeExtractedMessages(
           typeof message.group_name === 'string' && message.group_name.trim()
             ? message.group_name
             : null,
-        canonical_url:
-          typeof message.canonical_url === 'string'
-            ? message.canonical_url
+        source_url:
+          typeof message.source_url === 'string'
+            ? message.source_url
             : (defaults.fallbackUrl ?? null),
       };
 

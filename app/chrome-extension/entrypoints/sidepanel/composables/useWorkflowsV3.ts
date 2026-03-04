@@ -39,6 +39,7 @@ export interface FlowLite {
 export interface RunLite {
   id: string;
   flowId: string;
+  flowVersionHash?: string;
   startedAt: string;
   finishedAt?: string;
   /**
@@ -49,6 +50,10 @@ export interface RunLite {
   /** Whether the run is still in progress (queued/running/paused) */
   isInProgress: boolean;
   status: RunRecordV3['status'];
+  args?: RunRecordV3['args'];
+  error?: RunRecordV3['error'];
+  repair?: RunRecordV3['repair'];
+  currentNodeId?: RunRecordV3['currentNodeId'];
   entries: unknown[];
 }
 
@@ -97,6 +102,7 @@ function mapRunV3ToLite(run: RunRecordV3): RunLite {
   return {
     id: run.id,
     flowId: run.flowId,
+    flowVersionHash: run.flowVersionHash,
     startedAt: run.startedAt
       ? new Date(run.startedAt).toISOString()
       : new Date(run.createdAt).toISOString(),
@@ -104,6 +110,10 @@ function mapRunV3ToLite(run: RunRecordV3): RunLite {
     success,
     isInProgress,
     status: run.status,
+    args: run.args,
+    error: run.error,
+    repair: run.repair,
+    currentNodeId: run.currentNodeId,
     entries: [], // V3 doesn't have entries in RunRecord, use getEvents for details
   };
 }
@@ -143,9 +153,12 @@ export interface UseWorkflowsV3Return {
   refreshRuns: () => Promise<void>;
   refreshTriggers: () => Promise<void>;
   runFlow: (flowId: string) => Promise<{ runId: string } | null>;
+  cancelQueueItem: (runId: string, reason?: string) => Promise<boolean>;
+  cancelRun: (runId: string, reason?: string) => Promise<boolean>;
   deleteFlow: (flowId: string) => Promise<boolean>;
   exportFlow: (flowId: string) => Promise<FlowV3 | null>;
   deleteTrigger: (triggerId: string) => Promise<boolean>;
+  upsertCronSchedule: (flowId: string, cron: string | null, enabled: boolean) => Promise<boolean>;
 
   // V3-specific
   getFlowById: (flowId: string) => Promise<FlowV3 | null>;
@@ -229,6 +242,84 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
       console.warn('[useWorkflowsV3] Failed to run flow:', e);
       error.value = e instanceof Error ? e.message : String(e);
       return null;
+    }
+  }
+
+  async function cancelQueueItem(runId: string, reason?: string): Promise<boolean> {
+    try {
+      await rpc.request('rr_v3.cancelQueueItem', {
+        runId: runId as RunId,
+        ...(reason ? { reason } : {}),
+      });
+      void refreshRuns();
+      return true;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to cancel queue item:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
+  async function cancelRun(runId: string, reason?: string): Promise<boolean> {
+    try {
+      await rpc.request('rr_v3.cancelRun', {
+        runId: runId as RunId,
+        ...(reason ? { reason } : {}),
+      });
+      void refreshRuns();
+      return true;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to cancel run:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
+  const cronTriggerIdForFlow = (flowId: string): string => `cron:${flowId}`;
+
+  async function upsertCronSchedule(
+    flowId: string,
+    cron: string | null,
+    enabled: boolean,
+  ): Promise<boolean> {
+    const triggerId = cronTriggerIdForFlow(flowId);
+    const existing = triggers.value.find((t) => t.id === triggerId) as TriggerSpec | undefined;
+
+    try {
+      if (!cron) {
+        if (!existing) return true;
+        await rpc.request('rr_v3.disableTrigger', { triggerId });
+        void refreshTriggers();
+        return true;
+      }
+
+      const next: TriggerSpec = {
+        ...(existing ?? ({} as TriggerSpec)),
+        id: triggerId,
+        kind: 'cron',
+        flowId: flowId as FlowId,
+        enabled,
+        cron,
+      } as TriggerSpec;
+
+      if (existing) {
+        await rpc.request('rr_v3.updateTrigger', { trigger: next as any });
+      } else {
+        await rpc.request('rr_v3.createTrigger', { trigger: next as any });
+      }
+
+      if (enabled) {
+        await rpc.request('rr_v3.enableTrigger', { triggerId });
+      } else {
+        await rpc.request('rr_v3.disableTrigger', { triggerId });
+      }
+
+      void refreshTriggers();
+      return true;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to upsert cron schedule:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
     }
   }
 
@@ -355,9 +446,12 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     refreshRuns,
     refreshTriggers,
     runFlow,
+    cancelQueueItem,
+    cancelRun,
     deleteFlow,
     exportFlow,
     deleteTrigger,
+    upsertCronSchedule,
     getFlowById,
     getRunEvents,
   };

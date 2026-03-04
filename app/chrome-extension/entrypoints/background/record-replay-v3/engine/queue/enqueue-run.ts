@@ -159,6 +159,8 @@ export async function enqueueRun(
   if (!flow) {
     throw new Error(`Flow "${flowId}" not found`);
   }
+  const flowVersionHash =
+    typeof flow.meta?.versionHash === 'string' ? flow.meta.versionHash : undefined;
 
   // 验证 startNodeId 存在于 Flow 中
   if (input.startNodeId) {
@@ -176,6 +178,7 @@ export async function enqueueRun(
     schemaVersion: RUN_SCHEMA_VERSION,
     id: runId,
     flowId,
+    ...(flowVersionHash ? { flowVersionHash } : {}),
     status: 'queued',
     createdAt: ts,
     updatedAt: ts,

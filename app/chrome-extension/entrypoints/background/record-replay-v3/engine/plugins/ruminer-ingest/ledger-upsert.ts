@@ -6,9 +6,9 @@ import {
 } from '@/entrypoints/background/ruminer/ingestion-ledger';
 import { applyLedgerPolicy } from '@/entrypoints/background/ruminer/ledger-policy';
 
-import type { NodeDefinition } from '../types';
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject, JsonValue } from '../../../domain/json';
+import type { NodeDefinition } from '../types';
 import type { LedgerBatchItem, NormalizedIngestionMessage } from './types';
 import { ensureObject, toErrorResult } from './utils';
 
@@ -61,7 +61,7 @@ export const ledgerUpsertNodeDefinition: NodeDefinition<
       const decision = applyLedgerPolicy(existing, {
         item_key: rawMessage.item_key,
         content_hash: rawMessage.content_hash,
-        canonical_url: rawMessage.canonical_url ?? null,
+        source_url: rawMessage.source_url ?? null,
         group_id: rawMessage.group_id,
         sender: rawMessage.sender,
         evermemos_message_id: rawMessage.message_id,

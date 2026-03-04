@@ -130,7 +130,7 @@ export interface RunQueue {
    * 恢复孤儿租约（SW 重启后调用）
    * @description
    * - 将孤儿 running 项回收为 queued（status -> queued，租约清除）
-   * - 将孤儿 paused 项接管（保持 status=paused，租约 ownerId 更新为新 ownerId）
+   * - 将孤儿 paused 项回收为 queued（避免 SW 重启后卡死在 paused）
    * @param ownerId 新的 ownerId（当前 Service Worker 实例）
    * @param now 当前时间
    * @returns 受影响的 runId 列表（含原 ownerId 用于审计）

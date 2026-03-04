@@ -11,6 +11,7 @@ import type { NodeDefinition } from '../types';
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject, JsonValue } from '../../../domain/json';
 import { ensureObject, runWorkflowScriptInTab, toErrorResult, toScriptFailedResult } from './utils';
+import { selectVisitedConversationItems } from './scan-heuristic';
 
 const scanConversationListConfigSchema = z.object({
   platform: z.string().min(1),
@@ -226,25 +227,12 @@ export const scanConversationListNodeDefinition: NodeDefinition<
     const events = new StorageBackedEventsBus(storage.events);
 
     const known = new Set(state.conversationOrder);
-    const visited: ConversationListItem[] = [];
-    let matchStreak = 0;
-
-    for (let i = 0; i < payload.items.length && visited.length < node.config.maxItemsPerRun; i++) {
-      const item = payload.items[i];
-      visited.push(item);
-
-      if (!isFullScan) {
-        const expectedId = state.conversationOrder[i];
-        if (expectedId && expectedId === item.id) {
-          matchStreak += 1;
-        } else {
-          matchStreak = 0;
-        }
-        if (matchStreak >= node.config.heuristicMatchStreak) {
-          break;
-        }
-      }
-    }
+    const visited = selectVisitedConversationItems(payload.items, {
+      isFullScan,
+      conversationOrder: state.conversationOrder,
+      heuristicMatchStreak: node.config.heuristicMatchStreak,
+      maxItemsPerRun: node.config.maxItemsPerRun,
+    });
 
     const enqueuedConversationIds = new Set<string>();
     let enqueued = 0;

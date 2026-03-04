@@ -14,6 +14,7 @@ import type { FlowV3, RunEvent, RunRecordV3 } from '@/entrypoints/background/rec
 import {
   FLOW_SCHEMA_VERSION,
   RUN_SCHEMA_VERSION,
+  RR_ERROR_CODES,
   closeRrV3Db,
   deleteRrV3Db,
   resetBreakpointRegistry,
@@ -29,7 +30,7 @@ import { createV3E2EHarness, type V3E2EHarness, type RpcClient } from './v3-e2e-
  */
 function createTestFlow(
   id: string,
-  nodeConfig: { action: 'succeed' | 'fail' } = { action: 'succeed' },
+  nodeConfig: { action: 'succeed' | 'fail'; delayMs?: number } = { action: 'succeed' },
 ): FlowV3 {
   const iso = new Date(0).toISOString();
   return {
@@ -148,6 +149,22 @@ describe('V3 service-level E2E', () => {
 
       expect(types).toContain('run.failed');
       expect(types).toContain('node.failed');
+    });
+
+    it('runTimeoutMs leads to TIMEOUT failure', async () => {
+      const flow = createTestFlow('flow-timeout', { action: 'succeed', delayMs: 200 });
+      flow.policy = { runTimeoutMs: 50 };
+      await h.storage.flows.save(flow);
+
+      const { runId } = await client.call<{ runId: string }>('rr_v3.enqueueRun', {
+        flowId: flow.id,
+      });
+
+      const run = await h.waitForTerminal(runId);
+      expect(run.status).toBe('failed');
+      expect(run.error?.code).toBe(RR_ERROR_CODES.TIMEOUT);
+
+      await h.waitForQueueItemGone(runId);
     });
   });
 
@@ -329,7 +346,7 @@ describe('V3 service-level E2E', () => {
       await h.waitForQueueItemGone(runId);
     });
 
-    it('adopts orphan paused items', async () => {
+    it('requeues orphan paused items', async () => {
       await h.dispose();
       h = createV3E2EHarness({ autoStartScheduler: false, ownerId: 'owner-new' });
       client = h.createClient();
@@ -351,12 +368,16 @@ describe('V3 service-level E2E', () => {
         logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       });
 
-      expect(recovery.adoptedPaused).toContain(runId);
+      expect(recovery.requeuedPaused).toContain(runId);
 
-      // 队列项应该仍是 paused，但 owner 换成新的
+      // 队列项应该变为 queued（避免 SW 重启后卡死在 paused）
       const queueItem = await h.storage.queue.get(runId);
-      expect(queueItem?.status).toBe('paused');
-      expect(queueItem?.lease?.ownerId).toBe(h.ownerId);
+      expect(queueItem?.status).toBe('queued');
+      expect(queueItem?.lease).toBeUndefined();
+
+      // 应该有 run.recovered 事件
+      const events = await h.listEvents(runId);
+      expect(events.some((e) => e.type === 'run.recovered')).toBe(true);
     });
 
     it('cleans terminal runs left in queue', async () => {

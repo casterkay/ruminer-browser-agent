@@ -94,6 +94,10 @@ export interface FlowV3 {
     tags?: string[];
     /** 绑定规则 */
     bindings?: FlowBinding[];
+    /** Version hash for change detection (sha256 of stable JSON without timestamps) */
+    versionHash?: string;
+    /** Declared MCP tool IDs required to execute this flow */
+    requiredTools?: string[];
   };
 }
 

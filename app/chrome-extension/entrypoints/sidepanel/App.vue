@@ -17,12 +17,15 @@
           :triggers="workflows.triggers.value"
           :only-bound="onlyBound"
           :open-run-id="openRunId"
+          :get-run-events="workflows.getRunEvents"
           @refresh="handleWorkflowRefresh"
           @create="createFlow"
           @run="runFlow"
+          @stop-run="stopRun"
           @edit="editFlow"
           @delete="deleteFlow"
           @export="exportFlow"
+          @schedule-change="scheduleChange"
           @update:only-bound="onlyBound = $event"
           @toggle-run="toggleRun"
           @create-trigger="openBuilder('trigger')"
@@ -31,6 +34,15 @@
         />
       </div>
     </div>
+
+    <FlowApprovalModal
+      :open="Boolean(flowApprovalModal)"
+      :flow-name="flowApprovalModal?.flowName ?? ''"
+      :required-tools="flowApprovalModal?.requiredTools ?? []"
+      :added-tools="flowApprovalModal?.addedTools ?? []"
+      @approve="handleFlowApproval(true)"
+      @cancel="handleFlowApproval(false)"
+    />
   </div>
 </template>
 
@@ -41,9 +53,13 @@ import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
 import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
+import FlowApprovalModal from './components/workflows/FlowApprovalModal.vue';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useChatBackendPreference } from './composables/useChatBackendPreference';
 import { useWorkflowsV3 } from './composables/useWorkflowsV3';
+import { STORAGE_KEYS } from '@/common/constants';
+import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
+import { stableJson } from '@/entrypoints/shared/utils/stable-json';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 
@@ -88,8 +104,121 @@ async function handleWorkflowRefresh(): Promise<void> {
   await workflows.refresh();
 }
 
+type FlowApprovalRecord = {
+  approvedToolsHash: string;
+  approvedTools: string[];
+  approvedAt: string;
+};
+
+type FlowApprovalsStore = Record<string, FlowApprovalRecord>;
+
+const flowApprovalModal = ref<{
+  flowId: string;
+  flowName: string;
+  requiredToolsHash: string;
+  requiredTools: string[];
+  addedTools: string[];
+} | null>(null);
+
+let flowApprovalResolver: ((approved: boolean) => void) | null = null;
+
+function handleFlowApproval(approved: boolean) {
+  const resolver = flowApprovalResolver;
+  flowApprovalResolver = null;
+  flowApprovalModal.value = null;
+  resolver?.(approved);
+}
+
+function requestFlowApproval(input: {
+  flowId: string;
+  flowName: string;
+  requiredToolsHash: string;
+  requiredTools: string[];
+  addedTools: string[];
+}): Promise<boolean> {
+  flowApprovalModal.value = input;
+  return new Promise<boolean>((resolve) => {
+    flowApprovalResolver = resolve;
+  });
+}
+
+async function loadFlowApprovals(): Promise<FlowApprovalsStore> {
+  const raw = (await chrome.storage.local.get(STORAGE_KEYS.FLOW_APPROVALS))[
+    STORAGE_KEYS.FLOW_APPROVALS
+  ];
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as FlowApprovalsStore) : {};
+}
+
+async function saveFlowApprovals(store: FlowApprovalsStore): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEYS.FLOW_APPROVALS]: store });
+}
+
 async function runFlow(flowId: string): Promise<void> {
+  const flow = await workflows.getFlowById(flowId);
+
+  const requiredTools = Array.isArray(flow?.meta?.requiredTools)
+    ? flow!
+        .meta!.requiredTools!.filter((tool) => typeof tool === 'string' && tool.trim())
+        .map((t) => t.trim())
+    : [];
+
+  const normalizedTools = Array.from(new Set(requiredTools)).sort();
+  if (normalizedTools.length === 0) {
+    await workflows.runFlow(flowId);
+    return;
+  }
+
+  const requiredToolsHash = await sha256Hex(stableJson(normalizedTools));
+  const approvals = await loadFlowApprovals();
+  const existing = approvals[flowId];
+
+  if (existing?.approvedToolsHash === requiredToolsHash) {
+    await workflows.runFlow(flowId);
+    return;
+  }
+
+  const prevTools = Array.isArray(existing?.approvedTools) ? existing.approvedTools : [];
+  const addedTools = normalizedTools.filter((tool) => !prevTools.includes(tool));
+
+  const approved = await requestFlowApproval({
+    flowId,
+    flowName: flow?.name ?? flowId,
+    requiredToolsHash,
+    requiredTools: normalizedTools,
+    addedTools,
+  });
+
+  if (!approved) {
+    return;
+  }
+
+  await saveFlowApprovals({
+    ...approvals,
+    [flowId]: {
+      approvedToolsHash: requiredToolsHash,
+      approvedTools: normalizedTools,
+      approvedAt: new Date().toISOString(),
+    },
+  });
+
   await workflows.runFlow(flowId);
+}
+
+async function stopRun(payload: { runId: string; status: string }): Promise<void> {
+  const reason = 'Stopped by user';
+  if (payload.status === 'queued') {
+    await workflows.cancelQueueItem(payload.runId, reason);
+    return;
+  }
+  await workflows.cancelRun(payload.runId, reason);
+}
+
+async function scheduleChange(payload: {
+  flowId: string;
+  cron: string | null;
+  enabled: boolean;
+}): Promise<void> {
+  await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
 }
 
 function openBuilder(mode: 'flow' | 'trigger', id?: string): void {

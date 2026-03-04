@@ -70,6 +70,7 @@ interface TestNodeConfig {
   action: 'succeed' | 'fail';
   outputs?: JsonObject;
   delayMs?: number;
+  [key: string]: unknown;
 }
 
 /**
@@ -278,6 +279,7 @@ export function createV3E2EHarness(options: V3E2EHarnessOptions = {}): V3E2EHarn
 
   const scheduler = createRunScheduler({
     queue: storage.queue,
+    runs: storage.runs,
     leaseManager,
     keepalive,
     config,

@@ -523,10 +523,15 @@ class StorageBackedRunRunner implements RunRunner {
     await this.queue.run(async () => {
       const existing = await this.env.storage.runs.get(this.runId);
       if (!existing) {
+        const flowVersionHash =
+          typeof this.config.flow.meta?.versionHash === 'string'
+            ? this.config.flow.meta.versionHash
+            : undefined;
         const record: RunRecordV3 = {
           schemaVersion: RUN_SCHEMA_VERSION,
           id: this.runId,
           flowId: this.config.flow.id,
+          ...(flowVersionHash ? { flowVersionHash } : {}),
           status: 'running',
           createdAt: startedAt,
           updatedAt: startedAt,

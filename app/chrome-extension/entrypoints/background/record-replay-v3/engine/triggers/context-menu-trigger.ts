@@ -31,8 +31,10 @@ interface InstalledContextMenuTrigger {
 
 const MENU_ITEM_PREFIX = 'rr_v3_';
 
+type ChromeContextMenuContexts = NonNullable<chrome.contextMenus.CreateProperties['contexts']>;
+
 // Default context types if not specified
-const DEFAULT_CONTEXTS: chrome.contextMenus.ContextType[] = ['page'];
+const DEFAULT_CONTEXTS: ChromeContextMenuContexts = ['page'];
 
 // ==================== Handler Implementation ====================
 
@@ -120,11 +122,14 @@ export function createContextMenuTriggerHandler(
    */
   function normalizeContexts(
     contexts: ReadonlyArray<string> | undefined,
-  ): chrome.contextMenus.ContextType[] {
-    if (!contexts || contexts.length === 0) {
-      return DEFAULT_CONTEXTS;
-    }
-    return contexts as chrome.contextMenus.ContextType[];
+  ): ChromeContextMenuContexts {
+    if (!contexts || contexts.length === 0) return DEFAULT_CONTEXTS;
+
+    const cleaned = contexts.filter((c): c is string => typeof c === 'string' && c.length > 0);
+    if (cleaned.length === 0) return DEFAULT_CONTEXTS;
+
+    const [first, ...rest] = cleaned;
+    return [first, ...rest] as unknown as ChromeContextMenuContexts;
   }
 
   return {

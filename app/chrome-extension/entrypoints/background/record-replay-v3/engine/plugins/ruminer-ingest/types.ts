@@ -19,6 +19,7 @@ export interface ExtractedMessage {
   refer_list: string[] | null;
   group_id: string | null;
   group_name: string | null;
+  source_url: string | null;
 }
 
 export interface NormalizedIngestionMessage extends EmosSingleMessage {

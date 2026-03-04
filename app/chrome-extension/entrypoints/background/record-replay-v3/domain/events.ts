@@ -128,6 +128,8 @@ export interface RunRecordV3 {
   id: RunId;
   /** 关联的 Flow ID */
   flowId: FlowId;
+  /** Flow version hash at enqueue time (for audit/debugging) */
+  flowVersionHash?: string;
 
   /** 当前状态 */
   status: RunStatus;

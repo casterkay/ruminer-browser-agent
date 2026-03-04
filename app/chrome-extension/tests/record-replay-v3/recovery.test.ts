@@ -31,7 +31,7 @@ describe('recoverOrphanLeases', () => {
     closeRrV3Db();
   });
 
-  it('requeues orphan running items and adopts orphan paused items', async () => {
+  it('requeues orphan running and paused items', async () => {
     const queue = createQueueStore();
     const t0 = 1_700_000_000_000;
     const t1 = t0 + 1234;
@@ -46,7 +46,7 @@ describe('recoverOrphanLeases', () => {
 
     expect(recovered).toEqual({
       requeuedRunning: [{ runId: 'run-running', prevOwnerId: 'old-owner' }],
-      adoptedPaused: [{ runId: 'run-paused', prevOwnerId: 'old-owner' }],
+      requeuedPaused: [{ runId: 'run-paused', prevOwnerId: 'old-owner' }],
     });
 
     const runningAfter = await queue.get('run-running' as any);
@@ -56,11 +56,10 @@ describe('recoverOrphanLeases', () => {
     const pausedAfter = await queue.get('run-paused' as any);
     expect(pausedAfter).toMatchObject({
       id: 'run-paused',
-      status: 'paused',
+      status: 'queued',
       attempt: 0,
-      lease: { ownerId: 'new-owner' },
     });
-    expect(pausedAfter!.lease!.expiresAt).toBe(t1 + DEFAULT_QUEUE_CONFIG.leaseTtlMs);
+    expect(pausedAfter!.lease).toBeUndefined();
   });
 
   it('skips items already owned by the current ownerId', async () => {
@@ -74,7 +73,7 @@ describe('recoverOrphanLeases', () => {
     await queue.markPaused('run-paused' as any, 'owner-1', t0);
 
     const recovered = await queue.recoverOrphanLeases('owner-1', t0 + 1);
-    expect(recovered).toEqual({ requeuedRunning: [], adoptedPaused: [] });
+    expect(recovered).toEqual({ requeuedRunning: [], requeuedPaused: [] });
 
     const runningAfter = await queue.get('run-running' as any);
     expect(runningAfter).toMatchObject({
@@ -157,7 +156,7 @@ describe('RecoveryCoordinator', () => {
       }),
       recoverOrphanLeases: vi.fn(async (ownerId: string, now: number) => {
         const requeuedRunning: Array<{ runId: string; prevOwnerId?: string }> = [];
-        const adoptedPaused: Array<{ runId: string; prevOwnerId?: string }> = [];
+        const requeuedPaused: Array<{ runId: string; prevOwnerId?: string }> = [];
 
         for (const [runId, item] of queueMap) {
           if (item.status === 'running') {
@@ -173,14 +172,15 @@ describe('RecoveryCoordinator', () => {
             const isOrphan = !item.lease || item.lease.ownerId !== ownerId;
             if (isOrphan) {
               const prevOwnerId = item.lease?.ownerId;
+              item.status = 'queued';
               item.updatedAt = now;
-              item.lease = { ownerId, expiresAt: now + 15_000 };
-              adoptedPaused.push({ runId, ...(prevOwnerId ? { prevOwnerId } : {}) });
+              delete (item as any).lease;
+              requeuedPaused.push({ runId, ...(prevOwnerId ? { prevOwnerId } : {}) });
             }
           }
         }
 
-        return { requeuedRunning, adoptedPaused };
+        return { requeuedRunning, requeuedPaused };
       }),
     };
 
@@ -265,7 +265,7 @@ describe('RecoveryCoordinator', () => {
     });
 
     expect(result.requeuedRunning).toEqual(['run-1']);
-    expect(result.adoptedPaused).toEqual([]);
+    expect(result.requeuedPaused).toEqual([]);
     expect(result.cleanedTerminal).toEqual([]);
 
     // Check RunRecord was patched
@@ -286,7 +286,7 @@ describe('RecoveryCoordinator', () => {
     });
   });
 
-  it('adopts orphan paused without emitting event', async () => {
+  it('requeues orphan paused and emits run.recovered event', async () => {
     const storage = createMockStorage();
     const events = createMockEventsBus();
     const fixedNow = 1_700_000_000_000;
@@ -303,11 +303,23 @@ describe('RecoveryCoordinator', () => {
     });
 
     expect(result.requeuedRunning).toEqual([]);
-    expect(result.adoptedPaused).toEqual(['run-1']);
+    expect(result.requeuedPaused).toEqual(['run-1']);
     expect(result.cleanedTerminal).toEqual([]);
 
-    // No event for adopted paused (they stay paused)
-    expect(events._events).toHaveLength(0);
+    expect(storage.runs.patch).toHaveBeenCalledWith('run-1', {
+      status: 'queued',
+      updatedAt: fixedNow,
+    });
+
+    expect(events._events).toHaveLength(1);
+    expect(events._events[0]).toMatchObject({
+      runId: 'run-1',
+      type: 'run.recovered',
+      reason: 'sw_restart',
+      fromStatus: 'paused',
+      toStatus: 'queued',
+      prevOwnerId: 'old-owner',
+    });
   });
 
   it('cleans terminal runs from queue', async () => {
@@ -363,7 +375,7 @@ describe('RecoveryCoordinator', () => {
     });
 
     expect(result.requeuedRunning).toEqual([]);
-    expect(result.adoptedPaused).toEqual([]);
+    expect(result.requeuedPaused).toEqual([]);
     expect(result.cleanedTerminal).toEqual([]);
     expect(events._events).toHaveLength(0);
   });
@@ -404,7 +416,7 @@ describe('RecoveryCoordinator', () => {
 
     expect(result.cleanedTerminal).toContain('run-terminal');
     expect(result.requeuedRunning).toContain('run-running-orphan');
-    expect(result.adoptedPaused).toContain('run-paused-orphan');
+    expect(result.requeuedPaused).toContain('run-paused-orphan');
     // Current owner items are not affected
     expect(result.requeuedRunning).not.toContain('run-current-owner');
   });

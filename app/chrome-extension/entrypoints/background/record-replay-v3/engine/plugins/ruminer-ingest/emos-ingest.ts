@@ -91,7 +91,7 @@ export const emosIngestNodeDefinition: NodeDefinition<'ruminer.emos_ingest', Emo
         await upsertLedgerEntry({
           item_key: item.message.item_key,
           content_hash: item.message.content_hash,
-          canonical_url: item.message.canonical_url,
+          source_url: item.message.source_url ?? null,
           group_id: item.message.group_id,
           sender: item.message.sender,
           evermemos_message_id: item.message.message_id,
@@ -112,7 +112,7 @@ export const emosIngestNodeDefinition: NodeDefinition<'ruminer.emos_ingest', Emo
           {
             item_key: item.message.item_key,
             content_hash: item.message.content_hash,
-            canonical_url: item.message.canonical_url,
+            source_url: item.message.source_url ?? null,
             group_id: item.message.group_id,
             sender: item.message.sender,
             evermemos_message_id: item.message.message_id,

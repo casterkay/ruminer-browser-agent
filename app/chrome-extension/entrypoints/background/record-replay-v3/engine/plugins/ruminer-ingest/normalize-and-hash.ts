@@ -147,8 +147,7 @@ export const normalizeAndHashNodeDefinition: NodeDefinition<
         platform,
         conversation_id: conversationId,
         message_index: messageIndex,
-        canonical_url:
-          typeof rawMessage.canonical_url === 'string' ? rawMessage.canonical_url : null,
+        source_url: typeof rawMessage.source_url === 'string' ? rawMessage.source_url : null,
       });
     }
 
