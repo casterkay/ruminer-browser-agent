@@ -33,7 +33,7 @@ In the extension Options page:
   - Base URL + API key (+ tenant/space if applicable)
   - Click “Test connection”
 - **Tool groups**
-  - Defaults: Observe + Navigate ON, Interact + Execute OFF, Workflow ON
+  - Defaults: Observe + Navigate + Interact ON, Execute OFF, Workflow ON
   - Optional: disable individual tools (itemwise) for finer control
 
 ## Install/enable OpenClaw plugins (needed for memory search + extension routes)
@@ -67,7 +67,9 @@ openclaw plugins enable mcp-client
 - Type a query (≥ 3 chars)
   - If OpenClaw `evermemos` is configured, you should see memory suggestions (debounced)
 - Press Enter
-  - Message should send via `chat.send`
+- Press Enter
+  - Message should send to the native-server (`/agent/chat/:sessionId/act`)
+  - Native-server talks to OpenClaw Gateway over WebSocket
   - Tool call results should stream inline
 
 ### Tool restriction enforcement

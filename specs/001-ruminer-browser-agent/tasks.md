@@ -19,10 +19,10 @@
 
 **Purpose**: Remove stale `browser.proxy`/`browser-ext` assumptions and align docs/contracts with `plan.md`’s locked decisions before implementing code changes.
 
-- [ ] T001 [P] Update tool restriction section to per-tool native-host enforcement (remove `browser.proxy`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/.specify/memory/blueprint.md`
-- [ ] T002 [P] Update spec wording to match per-tool MCP-only enforcement (remove `browser.proxy` references; keep workflows unblocked) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/spec.md`
-- [ ] T003 [P] Rewrite group-based “route → group” contract into per-tool Tool Selection contract (UI state → allow/deny by tool name) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/contracts/tool-groups.md`
-- [ ] T004 [P] Update setup/validation steps to reference `mcp-client → native-server → native-host` (remove `browser-ext` + `browser.proxy`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/quickstart.md`
+- [x] T001 [P] Update tool restriction section to per-tool native-host enforcement (remove `browser.proxy`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/.specify/memory/blueprint.md`
+- [x] T002 [P] Update spec wording to match per-tool MCP-only enforcement (remove `browser.proxy` references; keep workflows unblocked) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/spec.md`
+- [x] T003 [P] Rewrite group-based “route → group” contract into per-tool Tool Selection contract (UI state → allow/deny by tool name) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/contracts/tool-groups.md`
+- [x] T004 [P] Update setup/validation steps to reference `mcp-client → native-server → native-host` (remove `browser-ext` + `browser.proxy`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/quickstart.md`
 - [ ] T005 [P] Refresh architecture doc to reflect Ruminer/OpenClaw split, native-server bridge, RR‑V3, and EMOS dual-path integration in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/docs/ARCHITECTURE.md`
 - [ ] T006 [P] Add a new changelog entry documenting RR‑V3 completion + ChatGPT pack + runtime per-tool enforcement; mark older “Chrome MCP Server” entries as legacy in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/docs/CHANGELOG.md`
 
@@ -34,11 +34,11 @@
 
 **⚠️ CRITICAL**: No user story work should ship until this phase is complete.
 
-- [ ] T007 Fix tool ID/name mismatches so UI tool IDs equal MCP tool names (audit entire catalog) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
-- [ ] T008 Implement safe default tool-group state (observe+navigate+workflow on; interact+execute off) that only applies when stored state is unset in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
-- [ ] T009 Create per-tool allow/deny resolver (reads TOOL_GROUP_STATE + INDIVIDUAL_TOOL_STATE; unknown tools disabled-by-default; legacy alias normalization) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tool-selection/resolve.ts`
-- [ ] T010 Enforce resolver at the Native Messaging MCP tool boundary (CALL_TOOL) and UI bridge `{ type:'call_tool' }`, returning `isError=true` ToolResult but `status:'success'` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/native-host.ts`
-- [ ] T011 [P] Add contract tests that (1) UI catalog covers all exposed MCP tools and (2) resolver semantics are correct (group off disables, per-tool override disables, unknown disabled) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/tool-selection.contract.test.ts`
+- [x] T007 Fix tool ID/name mismatches so UI tool IDs equal MCP tool names (audit entire catalog) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
+- [x] T008 Implement default tool-group state (observe+navigate+interact+workflow on; execute off) that only applies when stored state is unset in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
+- [x] T009 Create per-tool allow/deny resolver (reads TOOL_GROUP_STATE + INDIVIDUAL_TOOL_STATE; unknown tools disabled-by-default; legacy alias normalization) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/tool-selection/resolve.ts`
+- [x] T010 Enforce resolver at the Native Messaging MCP tool boundary (CALL_TOOL) and UI bridge `{ type:'call_tool' }`, returning `isError=true` ToolResult but `status:'success'` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/native-host.ts`
+- [x] T011 [P] Add contract tests that (1) UI catalog covers all exposed MCP tools and (2) resolver semantics are correct (group off disables, per-tool override disables, unknown disabled) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/tool-selection.contract.test.ts`
 
 **Checkpoint**: Runtime per-tool enforcement is active for MCP calls; RR‑V3 internal execution remains unaffected.
 
@@ -50,8 +50,8 @@
 
 **Independent Test**: Open sidepanel → Chat; type ≥3 chars to see memory suggestions (when OpenClaw `evermemos` enabled); press Enter to send via `chat.send`; toggle tools; confirm a disabled tool call returns `isError=true` with a clear “Disabled tool: <name> …” message.
 
-- [ ] T012 [P] [US1] Add helper to compute effective disabled tool IDs (from group state + per-tool overrides) for prompt injection in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
-- [ ] T013 [US1] Update chat prompt injection to list disabled tools (“Disabled tools: …”) instead of group-based phrasing in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
+- [x] T012 [P] [US1] Add helper to compute effective disabled tool IDs (from group state + per-tool overrides) for prompt injection in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
+- [x] T013 [US1] Update chat prompt injection to list disabled tools (“Disabled tools: …”) instead of group-based phrasing in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
 
 **Checkpoint**: Chat sends the correct disabled-tools list prompt and runtime blocks disabled MCP tools.
 
@@ -65,25 +65,25 @@
 
 ### RR‑V3 Reliability (Crash Recovery / Retries / Timeouts)
 
-- [ ] T014 [US2] Requeue orphan `paused` runs on recovery (paused → queued + lease dropped) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/storage/queue.ts`
-- [ ] T015 [US2] Emit `run.recovered` for paused → queued transitions and patch run status accordingly in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/recovery/recovery-coordinator.ts`
-- [ ] T016 [US2] Add `requeue(runId, now, { reason })` API to the run queue interface in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/queue.ts`
-- [ ] T017 [US2] Implement `requeue(...)` storage behavior (status → queued, drop lease, keep attempt unchanged, timestamps updated) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/storage/queue.ts`
-- [ ] T018 [US2] Implement run-level retries in scheduler finalization (retryable errors requeue until `maxAttempts`, else terminal) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/scheduler.ts`
-- [ ] T019 [US2] Define `shouldRetryRun(error)` policy (retryable codes vs never-retry codes per `plan.md`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/scheduler.ts`
-- [ ] T020 [US2] Enforce `flow.policy.runTimeoutMs` across the entire run and implement `TimeoutPolicy.scope:'node'` as total time across attempts in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/runner.ts`
-- [ ] T021 [P] [US2] Extend RR‑V3 tests: paused→queued recovery in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/recovery.test.ts`, retry requeue semantics in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scheduler.test.ts`, and run-timeout terminal failure in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/runner.onError.contract.test.ts`
+- [x] T014 [US2] Requeue orphan `paused` runs on recovery (paused → queued + lease dropped) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/storage/queue.ts`
+- [x] T015 [US2] Emit `run.recovered` for paused → queued transitions and patch run status accordingly in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/recovery/recovery-coordinator.ts`
+- [x] T016 [US2] Add `requeue(runId, now, { reason })` API to the run queue interface in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/queue.ts`
+- [x] T017 [US2] Implement `requeue(...)` storage behavior (status → queued, drop lease, keep attempt unchanged, timestamps updated) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/storage/queue.ts`
+- [x] T018 [US2] Implement run-level retries in scheduler finalization (retryable errors requeue until `maxAttempts`, else terminal) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/scheduler.ts`
+- [x] T019 [US2] Define `shouldRetryRun(error)` policy (retryable codes vs never-retry codes per `plan.md`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/queue/scheduler.ts`
+- [x] T020 [US2] Enforce `flow.policy.runTimeoutMs` across the entire run and implement `TimeoutPolicy.scope:'node'` as total time across attempts in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/runner.ts`
+- [x] T021 [P] [US2] Extend RR‑V3 tests: paused→queued recovery in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/recovery.test.ts`, retry requeue semantics in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scheduler.test.ts`, and run-timeout terminal failure in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/runner.onError.contract.test.ts`
 
 ### ChatGPT Platform Pack (Scanner + Conversation Ingestion)
 
-- [ ] T022 [US2] Implement `ruminer.scan_conversation_list` composite node (heuristic stop + full scan backfill + cursor continuation + enqueue ingestion runs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-conversation-list.ts`
-- [ ] T023 [P] [US2] Extract scan heuristic into a pure helper (unit-testable) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-heuristic.ts`
-- [ ] T024 [US2] Add “conversation ever ingested” existence check via `group_id` index for full-scan backfill gating in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/ingestion-ledger.ts`
-- [ ] T025 [US2] Add `ruminer.page_auth_check` node (platform login check via script; notification on false; PERMISSION_DENIED) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/page-auth-check.ts`
-- [ ] T026 [US2] Add `ruminer.random_delay` node (configurable ranges; used for rate limiting) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/random-delay.ts`
-- [ ] T027 [US2] Register new node definitions (`scan_conversation_list`, `page_auth_check`, `random_delay`) in the ruminer-ingest plugin index in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/index.ts`
-- [ ] T028 [US2] Create ChatGPT built-in flows (stable IDs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/chatgpt.ts` and export them via `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/index.ts`
-- [ ] T029 [US2] Upsert built-in flows on startup (tag `builtin`; avoid hard origin restriction) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`
+- [x] T022 [US2] Implement `ruminer.scan_conversation_list` composite node (heuristic stop + full scan backfill + cursor continuation + enqueue ingestion runs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-conversation-list.ts`
+- [x] T023 [P] [US2] Extract scan heuristic into a pure helper (unit-testable) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-heuristic.ts`
+- [x] T024 [US2] Add “conversation ever ingested” existence check via `group_id` index for full-scan backfill gating in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/ingestion-ledger.ts`
+- [x] T025 [US2] Add `ruminer.page_auth_check` node (platform login check via script; notification on false; PERMISSION_DENIED) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/page-auth-check.ts`
+- [x] T026 [US2] Add `ruminer.random_delay` node (configurable ranges; used for rate limiting) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/random-delay.ts`
+- [x] T027 [US2] Register new node definitions (`scan_conversation_list`, `page_auth_check`, `random_delay`) in the ruminer-ingest plugin index in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/index.ts`
+- [x] T028 [US2] Create ChatGPT built-in flows (stable IDs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/chatgpt.ts` and export them via `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/index.ts`
+- [x] T029 [US2] Upsert built-in flows on startup (tag `builtin`; avoid hard origin restriction) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`
 - [ ] T030 [P] [US2] Add unit tests for scan heuristic helper in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scan-heuristic.test.ts`
 - [ ] T031 [P] [US2] Add integration test for scanner behavior (initial scan enqueues; rerun stops after 3 matches; no duplicates enqueued) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scan-conversation-list.test.ts`
 
@@ -112,18 +112,18 @@
 
 ### Engine: Artifacts + Drift/Repair Signal (FR‑029)
 
-- [ ] T034 [US4] Implement artifact capture against the run’s actual tab via CDP `Page.captureScreenshot` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/artifacts.ts`
-- [ ] T035 [US4] Capture drift artifacts on 3rd consecutive failure per node (bounded screenshot + bounded HTML snippet) and append `artifact.html_snippet` events in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/runner.ts`
-- [ ] T036 [US4] Extend RR‑V3 domain to add `artifact.html_snippet` event + `RunRecordV3.repair?: { needed:true; nodeId; ts; reason:'drift_3x' }` and wire persistence/serialization in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/domain/events.ts`
+- [x] T034 [US4] Implement artifact capture against the run’s actual tab via CDP `Page.captureScreenshot` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/artifacts.ts`
+- [x] T035 [US4] Capture drift artifacts on 3rd consecutive failure per node (bounded screenshot + bounded HTML snippet) and append `artifact.html_snippet` events in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/runner.ts`
+- [x] T036 [US4] Extend RR‑V3 domain to add `artifact.html_snippet` event + `RunRecordV3.repair?: { needed:true; nodeId; ts; reason:'drift_3x' }` and wire persistence/serialization in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/domain/events.ts`
 
 ### UI: Timeline / Stop / Schedule / Repair Visibility (FR‑011/012/013/024/029)
 
-- [ ] T037 [US4] Render run event timeline and computed “current step” for expanded runs (fetch via `getRunEvents`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
+- [x] T037 [US4] Render run event timeline and computed “current step” for expanded runs (fetch via `getRunEvents`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
 - [ ] T038 [P] [US4] Add a dedicated timeline subcomponent for run events (recommended) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/RunTimeline.vue`
-- [ ] T039 [US4] Add Stop controls (queued → `rr_v3.cancelQueueItem`, running/paused → `rr_v3.cancelRun`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowListItem.vue`
-- [ ] T040 [US4] Add schedule controls (enable/disable + preset cron expressions) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowListItem.vue`
-- [ ] T041 [US4] Extend workflows composable with cancel APIs + trigger create/update/enable/disable RPC wrappers in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useWorkflowsV3.ts`
-- [ ] T042 [US4] Surface drift/repair badge + show screenshot/HTML snippet artifacts + “open failing run” action in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
+- [x] T039 [US4] Add Stop controls (queued → `rr_v3.cancelQueueItem`, running/paused → `rr_v3.cancelRun`) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowListItem.vue`
+- [x] T040 [US4] Add schedule controls (enable/disable + preset cron expressions) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowListItem.vue`
+- [x] T041 [US4] Extend workflows composable with cancel APIs + trigger create/update/enable/disable RPC wrappers in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useWorkflowsV3.ts`
+- [x] T042 [US4] Surface drift/repair badge + show screenshot/HTML snippet artifacts + “open failing run” action in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
 
 **Checkpoint**: Workflows UI provides progress, stop, schedule, and repair visibility with actionable artifacts.
 
@@ -135,10 +135,10 @@
 
 **Independent Test**: Change a flow’s declared tools; attempt to run from UI; verify a blocking modal requests re-approval; approve and run; confirm internal RR‑V3 execution is not blocked by chat tool selection.
 
-- [ ] T043 [US5] Extend `FlowV3` metadata to include `meta.versionHash` and `meta.requiredTools` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/domain/flow.ts`
-- [ ] T044 [US5] Compute and persist `meta.versionHash = sha256(stableJson(flow))` on save/upsert (built-in flows and RPC saves) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`
-- [ ] T045 [US5] Add `ruminer.flowApprovals` store keyed by flowId and enforce tool re-approval before enqueueing runs from UI (hash tool list; diff-added tools) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useWorkflowsV3.ts`
-- [ ] T046 [US5] Implement UI modal that lists added tools and requires explicit approval before running a changed flow in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
+- [x] T043 [US5] Extend `FlowV3` metadata to include `meta.versionHash` and `meta.requiredTools` in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/domain/flow.ts`
+- [x] T044 [US5] Compute and persist `meta.versionHash = sha256(stableJson(flow))` on save/upsert (built-in flows and RPC saves) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`
+- [x] T045 [US5] Add `ruminer.flowApprovals` store keyed by flowId and enforce tool re-approval before enqueueing runs from UI (hash tool list; diff-added tools) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useWorkflowsV3.ts`
+- [x] T046 [US5] Implement UI modal that lists added tools and requires explicit approval before running a changed flow in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/components/workflows/WorkflowsView.vue`
 
 **Checkpoint**: Flow tool changes are gated by re-approval; runtime tool enforcement remains MCP-only and does not block workflows.
 

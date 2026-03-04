@@ -67,7 +67,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 | - UI: sidepanel (chat + memory + workflows) / options            |
 | - Background SW:                                                 |
 |   - Native Messaging tool executor (called by native server)     |
-|   - Sidepanel chat via Gateway `chat.*` methods                  |
+|   - Sidepanel chat via native-server agent routes (HTTP + SSE)   |
 |   - RR-V3 runtime + Ruminer services                             |
 |   - EMOS client (direct API for autonomous ingestion)            |
 | - Content scripts: DOM read/write + record/observe               |
@@ -92,12 +92,12 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 1. **OpenClaw calls Ruminer tools via MCP.** OpenClaw registers and calls Ruminer’s browser tools via the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server at `http://127.0.0.1:12306/mcp`). The MCP server bridges execution to the extension background service worker via Native Messaging.
 2. **Dual EMOS integration paths.** OpenClaw's `evermemos` plugin auto-ingests OpenClaw conversations and exposes `addMemory`/`searchMemory` to the agent. The Chrome extension has its own **direct EMOS client** for autonomous ingestion workflows (RR-V3 triggers extraction and writes to EMOS without OpenClaw involvement).
-3. **Extension owns tool selection enforcement.** Prompt-layer restriction (injected when the extension sends `chat.send` to OpenClaw) and runtime-layer rejection (at the Native Messaging tool-call boundary) live entirely in the extension. OpenClaw’s `mcp-client` plugin has no knowledge of the user’s tool selection.
+3. **Extension owns tool selection enforcement.** Prompt-layer restriction (injected when the extension sends an agent chat request to the native-server) and runtime-layer rejection (at the Native Messaging tool-call boundary) live entirely in the extension. OpenClaw’s `mcp-client` plugin has no knowledge of the user’s tool selection.
 
 ### 4.2 Responsibility Boundaries
 
 1. **OpenClaw Gateway + Plugins**
-   - Primary LLM orchestrator. The extension connects via Gateway WebSocket for **chat UI**.
+   - Primary LLM orchestrator. The native-server connects to the Gateway over WebSocket for **OpenClaw engine chat**.
    - **`evermemos` plugin**: auto-ingests all OpenClaw conversations into EMOS; exposes `evermemos.addMemory` and `evermemos.searchMemory` as gateway methods callable by the agent. Persistent queue with retry for reliability.
    - **`mcp-client` plugin**: registers tools from shared `TOOL_SCHEMAS` into OpenClaw and forwards tool calls to Ruminer’s local MCP server.
    - OpenClaw is used to **author and repair** ingestion workflows (e.g., generate/iterate on extraction JavaScript). Autonomous ingestion runs are deterministic inside the extension and do not route extracted content through OpenClaw.
@@ -105,7 +105,8 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 2. **Extension background service worker**
    - **Native Messaging tool executor**: executes browser tools invoked by the native server.
-   - **Sidepanel chat**: sends/receives messages via Gateway WS `chat.*` methods. Injects an itemwise disabled-tools list into the system prompt when sending `chat.send` (prompt-layer enforcement).
+   - **Sidepanel chat**: sends/receives messages via the native-server agent chat stream (HTTP + SSE). The native-server talks to OpenClaw Gateway over WebSocket.
+     Injects an itemwise disabled-tools list into the system prompt when sending a chat request (prompt-layer enforcement).
    - **EMOS client (direct)**: calls the EverMemOS API directly for autonomous ingestion workflows. EMOS credentials are configured in the extension's Options page.
    - Owns the **RR-V3 runtime** (queue, leasing, triggers, crash recovery, event log).
    - Owns Ruminer local services: ingestion normalization + idempotency ledger.
@@ -130,8 +131,9 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 Ruminer treats "who is asking the browser to do things" as a first-class concept:
 
-1. **Gateway WS is the chat interface**
-   - The extension connects to the OpenClaw Gateway via WebSocket (localhost) for sidepanel chat.
+1. **Gateway WS is the OpenClaw engine interface**
+   - The native-server connects to the OpenClaw Gateway via WebSocket (localhost) for OpenClaw chat.
+   - The extension sidepanel chat uses the native-server agent routes and SSE stream.
    - Browser tool calls do not arrive via Gateway WS in the current architecture; they arrive via MCP calls to the native server.
 2. **Tool selection enforced at two layers — both in the extension**
    - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction containing an itemwise **disabled-tools list** (denylist) derived from the user’s current tool selection.
@@ -498,20 +500,20 @@ When extraction fails repeatedly:
 
 ## 11. Security, Privacy, and Permissions
 
-1. **Local-first**: all browser control happens locally via the extension. Communication with the Gateway is localhost WebSocket only.
+1. **Local-first**: all browser control happens locally via the extension. Communication with the Gateway is localhost WebSocket only (via the native-server).
 2. **Any-URL support**: use `<all_urls>` host permissions granted at install time (no per-site prompts). Platform packs still define recommended origins/bindings, but the system is not restricted to a fixed domain list.
 3. **Secret handling**:
    - EMOS credentials are stored in two places: OpenClaw's `evermemos` plugin config and the extension's `chrome.storage.local` (for autonomous ingestion). Both are local-only.
-   - Gateway WS auth token is stored in `chrome.storage.local`.
+   - Gateway WS URL/token are stored by the native-server (local-only). The extension UI edits them via native-server routes.
    - Do not embed secrets in flows.
    - Redact tokens/cookies in logs and UI exports.
 4. **Safe automation**:
-   - Default to read-only tool groups (Observe + Navigate on, Interact + Execute off).
+   - Default to safe tool groups (Observe + Navigate + Interact on, Execute off).
    - Workflows declare their required tools at authoring time and execute independently of chat panel tool group settings.
 5. **Gateway access control**:
    - Gateway binds to localhost only (no LAN exposure).
-   - Tool selection enforcement at two layers, both in the extension: prompt injection (via `chat.send`) and runtime rejection at the Native Messaging tool-call boundary. See §4.3.
-   - WS auth token required for the extension to connect as a node.
+   - Tool selection enforcement at two layers, both in the extension: prompt injection (when sending agent chat requests to the native-server) and runtime rejection at the Native Messaging tool-call boundary. See §4.3.
+   - WS auth token is required for the native-server to connect to the Gateway (depending on Gateway configuration).
 6. **Flow integrity**
    - Display flow version for every run.
    - Prevent silent mutation: if a flow changes, require re-approval for tools that expanded.
@@ -521,7 +523,7 @@ When extraction fails repeatedly:
 ### Phase 1 -- Foundation + Sidepanel + First Platform Pack
 
 1. Keep the native server (`app/native-server`) + Native Messaging as the core tool execution path.
-2. Implement/maintain the sidepanel’s **Gateway WS operator client** for `chat.*`.
+2. Implement/maintain the native-server’s **Gateway WS operator client** for `chat.*` (OpenClaw engine).
 3. Use the **`mcp-client` OpenClaw plugin** to expose Ruminer MCP tools inside OpenClaw.
 4. Configure the extension button to open the Sidepanel with three tabs (Chat, Memory, Workflows).
 5. Implement sidepanel Chat tab: text input, live EMOS search (via OpenClaw), send message to OpenClaw (with disabled-tools list restriction prompt), chat mode with inline tool call display.
@@ -547,14 +549,14 @@ When extraction fails repeatedly:
 ## 13. MVP Acceptance Criteria
 
 1. User can configure OpenClaw Gateway connection (WS URL + token) and EMOS connection (base URL + API key) in Options. Both show connection test results.
-2. Sidepanel connects to Gateway as an operator client and supports `chat.*` methods.
+2. Native-server connects to Gateway as an operator client and supports `chat.*` methods; sidepanel uses native-server agent chat.
 3. Sidepanel opens on extension button click with Chat, Memory, and Workflows tabs.
 4. Chat tab supports live EMOS search while typing (in empty state), transitions to chat mode on Enter, and shows inline tool call results. Chat messages are ingested into EMOS via OpenClaw's `evermemos` plugin.
 5. Tool group toggles are accessible in the chat UI and are applied at prompt level (extension injects a disabled-tools list into `chat.send`).
 6. OpenClaw can call Ruminer MCP tools via the `mcp-client` plugin; the MCP server bridges execution to the extension via Native Messaging.
 7. ChatGPT ingestion workflow runs end-to-end autonomously (extension extracts via Chrome APIs, writes to EMOS via direct API) and is idempotent (no duplicates on rerun).
 8. RR-V3 run history and event timeline is visible in the Workflows tab for debugging.
-9. Tool groups default to safe settings (Observe + Navigate on, Interact + Execute off). Workflows can request elevation with user approval.
+9. Tool groups default to safe settings (Observe + Navigate + Interact on, Execute off). Workflows can request elevation with user approval.
 
 ## 14. Future Features
 

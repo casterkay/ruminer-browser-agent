@@ -98,7 +98,7 @@ packages/
 
 **Structure Decision**: Keep the existing pnpm monorepo. Implement the new architecture primarily in
 `app/chrome-extension/entrypoints/background/` (Native Messaging tool executor + RR-V3 runtime) and
-`app/chrome-extension/entrypoints/sidepanel/` (Gateway WS chat UI + tool selection UI + workflows UI),
+`app/chrome-extension/entrypoints/sidepanel/` (native-server agent chat UI + tool selection UI + workflows UI),
 and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw.
 
 ## Phase Plan (high-level)
@@ -107,7 +107,7 @@ and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw
 
 - Confirm OpenClaw Gateway WS frame shapes + relevant `chat.*` usage for UI.
 - Decide session strategy for sidepanel (MVP: deterministic `sessionKey = "main"`).
-- Align sidepanel chat transport: native-server SSE vs Gateway WS (prefer Gateway WS for OpenClaw chat).
+- Align chat transport: sidepanel → native-server (HTTP + SSE), native-server → OpenClaw Gateway (WebSocket).
 
 ### Phase 1 — Design Artifacts (contracts + data model)
 
@@ -120,7 +120,7 @@ and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw
 ### Phase 2 — Implementation Planning (ready for `/speckit.tasks`)
 
 - Ensure OpenClaw tool calls work via `mcp-client` → local MCP server (`app/native-server`).
-- Update sidepanel Chat tab to use `chat.*` Gateway methods and render tool events.
+- Update sidepanel Chat tab to use native-server agent routes (`/agent/chat/:sessionId/act`) and render streamed events.
 - Implement tool selection state + prompt-layer denylist injection.
 - Implement runtime per-tool enforcement at the Native Messaging boundary (MCP-only).
 - Implement autonomous ingestion workflow nodes (ChatGPT pack first) + ledger + EMOS direct client.
@@ -169,7 +169,7 @@ Implement the remaining “unfinished” RR‑V3 pieces needed for MV3 reliabili
   tool ID equals the actual MCP tool name (from `packages/shared/src/tools.ts`).
   - Example: change `chrome_file_upload` → `chrome_upload_file`, and audit all other entries.
 - Set safe defaults in `app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`:
-  - observe=true, navigate=true, interact=false, execute=false, workflow=true
+  - observe=true, navigate=true, interact=true, execute=false, workflow=true
   - Keep stored user state if it already exists; defaults apply only when unset.
 
 ### A2) Implement “effective allowed tools” resolver (per-tool)
@@ -204,7 +204,7 @@ Implement the remaining “unfinished” RR‑V3 pieces needed for MV3 reliabili
 - Replace group-based phrasing with an explicit disabled list:
   - `Disabled browser tools: … (IDs). Do not use disabled tools.`
 - Implement this in:
-  - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
+  - `app/chrome-extension/entrypoints/sidepanel/composables/useAgentChat.ts`
   - backed by a new helper in `app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`:
     - `getEffectiveDisabledToolIds(state, individualState): string[]`
 

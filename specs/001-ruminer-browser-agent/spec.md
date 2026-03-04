@@ -5,8 +5,8 @@
 **Updated**: 2026-02-27
 **Status**: Draft
 **Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
-that connects to the OpenClaw Gateway via localhost WebSocket as an
-**operator/UI client** (sidepanel chat uses `chat.*`), and exposes browser
+that connects to the native-server for chat, and the native-server connects to the OpenClaw Gateway
+via localhost WebSocket as an **operator** (OpenClaw chat uses `chat.*`), and exposes browser
 automation through a **local MCP server** (`app/native-server`).
 
 OpenClaw calls browser tools via the `mcp-client` plugin (OpenClaw → MCP
@@ -31,8 +31,9 @@ direct EMOS client (autonomous ingestion workflows).
   it. System is modular — components degrade gracefully.
 - Q: What is the separation of concerns between OpenClaw, the
   extension, and EMOS? → A: OpenClaw is the LLM orchestrator and tool
-  runtime. The extension connects to the OpenClaw Gateway (localhost
-  WebSocket) as an **operator/UI client** for sidepanel chat (`chat.*`).
+  runtime. The native-server connects to the OpenClaw Gateway (localhost
+  WebSocket) as an **operator** for OpenClaw chat (`chat.*`), while the extension
+  sidepanel talks to the native-server for chat.
   Browser automation tools are exposed via the local MCP server
   (`app/native-server`), and OpenClaw accesses them through the
   `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server). The
@@ -487,7 +488,7 @@ a flow, run the flow, and verify it executes the recorded actions.
   read/search, ledger — default On), Navigate (navigation, open/switch/
   close tabs — default On), Interact (click/type/scroll, dialogs,
   element selection, cookie-enabled network requests, file upload —
-  default Off), Execute (JavaScript eval/injection/userscripts —
+  default On), Execute (JavaScript eval/injection/userscripts —
   default Off), Workflow (RR-V3 flow/trigger/run management, run queue
   controls — default On).
 - **FR-007**: Users MUST be able to toggle tool groups on/off from the
@@ -495,8 +496,8 @@ a flow, run the flow, and verify it executes the recorded actions.
   disabled (directly or via its group), the extension MUST prevent the
   agent from successfully executing that tool (prompt restriction +
   runtime rejection).
-- **FR-008**: Tool group defaults MUST be safe: Observe and Navigate on,
-  Interact and Execute off, Workflow on.
+- **FR-008**: Tool group defaults MUST be safe: Observe, Navigate, and Interact on,
+  Execute off, Workflow on.
 - **FR-009**: Tool selection state (group toggles + per-tool overrides)
   MUST be persisted locally and applied immediately to both the
   restriction prompt sent to OpenClaw (disabled-tools list) and runtime
@@ -524,11 +525,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   connection (WS URL + auth token) and an EMOS connection (base URL +
   API key + tenant/space IDs) in the Options page, with connection
   tests and clear error messages. The extension MUST connect to the
-  Gateway as an **operator/UI client** for sidepanel chat (`chat.*`).
-  OpenClaw MUST be able to call Ruminer’s browser automation tools via
-  the `mcp-client` plugin (OpenClaw → MCP client → Ruminer MCP server at
-  `http://127.0.0.1:12306/mcp`). The MCP server MUST bridge tool
-  execution to the extension via Native Messaging.
+  Gateway as an **operator** via the native-server (native-server → OpenClaw Gateway over WebSocket).
+  The sidepanel MUST send chat requests to the native-server and consume chat events via the native-server stream.
+  OpenClaw MUST be able to call Ruminer’s browser automation tools via the `mcp-client` plugin
+  (OpenClaw → MCP client → Ruminer MCP server at `http://127.0.0.1:12306/mcp`).
+  The MCP server MUST bridge tool execution to the extension via Native Messaging.
 - **FR-014a**: On first connect to the Gateway, the extension MUST
   auto-pair silently (no explicit pairing approval step). Since the
   Gateway is localhost-only, the localhost trust boundary is sufficient.
@@ -744,7 +745,7 @@ Enable it in Ruminer → Tools.` Internal RR‑V3 workflow execution MUST
   side-effect level. Attributes: group name, side-effect description,
   tool list, enabled state, default state. Groups: Observe
   (read-only tools, default On), Navigate (page/tab changes,
-  default On), Interact (DOM manipulation, default Off), Execute
+  default On), Interact (DOM manipulation, default On), Execute
   (code/network/file I/O, default Off), Workflow (RR-V3 flow management,
   default On). Tool group state is persisted in `chrome.storage.local`.
 

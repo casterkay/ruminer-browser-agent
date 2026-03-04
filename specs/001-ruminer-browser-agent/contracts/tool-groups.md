@@ -19,7 +19,7 @@ Defaults MUST be safe:
 
 - Observe: On
 - Navigate: On
-- Interact: Off
+- Interact: On
 - Execute: Off
 - Workflow: On
 - Memory: On

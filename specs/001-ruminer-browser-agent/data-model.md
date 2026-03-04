@@ -19,7 +19,7 @@ This document extracts the core entities from `specs/001-ruminer-browser-agent/s
 
 **Notes**
 
-- Stored only in the extension (must not be transmitted to other components).
+- Configuration is owned by the native-server; the extension UI edits it via native-server HTTP routes.
 - UI needs a “Test connection” action.
 
 ### 1.2 EverMemOS connection settings (extension direct)
@@ -45,7 +45,7 @@ This document extracts the core entities from `specs/001-ruminer-browser-agent/s
 
 - **observe**: boolean (default true)
 - **navigate**: boolean (default true)
-- **interact**: boolean (default false)
+- **interact**: boolean (default true)
 - **execute**: boolean (default false)
 - **workflow**: boolean (default true)
 - **updatedAt**: ISO string
