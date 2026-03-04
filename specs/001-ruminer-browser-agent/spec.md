@@ -192,8 +192,8 @@ tools are restricted immediately.
 
 6. **Given** tool group toggles are visible in the chat header,
    **When** the user disables a tool (or disables its group), **Then**
-   the extension updates its effective allowlist immediately, the next
-   message sent to OpenClaw includes the updated restriction prompt,
+   the extension updates its effective disabled-tools list immediately, the next
+   message sent to OpenClaw includes the updated restriction prompt (disabled tools),
    and attempts to use a disabled tool fail with a clear runtime
    error like `Disabled tool: <toolName>. Enable it in Ruminer → Tools.`
 
@@ -486,9 +486,10 @@ a flow, run the flow, and verify it executes the recorded actions.
   console read, interactive element listing, history read, bookmarks
   read/search, ledger — default On), Navigate (navigation, open/switch/
   close tabs — default On), Interact (click/type/scroll, dialogs,
-  element selection — default Off), Execute (cookie-enabled network
-  requests, file upload — default Off), Workflow (RR-V3 flow/trigger/
-  run management, run queue controls — default On).
+  element selection, cookie-enabled network requests, file upload —
+  default Off), Execute (JavaScript eval/injection/userscripts —
+  default Off), Workflow (RR-V3 flow/trigger/run management, run queue
+  controls — default On).
 - **FR-007**: Users MUST be able to toggle tool groups on/off from the
   sidepanel chat header and disable individual tools. When a tool is
   disabled (directly or via its group), the extension MUST prevent the
@@ -498,7 +499,7 @@ a flow, run the flow, and verify it executes the recorded actions.
   Interact and Execute off, Workflow on.
 - **FR-009**: Tool selection state (group toggles + per-tool overrides)
   MUST be persisted locally and applied immediately to both the
-  restriction prompt sent to OpenClaw (allowlist) and runtime
+  restriction prompt sent to OpenClaw (disabled-tools list) and runtime
   enforcement in the background.
 
 **Sidepanel Memory & Workflows**
@@ -661,13 +662,18 @@ a flow, run the flow, and verify it executes the recorded actions.
   exposure). The extension MUST connect via authenticated WebSocket
   with a WS auth token. Tool selection enforcement MUST happen at two
   layers in the extension: (1) prompt layer — the extension injects an
-  allowlist of enabled tools into the system prompt when sending
+  itemwise **disabled-tools list** into the system prompt when sending
   `chat.send` to OpenClaw, and (2) runtime layer — the background
   service rejects MCP tool calls at the Native Messaging boundary when
-  the requested tool is disabled by the current selection (groups +
-  per-tool overrides). All browser tools including RR‑V3 are exposed
-  via MCP on the native server; OpenClaw calls them via the
-  `mcp-client` plugin, which has no knowledge of tool selection.
+  the requested tool name is disabled by the current selection (groups
+  - per-tool overrides). Unknown tool names MUST be rejected by
+    default. Runtime rejections MUST return a normal tool result with
+    `isError=true` and a clear message like `Disabled tool: <toolName>.
+Enable it in Ruminer → Tools.` Internal RR‑V3 workflow execution MUST
+    NOT be blocked by chat tool selection. All browser tools including
+    RR‑V3 are exposed via MCP on the native server; OpenClaw calls them
+    via the `mcp-client` plugin, which has no knowledge of tool
+    selection.
 - **FR-031**: Host permissions MUST use `<all_urls>` in the manifest,
   granted at install time with no per-site prompts. The extension MUST
   NOT be restricted to a fixed allowlist of AI chat platform domains.

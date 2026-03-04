@@ -34,6 +34,7 @@ In the extension Options page:
   - Click “Test connection”
 - **Tool groups**
   - Defaults: Observe + Navigate ON, Interact + Execute OFF, Workflow ON
+  - Optional: disable individual tools (itemwise) for finer control
 
 ## Install/enable OpenClaw plugins (needed for memory search + extension routes)
 
@@ -73,7 +74,7 @@ openclaw plugins enable mcp-client
 
 - Disable a tool in Ruminer → Tools (e.g. disable `chrome_click_element`, or disable its group)
 - Ask the agent to click/type on the page
-  - Prompt-layer: the model should avoid calling disabled tools
+  - Prompt-layer: the model should avoid calling disabled tools (because the system prompt lists them)
   - Runtime-layer: the tool call must fail with `isError=true` and a message like:
     `Disabled tool: chrome_click_element. Enable it in Ruminer → Tools.`
 

@@ -1,105 +1,119 @@
-# Contract — Tool Selection (prompt allowlist + runtime enforcement)
+# Contract — Tool Selection (per-tool prompt + runtime enforcement)
 
-Tool selection is the user-controlled permission boundary for browser automation tools. Ruminer
-enforces it in **two layers**, both inside the extension:
+Ruminer exposes browser automation tools to OpenClaw via MCP (`mcp-client` plugin → Ruminer native
+server → Native Messaging → extension background). Users must be able to enable/disable tools
+**itemwise**, and the extension must enforce that policy at runtime.
 
-1. **Prompt layer (soft)**: when the sidepanel sends `chat.send` to OpenClaw, it prepends a system
-   instruction that includes an **allowlist** of browser tools currently enabled.
-2. **Runtime layer (hard)**: the extension background rejects MCP tool calls that are not allowed by
-   the current selection.
-
-OpenClaw’s `mcp-client` plugin and Ruminer’s native server do **not** enforce tool selection. The
-extension background is the source of truth for enforcement.
+This contract replaces any prior “route → group” dispatcher mapping.
 
 ---
 
-## 1) UI model: groups + per-tool overrides
+## 1) Policy Inputs (authoritative state)
 
-Ruminer exposes tool selection as:
+Tool policy is derived from two persisted states in `chrome.storage.local`:
 
-- **Tool groups** (coarse toggles): `observe | navigate | interact | execute | workflow`
-- **Per-tool overrides** (fine toggles): disable individual tool IDs within enabled groups
+1. **Tool group state**: group toggles (Observe / Navigate / Interact / Execute / Workflow / Memory)
+2. **Individual tool state**: per-tool overrides (`toolName -> false` means disabled)
 
-Default group state:
+Defaults MUST be safe:
 
-| Group    | Default | Description                                  |
-| -------- | ------- | -------------------------------------------- |
-| Observe  | On      | Read-only (snapshot, list tabs, history…)    |
-| Navigate | On      | Change active tab/page (navigate/open/close) |
-| Interact | Off     | DOM interaction (click/type/dialogs)         |
-| Execute  | Off     | Script/network/file-like actions             |
-| Workflow | On      | Record/Replay (flows, runs, triggers)        |
+- Observe: On
+- Navigate: On
+- Interact: Off
+- Execute: Off
+- Workflow: On
+- Memory: On
 
----
-
-## 2) Storage contract (chrome.storage.local)
-
-Selection is persisted in two keys:
-
-- `toolGroupState` (`STORAGE_KEYS.TOOL_GROUP_STATE`)
-  - Shape: `{ observe, navigate, interact, execute, workflow, updatedAt }`
-- `individualToolState` (`STORAGE_KEYS.INDIVIDUAL_TOOL_STATE`)
-  - Shape: `{ overrides: Record<string, boolean>, updatedAt }`
-  - Convention: only `false` is persisted as an override (absence means “not individually disabled”).
-
-Legacy tool IDs may be migrated to canonical MCP tool names (e.g. `chrome_file_upload →
-chrome_upload_file`).
+Defaults apply only when state is unset; existing stored user state must be preserved.
 
 ---
 
-## 3) Effective allowlist contract (itemwise)
+## 2) Effective Policy Computation (itemwise)
 
-Define `enabledToolIds` as the effective allowlist:
+The extension must compute an **effective enabled set** of tool names:
 
-- A tool is enabled **iff** its **group toggle** is on **and** `overrides[toolId] !== false`.
-- Unknown/unmapped tool IDs are **disabled by default** (security-by-default).
-- Tool names may be normalized via a legacy-alias table before evaluation.
+- A tool is **enabled** iff:
+  - its **group** is enabled, and
+  - it is not individually overridden as disabled.
+- **Unknown tool names** are **disabled by default** (security-by-default).
 
----
+### Normalization / Legacy Aliases
 
-## 4) Runtime enforcement contract (hard)
-
-**Enforcement point (authoritative)**:
-
-- Extension background Native Messaging handler for `NativeMessageType.CALL_TOOL` (MCP tool calls
-  coming from the native server), in `app/chrome-extension/entrypoints/background/native-host.ts`.
-- Also applies to the UI bridge message `{ type: 'call_tool' }` for direct UI → background tool calls.
-
-**Behavior**:
-
-- If tool is disabled:
-  - Return a normal MCP `ToolResult` with `isError=true`
-  - Error message: `Disabled tool: <toolName>. Enable it in Ruminer → Tools.`
-  - Native Messaging envelope still responds with `status: 'success'` so the MCP caller receives a
-    regular tool result (not a transport error).
-- If tool is enabled: execute normally.
-
-**Scope boundary**:
-
-- Enforcement applies to **MCP tool calls only**.
-- Internal RR‑V3 workflow execution (scanner/ingest runs inside the extension) must **not** be
-  blocked by chat/tool selection.
+If legacy tool names can still arrive at the runtime boundary, the background must normalize them
+before policy evaluation using a small alias table (e.g. `chrome_file_upload -> chrome_upload_file`).
 
 ---
 
-## 5) Prompt restriction contract (soft)
+## 3) Runtime Enforcement Contract (hard enforcement)
 
-When the user sends a message from the sidepanel Chat tab, the extension prepends:
+### Boundary + Scope (locked)
+
+Runtime enforcement MUST happen in the **extension background**, at the Native Messaging tool-call
+entrypoint:
+
+- Enforce inside `NativeMessageType.CALL_TOOL` handling (Native Messaging messages coming from the
+  native server).
+- Also enforce the same policy for the internal UI bridge path (`chrome.runtime.onMessage` with
+  `{ type: 'call_tool' }`), so direct UI calls behave identically.
+
+Enforcement scope is **MCP tool calls only**. Internal RR‑V3 workflow execution MUST NOT be blocked
+by chat/tool selection.
+
+### Rejection Semantics
+
+If a tool is disabled by policy:
+
+- Return a normal MCP tool result with `isError=true` (so the caller receives a tool result rather
+  than a transport error).
+- The error message MUST be actionable and stable, e.g.:
+  - `Disabled tool: <toolName>. Enable it in Ruminer → Tools.`
+
+Unknown tool names MUST be rejected by default with the same semantics.
+
+---
+
+## 4) Prompt-Layer Injection Contract (soft restriction)
+
+When the user submits a message from the sidepanel chat, the extension MUST inject a system
+instruction that lists **disabled tools itemwise** (tool names), derived from the same effective
+policy computation as runtime enforcement.
+
+The instruction MUST:
+
+- List disabled tool names explicitly (comma-separated is acceptable).
+- Instruct the model not to call disabled tools.
+- Instruct the model to ask the user to enable a tool in Ruminer → Tools if needed.
+
+**Example (conceptual)**:
 
 ```text
-Browser tool restrictions (enforced at runtime):
-- Allowed browser tools: <comma-separated tool IDs>
-- Do not use any other browser tools.
+Tool restrictions (enforced at runtime):
+- Disabled tools: chrome_click_element, chrome_fill_or_select, chrome_javascript
+- Do not use any disabled tools.
 
 Ask the user to enable a tool in Ruminer → Tools before using it.
 ```
 
-If no tools are enabled, it must state that explicitly and instruct the agent to ask for enabling
-tools.
+---
+
+## 5) Catalog Completeness (contract tests)
+
+The UI tool catalog and the runtime policy mapping must cover all exposed MCP tools:
+
+- Every tool name exposed via `TOOL_SCHEMAS` MUST appear in the UI catalog unless it is explicitly
+  excluded with a documented rationale.
+- Contract tests must validate:
+  - Catalog/tool-schema completeness.
+  - Group-off disables all tools in the group.
+  - Individual override disables a specific tool.
+  - Unknown tool name resolves to disabled.
 
 ---
 
-## 6) Workflows and approvals
+## 6) Workflows vs Chat Tool Selection
 
-Workflows may declare `flow.meta.requiredTools` (MCP tool IDs) and the UI may require re-approval
-before enqueueing if the required tool list changes.
+Workflows have their own declared tool set and approval flow (FR‑032/FR‑025):
+
+- Workflow execution must be independent of chat tool selection.
+- Chat tool selection enforcement applies only to MCP tool calls coming from OpenClaw (native-server
+  → Native Messaging `CALL_TOOL`) and the UI bridge `{ type:'call_tool' }`.

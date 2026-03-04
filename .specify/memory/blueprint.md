@@ -105,7 +105,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 
 2. **Extension background service worker**
    - **Native Messaging tool executor**: executes browser tools invoked by the native server.
-   - **Sidepanel chat**: sends/receives messages via Gateway WS `chat.*` methods. Injects a tool-selection allowlist into the system prompt when sending `chat.send` (prompt-layer enforcement).
+   - **Sidepanel chat**: sends/receives messages via Gateway WS `chat.*` methods. Injects an itemwise disabled-tools list into the system prompt when sending `chat.send` (prompt-layer enforcement).
    - **EMOS client (direct)**: calls the EverMemOS API directly for autonomous ingestion workflows. EMOS credentials are configured in the extension's Options page.
    - Owns the **RR-V3 runtime** (queue, leasing, triggers, crash recovery, event log).
    - Owns Ruminer local services: ingestion normalization + idempotency ledger.
@@ -134,7 +134,7 @@ Ruminer treats "who is asking the browser to do things" as a first-class concept
    - The extension connects to the OpenClaw Gateway via WebSocket (localhost) for sidepanel chat.
    - Browser tool calls do not arrive via Gateway WS in the current architecture; they arrive via MCP calls to the native server.
 2. **Tool selection enforced at two layers — both in the extension**
-   - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction containing an **allowlist** of enabled browser tools.
+   - **Prompt layer (extension chat client)**: when the extension sends a message to OpenClaw via `chat.send`, it prepends a system instruction containing an itemwise **disabled-tools list** (denylist) derived from the user’s current tool selection.
    - **Runtime layer (extension background)**: the Native Messaging tool executor rejects MCP `CALL_TOOL` requests for tools that are disabled by the current selection (groups + per-tool overrides). This is the hard enforcement — even if the LLM ignores the prompt restriction, the extension refuses.
    - OpenClaw’s `mcp-client` plugin has no knowledge of tool selection. All enforcement logic is self-contained in the extension.
 3. **Flows are executable code**
@@ -321,7 +321,7 @@ Reliably ingest a user's AI chat conversations into EMOS, one platform at a time
 
 ### 7.4 Platform-Specific Notes
 
-- **Authentication**: All platforms require the user to be logged in. Workflows detect auth state and pause with an "action required: please log in" notification if not authenticated.
+- **Authentication**: All platforms require the user to be logged in. Workflows detect auth state and **fail immediately** with a clear notification ("Not logged in …") if not authenticated; there is no "waiting for user" state.
 - **Rate limiting**: Workflows should include configurable and randomized delays between page loads to avoid triggering platform rate limits or anti-bot mechanisms.
 - **Conversation selection**: Users can optionally filter which conversations to ingest (e.g., conversation length, date range).
 
@@ -384,14 +384,14 @@ The Chat tab is the primary interaction surface.
 4. **Tool group controls**
    - Compact toggle UI (e.g., icon buttons or chips) in the chat header.
    - Visual indicator of which groups are active.
-   - Toggling a group immediately updates the extension's enforcement table. The next `chat.send` will include the updated restriction prompt.
+   - Toggling a group immediately updates the extension's enforcement table. The next `chat.send` will include the updated restriction prompt listing disabled tools.
 
 ### 8.4 Sidepanel Memory Tab (MVP)
 
 1. Search/browse EMOS items (messages from all AI platforms + OpenClaw conversations).
 2. Filter by source platform, date range, keyword.
 3. View item details: full content, conversation context, canonical URL.
-4. Basic management: open canonical URL in new tab, delete items.
+4. Basic management: open canonical URL in new tab (read-only; no delete).
 
 ### 8.5 Sidepanel Workflows Tab (MVP)
 
@@ -524,8 +524,8 @@ When extraction fails repeatedly:
 2. Implement/maintain the sidepanel’s **Gateway WS operator client** for `chat.*`.
 3. Use the **`mcp-client` OpenClaw plugin** to expose Ruminer MCP tools inside OpenClaw.
 4. Configure the extension button to open the Sidepanel with three tabs (Chat, Memory, Workflows).
-5. Implement sidepanel Chat tab: text input, live EMOS search (via OpenClaw), send message to OpenClaw (with tool allowlist restriction prompt), chat mode with inline tool call display.
-6. Implement tool selection system: divide browser tools into groups + per-tool overrides, add toggle UI in sidepanel, implement dual enforcement in the extension (prompt allowlist injection in `chat.send` + runtime rejection at the Native Messaging tool boundary).
+5. Implement sidepanel Chat tab: text input, live EMOS search (via OpenClaw), send message to OpenClaw (with disabled-tools list restriction prompt), chat mode with inline tool call display.
+6. Implement tool selection system: divide browser tools into groups + per-tool overrides, add toggle UI in sidepanel, implement dual enforcement in the extension (prompt disabled-tools list injection in `chat.send` + runtime rejection at the Native Messaging tool boundary).
 7. Add Options UI for OpenClaw Gateway connection (WS URL + token + test), EMOS connection (base URL + API key + test), tool selection defaults, and debug settings.
 8. Implement **extension EMOS client** for autonomous ingestion (direct API calls).
 9. Implement Ruminer ingestion ledger + hashing utilities (local to extension).
@@ -534,7 +534,7 @@ When extraction fails repeatedly:
 ### Phase 2 -- Remaining Platforms + Memory Tab
 
 1. Build platform packs for **Gemini**, **Claude**, and **DeepSeek**.
-2. Implement sidepanel Memory tab: search/browse EMOS items, filter by platform/date, view details, delete.
+2. Implement sidepanel Memory tab: search/browse EMOS items, filter by platform/date, view details, open canonical URL (read-only; no delete).
 3. Implement sidepanel Workflows tab: list workflows, one-click run, active run progress, run history with event timeline.
 
 ### Phase 3 -- AI Authoring + Repair
@@ -550,7 +550,7 @@ When extraction fails repeatedly:
 2. Sidepanel connects to Gateway as an operator client and supports `chat.*` methods.
 3. Sidepanel opens on extension button click with Chat, Memory, and Workflows tabs.
 4. Chat tab supports live EMOS search while typing (in empty state), transitions to chat mode on Enter, and shows inline tool call results. Chat messages are ingested into EMOS via OpenClaw's `evermemos` plugin.
-5. Tool group toggles are accessible in the chat UI and are applied at prompt level (extension injects restriction prompt into `chat.send`).
+5. Tool group toggles are accessible in the chat UI and are applied at prompt level (extension injects a disabled-tools list into `chat.send`).
 6. OpenClaw can call Ruminer MCP tools via the `mcp-client` plugin; the MCP server bridges execution to the extension via Native Messaging.
 7. ChatGPT ingestion workflow runs end-to-end autonomously (extension extracts via Chrome APIs, writes to EMOS via direct API) and is idempotent (no duplicates on rerun).
 8. RR-V3 run history and event timeline is visible in the Workflows tab for debugging.

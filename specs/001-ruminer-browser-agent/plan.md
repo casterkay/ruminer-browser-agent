@@ -15,7 +15,8 @@ extension via Native Messaging.
 
 Ruminer enforces tool restrictions in **two layers**, both inside the extension:
 
-- **Prompt layer**: sidepanel chat injects an itemwise _allowlist_ of enabled browser tools
+- **Prompt layer**: sidepanel chat injects an itemwise _disabled-tools list_ (denylist) derived from the
+  UI tool selection state
 - **Runtime layer**: the extension background enforces per-tool allow/deny at the Native Messaging
   tool-call entrypoint for **MCP tool calls only** (no `browser.proxy`; not group-only; RR‑V3 internal
   workflows are never blocked by chat tool selection)
@@ -112,7 +113,7 @@ and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw
 
 - Define contracts for:
   - Gateway WS handshake + event framing (subset used by extension)
-  - MCP tool call semantics + **Tool Selection policy** (prompt allowlist + runtime per-tool enforcement)
+  - MCP tool call semantics + **Tool Selection policy** (prompt denylist + runtime per-tool enforcement)
   - Standard EMOS message JSON + ingestion ledger entry + EMOS API mapping
 - Produce data model for settings, tool groups, ledger, and RR-V3 workflow entities.
 
@@ -120,7 +121,7 @@ and use `app/openclaw-extensions/mcp-client` to expose MCP tools inside OpenClaw
 
 - Ensure OpenClaw tool calls work via `mcp-client` → local MCP server (`app/native-server`).
 - Update sidepanel Chat tab to use `chat.*` Gateway methods and render tool events.
-- Implement tool selection state + prompt-layer allowlist injection.
+- Implement tool selection state + prompt-layer denylist injection.
 - Implement runtime per-tool enforcement at the Native Messaging boundary (MCP-only).
 - Implement autonomous ingestion workflow nodes (ChatGPT pack first) + ledger + EMOS direct client.
 
@@ -137,7 +138,7 @@ and the Blueprint MVP.
 
 ---
 
-## Blueprint MVP Completion Plan (Integrated `plan2.md`)
+## Blueprint MVP Completion Plan
 
 ### Summary
 
@@ -198,14 +199,14 @@ Implement the remaining “unfinished” RR‑V3 pieces needed for MV3 reliabili
   - `chrome.runtime.onMessage` handler for `{ type:'call_tool' }` in
     `app/chrome-extension/entrypoints/background/native-host.ts`.
 
-### A4) Update prompt-layer restriction text to itemwise (allowed-list)
+### A4) Update prompt-layer restriction text to itemwise (disabled-tools list)
 
-- Replace group-based phrasing with a concise allowlist:
-  - `Allowed browser tools: … (IDs). Do not use other browser tools.`
+- Replace group-based phrasing with an explicit disabled list:
+  - `Disabled browser tools: … (IDs). Do not use disabled tools.`
 - Implement this in:
   - `app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
   - backed by a new helper in `app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`:
-    - `getEffectiveEnabledToolIds(state, individualState): string[]`
+    - `getEffectiveDisabledToolIds(state, individualState): string[]`
 
 ### A5) Tests
 
@@ -213,7 +214,7 @@ Implement the remaining “unfinished” RR‑V3 pieces needed for MV3 reliabili
   - `app/chrome-extension/tests/tool-selection.contract.test.ts`
 - Cover:
   - Every tool name in `packages/shared/src/tools.ts` that is exposed in `TOOL_SCHEMAS` must appear in
-    the UI catalog (or be intentionally excluded with a documented allowlist).
+    the UI catalog (or be intentionally excluded with a documented exclusion list).
   - Resolver correctness (group off disables all tools in group; individual override disables one tool).
   - Unknown tool name resolves to disabled.
 
@@ -510,26 +511,25 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 
 ---
 
-## Discrepancies & Conflicts (Plan vs `plan2.md`, plus affected docs)
+## Discrepancies & Conflicts (Original plan vs current plan, plus affected docs)
 
-This section enumerates all concrete mismatches between the original `plan.md` and the integrated `plan2.md`
-completion plan, plus conflicts with existing docs/spec that must be updated per Workstream E.
+This section enumerates the concrete mismatches between the original `plan.md` draft and the current
+MVP completion plan (Workstreams A–E), plus conflicts with existing docs/spec that must be updated per
+Workstream E.
 
 ### 1) Tool restriction model (prompt + runtime)
 
 - **Conflict**: `plan.md` Phase 1 previously described “tool group policy (prompt-layer now; runtime layer optional)”.
   - **Resolution**: runtime enforcement is **required** and **locked** (Workstream A3) at the extension background’s
-    Native Messaging `CALL_TOOL` entrypoint; prompt injection must be **itemwise allowlist** (Workstream A4).
+    Native Messaging `CALL_TOOL` entrypoint; prompt injection must be an **itemwise disabled-tools list** (Workstream A4).
 - **Conflict**: `plan.md` previously framed restrictions as **group-level** toggles (“tool groups”) without requiring
   per-tool normalization.
   - **Resolution**: keep tool groups as UX, but enforcement becomes **per-tool name**, computed from group toggles +
     per-tool overrides (Workstream A2), with unknown tools disabled-by-default.
-- **Doc conflicts to fix (per Workstream E1)**:
-  - `specs/001-ruminer-browser-agent/contracts/tool-groups.md` currently encodes group-based route mapping and mentions
-    `browser-ext` (must be rewritten as per-tool Tool Selection contract).
-  - `.specify/memory/blueprint.md` and `specs/001-ruminer-browser-agent/quickstart.md` still mention `browser-ext`.
-  - `specs/001-ruminer-browser-agent/spec.md` contains `browser-ext` mentions around tool-group enforcement context
-    (must align to `mcp-client` + MCP-only enforcement boundary language).
+- **Doc conflicts (resolved in this branch; keep checking for regressions)**:
+  - `specs/001-ruminer-browser-agent/contracts/tool-groups.md` rewritten as per-tool Tool Selection contract (no route → group mapping).
+  - `.specify/memory/blueprint.md`, `specs/001-ruminer-browser-agent/quickstart.md`, and `specs/001-ruminer-browser-agent/spec.md`
+    aligned to `mcp-client` and Native Messaging runtime enforcement (no `browser-ext` dependency for tool calls).
 
 ### 2) Enforcement scope: MCP-only vs workflows
 

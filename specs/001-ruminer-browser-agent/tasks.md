@@ -1,7 +1,7 @@
 # Tasks: Ruminer Browser Agent
 
 **Input**: Design documents from `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/specs/001-ruminer-browser-agent/`
-**Prerequisites**: `plan.md` (required), `spec.md` (required), `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`
+**Prerequisites**: `plan.md` (required), `spec.md` (required), `research.md`, `data-model.md`, `contracts/`, `quickstart.md`
 
 **Tests**: Includes targeted automated tests where `plan.md` explicitly mandates them (contract + Vitest). Otherwise, rely on spec-defined independent test scenarios.
 
@@ -46,14 +46,14 @@
 
 ## Phase 3: User Story 1 — Chat with Memory-Grounded Answers in Sidepanel (Priority: P1) 🎯 MVP
 
-**Goal**: Sidepanel chat works end-to-end with OpenClaw Gateway, and tool restrictions are communicated as a **per-tool allowlist** (prompt layer) while runtime enforcement blocks disabled MCP tools.
+**Goal**: Sidepanel chat works end-to-end with OpenClaw Gateway, and tool restrictions are communicated as an itemwise **disabled-tools list** (prompt layer) while runtime enforcement blocks disabled MCP tools.
 
 **Independent Test**: Open sidepanel → Chat; type ≥3 chars to see memory suggestions (when OpenClaw `evermemos` enabled); press Enter to send via `chat.send`; toggle tools; confirm a disabled tool call returns `isError=true` with a clear “Disabled tool: <name> …” message.
 
-- [ ] T012 [P] [US1] Add helper to compute effective enabled tool allowlist (group state + per-tool overrides) for prompt injection in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
-- [ ] T013 [US1] Update chat prompt injection to use an itemwise allowlist (“Allowed browser tools: …”) instead of group-based phrasing in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
+- [ ] T012 [P] [US1] Add helper to compute effective disabled tool IDs (from group state + per-tool overrides) for prompt injection in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/shared/utils/tool-groups.ts`
+- [ ] T013 [US1] Update chat prompt injection to list disabled tools (“Disabled tools: …”) instead of group-based phrasing in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/sidepanel/composables/useOpenClawChat.ts`
 
-**Checkpoint**: Chat sends the correct allowlist prompt and runtime blocks disallowed MCP tools.
+**Checkpoint**: Chat sends the correct disabled-tools list prompt and runtime blocks disabled MCP tools.
 
 ---
 
@@ -194,7 +194,7 @@ Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-e
 ### MVP First (per `plan.md`)
 
 1. Phase 1 (docs alignment) → Phase 2 (runtime per-tool enforcement)
-2. US1 (prompt allowlist) + US2 (RR‑V3 reliability + ChatGPT pack)
+2. US1 (prompt disabled-tools list) + US2 (RR‑V3 reliability + ChatGPT pack)
 3. US4 (Workflows UI visibility + stop + schedule + repair artifacts)
 4. Phase 8 (quickstart + quality gates)
 
