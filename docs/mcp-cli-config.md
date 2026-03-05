@@ -11,16 +11,10 @@ Both Codex CLI and Claude Code can connect to this endpoint to use Chrome browse
 
 ### Option 1: HTTP MCP Server (Recommended)
 
-Add the following to your `~/.codex/config.json`:
+Run terminal command:
 
-```json
-{
-  "mcpServers": {
-    "chrome-mcp": {
-      "url": "http://127.0.0.1:12306/mcp"
-    }
-  }
-}
+```bash
+codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp
 ```
 
 ### Option 2: Via Environment Variable
@@ -33,33 +27,10 @@ export MCP_HTTP_PORT=12306
 
 ## Claude Code Configuration
 
-### Option 1: HTTP MCP Server
+Run terminal command:
 
-Add the following to your `~/.claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "chrome-mcp": {
-      "url": "http://127.0.0.1:12306/mcp"
-    }
-  }
-}
-```
-
-### Option 2: Stdio Server (Alternative)
-
-If you prefer stdio-based MCP communication:
-
-```json
-{
-  "mcpServers": {
-    "chrome-mcp": {
-      "command": "node",
-      "args": ["/path/to/mcp-chrome/dist/mcp/mcp-server-stdio.js"]
-    }
-  }
-}
+```bash
+claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp
 ```
 
 ## Verifying Connection

@@ -39,7 +39,7 @@ bash scripts/setup.sh
 Optional: auto-configure the OpenClaw EverMemOS plugin during setup:
 
 ```bash
-EVERMEMOS_BASE_URL="https://your-emos.example" \
+EVERMEMOS_BASE_URL="https://api.evermind.ai" \
 EVERMEMOS_API_KEY="your_api_key" \
 bash scripts/setup.sh
 ```
@@ -86,43 +86,17 @@ openclaw plugins info mcp-client --json
 openclaw plugins info evermemos --json
 ```
 
-Sanity test from OpenClaw (forces an actual MCP tool call):
-
-```bash
-openclaw agent --to main --message "Call get_windows_and_tabs and return JSON."
-```
-
 ### Codex CLI
 
-Configure MCP in `~/.codex/config.json`:
+Run terminal command:
 
-```json
-{
-  "mcpServers": {
-    "ruminer-chrome": {
-      "url": "http://127.0.0.1:12306/mcp"
-    }
-  }
-}
-```
-
-More details: [docs/mcp-cli-config.md](docs/mcp-cli-config.md)
+`codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp`
 
 ### Claude Code
 
-Configure MCP in `~/.claude/claude_desktop_config.json`:
+Run terminal command:
 
-```json
-{
-  "mcpServers": {
-    "ruminer-chrome": {
-      "url": "http://127.0.0.1:12306/mcp"
-    }
-  }
-}
-```
-
-More details: [docs/mcp-cli-config.md](docs/mcp-cli-config.md)
+`claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp`
 
 ## EverMemOS (EMOS) integration
 

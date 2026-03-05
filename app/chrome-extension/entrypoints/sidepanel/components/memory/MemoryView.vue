@@ -154,7 +154,9 @@
               <div class="memory-item-title">
                 <span class="memory-item-title-text">{{ formatGroupTitle(item) }}</span>
               </div>
-              <span class="platform-badge">{{ formatPlatform(item) }}</span>
+              <span class="platform-badge" :style="getPlatformBadgeStyle(item)">{{
+                formatPlatform(item)
+              }}</span>
             </div>
             <div class="memory-item-meta" :title="formatAbsoluteTime(item.create_time)">
               {{ formatSenderDisplay(item) }} · {{ formatRelativeTime(item.create_time) }}
@@ -191,6 +193,40 @@ const ALL_PLATFORMS = ['openclaw', 'claude', 'chatgpt', 'codex', 'gemini', 'deep
 const DEFAULT_SPEAKERS = ['me', 'bot'];
 const speakerOptions = ref<string[]>([...DEFAULT_SPEAKERS]);
 const dateMenuVisible = ref(false);
+
+const platformColors: Record<string, { bg: string; color: string; border: string }> = {
+  openclaw: {
+    bg: 'var(--ac-plt-openclaw-bg)',
+    color: 'var(--ac-plt-openclaw-fg)',
+    border: 'var(--ac-plt-openclaw-border)',
+  },
+  claude: {
+    bg: 'var(--ac-plt-claude-bg)',
+    color: 'var(--ac-plt-claude-fg)',
+    border: 'var(--ac-plt-claude-border)',
+  },
+  chatgpt: {
+    bg: 'var(--ac-plt-chatgpt-bg)',
+    color: 'var(--ac-plt-chatgpt-fg)',
+    border: 'var(--ac-plt-chatgpt-border)',
+  },
+  codex: {
+    bg: 'var(--ac-plt-codex-bg)',
+    color: 'var(--ac-plt-codex-fg)',
+    border: 'var(--ac-plt-codex-border)',
+  },
+  gemini: {
+    bg: 'var(--ac-plt-gemini-bg)',
+    color: 'var(--ac-plt-gemini-fg)',
+    border: 'var(--ac-plt-gemini-border)',
+  },
+  deepseek: {
+    bg: 'var(--ac-plt-deepseek-bg)',
+    color: 'var(--ac-plt-deepseek-fg)',
+    border: 'var(--ac-plt-deepseek-border)',
+  },
+};
+
 const tempDateRange = reactive({ start: '', end: '' });
 
 const LIVE_SEARCH_DEBOUNCE_MS = 250;
@@ -396,6 +432,19 @@ function getPlatformKey(item: MemoryItem): string {
   }
 
   return 'unknown';
+}
+
+function getPlatformBadgeStyle(item: MemoryItem): Record<string, string> {
+  const key = getPlatformKey(item);
+  const c = platformColors[key];
+  if (c) {
+    return {
+      backgroundColor: c.bg,
+      color: c.color,
+      borderColor: c.border,
+    };
+  }
+  return {};
 }
 
 function formatPlatform(item: MemoryItem): string {

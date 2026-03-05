@@ -80,7 +80,11 @@
           type="button"
           class="platform-chip ac-focus-ring"
           :class="{ active: selectedPlatformSet.has(option.value) }"
-          :style="selectedPlatformSet.has(option.value) ? activeChipStyle : inactiveChipStyle"
+          :style="
+            selectedPlatformSet.has(option.value)
+              ? platformChipActiveStyle(option.value)
+              : inactiveChipStyle
+          "
           @click="togglePlatform(option.value)"
         >
           {{ option.label }}
@@ -310,6 +314,51 @@ const inputStyle = computed(() => ({
   color: 'var(--ac-text)',
   fontFamily: 'var(--ac-font-body)',
 }));
+
+const platformColors: Record<string, { bg: string; color: string; border: string }> = {
+  openclaw: {
+    bg: 'var(--ac-plt-openclaw-bg)',
+    color: 'var(--ac-plt-openclaw-fg)',
+    border: 'var(--ac-plt-openclaw-border)',
+  },
+  claude: {
+    bg: 'var(--ac-plt-claude-bg)',
+    color: 'var(--ac-plt-claude-fg)',
+    border: 'var(--ac-plt-claude-border)',
+  },
+  chatgpt: {
+    bg: 'var(--ac-plt-chatgpt-bg)',
+    color: 'var(--ac-plt-chatgpt-fg)',
+    border: 'var(--ac-plt-chatgpt-border)',
+  },
+  codex: {
+    bg: 'var(--ac-plt-codex-bg)',
+    color: 'var(--ac-plt-codex-fg)',
+    border: 'var(--ac-plt-codex-border)',
+  },
+  gemini: {
+    bg: 'var(--ac-plt-gemini-bg)',
+    color: 'var(--ac-plt-gemini-fg)',
+    border: 'var(--ac-plt-gemini-border)',
+  },
+  deepseek: {
+    bg: 'var(--ac-plt-deepseek-bg)',
+    color: 'var(--ac-plt-deepseek-fg)',
+    border: 'var(--ac-plt-deepseek-border)',
+  },
+};
+
+function platformChipActiveStyle(value: string): Record<string, string> {
+  const c = platformColors[value];
+  if (c) {
+    return {
+      backgroundColor: c.bg,
+      border: `var(--ac-border-width) solid ${c.border}`,
+      color: c.color,
+    };
+  }
+  return activeChipStyle.value;
+}
 
 const activeChipStyle = computed(() => ({
   backgroundColor: 'var(--ac-accent-subtle)',
