@@ -145,11 +145,11 @@
     --ac-danger: #ef4444;
 
     /* Platform Colors */
-    --ac-plt-openclaw-bg: #b91c1c;
+    --ac-plt-openclaw-bg: #cd3b1e;
     --ac-plt-openclaw-fg: #fef2f2;
     --ac-plt-openclaw-border: #991b1b;
 
-    --ac-plt-claude-bg: #b45c38;
+    --ac-plt-claude-bg: #db7858;
     --ac-plt-claude-fg: #fff7ed;
     --ac-plt-claude-border: #92400e;
 
@@ -157,11 +157,11 @@
     --ac-plt-chatgpt-fg: #f5f5f5;
     --ac-plt-chatgpt-border: #404040;
 
-    --ac-plt-codex-bg: #2563eb;
-    --ac-plt-codex-fg: #f0f5fc;
-    --ac-plt-codex-border: #1d4ed8;
+    --ac-plt-codex-bg: #7a66eb;
+    --ac-plt-codex-fg: #f4f0fc;
+    --ac-plt-codex-border: #792bba;
 
-    --ac-plt-gemini-bg: #0284c7;
+    --ac-plt-gemini-bg: #336cf1;
     --ac-plt-gemini-fg: #fbfcfc;
     --ac-plt-gemini-border: #0369a1;
 

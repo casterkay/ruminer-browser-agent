@@ -91,7 +91,7 @@ export const CODEX_MODELS: ModelDefinition[] = [
   },
 ];
 
-export const CODEX_DEFAULT_MODEL = 'gpt-5.1';
+export const CODEX_DEFAULT_MODEL = 'gpt-5.2';
 
 // Codex model alias normalization
 const CODEX_ALIAS_MAP: Record<string, string> = {

@@ -445,20 +445,20 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue';
-import type {
-  AgentSession,
-  AgentManagementInfo,
-  AgentSystemPromptConfig,
-  CodexReasoningEffort,
-  AgentSessionOptionsConfig,
-  OpenClawAgentDto,
-} from 'chrome-mcp-shared';
 import {
-  getModelsForCli,
   getCodexReasoningEfforts,
   getDefaultModelForCli,
+  getModelsForCli,
 } from '@/common/agent-models';
+import type {
+  AgentManagementInfo,
+  AgentSession,
+  AgentSessionOptionsConfig,
+  AgentSystemPromptConfig,
+  CodexReasoningEffort,
+  OpenClawAgentDto,
+} from 'chrome-mcp-shared';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
   open: boolean;
@@ -485,7 +485,7 @@ export interface SessionSettings {
 // Local state
 const localModel = ref('');
 const localPermissionMode = ref('');
-const localReasoningEffort = ref<CodexReasoningEffort>('medium');
+const localReasoningEffort = ref<CodexReasoningEffort>('low');
 const localSaveConversationToEverMemOS = ref(false);
 const localOpenClawAgentId = ref('main');
 const localUseCustomPrompt = ref(false);
@@ -534,7 +534,7 @@ watch(
   () => props.session,
   (session) => {
     if (session) {
-      localModel.value = session.model || '';
+      localModel.value = session.model || getDefaultModelForCli(session.engineName);
       localPermissionMode.value = session.permissionMode || '';
       localSaveConversationToEverMemOS.value =
         session.optionsConfig?.saveConversationToEverMemOS === true;
