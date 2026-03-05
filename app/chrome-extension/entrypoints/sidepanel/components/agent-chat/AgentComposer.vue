@@ -129,6 +129,37 @@
         </Transition>
       </div>
 
+      <!-- Marked elements context strip -->
+      <Transition name="marker-strip">
+        <div
+          v-if="markers && markers.length > 0"
+          class="marker-strip flex items-center gap-x-4 overflow-x-auto px-3 py-1"
+          :style="{ borderBottom: 'var(--ac-border-width) solid var(--ac-border)' }"
+        >
+          <div
+            v-for="marker in markers"
+            :key="marker.id"
+            class="inline-flex items-center gap-1.5 shrink-0"
+            :title="`${marker.selectorType ?? 'css'}: ${marker.selector}`"
+          >
+            <ILucideCrosshair
+              class="w-2.5 h-2.5 shrink-0"
+              :style="{ color: 'var(--ac-accent)', opacity: '0.55' }"
+            />
+            <span
+              class="text-[10px] font-medium leading-none"
+              :style="{ color: 'var(--ac-text)' }"
+              >{{ marker.name }}</span
+            >
+            <code
+              class="text-[9px] font-mono leading-none max-w-[144px] truncate"
+              :style="{ color: 'var(--ac-text-subtle)' }"
+              >{{ marker.selector }}</code
+            >
+          </div>
+        </div>
+      </Transition>
+
       <div class="flex items-center justify-between px-2 pb-2">
         <!-- Left Tools -->
         <div class="flex items-center gap-1">
@@ -152,6 +183,16 @@
             @click="$emit('attachment:add')"
           >
             <ILucidePaperclip class="w-4 h-4" />
+          </button>
+
+          <!-- Element Marker Button -->
+          <button
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Mark element"
+            @click="handleOpenMarker"
+          >
+            <ILucideCrosshair class="w-4 h-4" />
           </button>
 
           <!-- Tools Button -->
@@ -230,6 +271,16 @@
             <ILucidePaperclip class="w-4 h-4" />
           </button>
 
+          <!-- Element Marker Button -->
+          <button
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Mark element"
+            @click="handleOpenMarker"
+          >
+            <ILucideCrosshair class="w-4 h-4" />
+          </button>
+
           <!-- Status Text -->
           <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
             <span
@@ -246,20 +297,17 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, nextTick, toRef } from 'vue';
-import type { CodexReasoningEffort } from 'chrome-mcp-shared';
-import type { AttachmentWithPreview } from '../../composables/useAttachments';
-import type { RequestState } from '../../composables/useAgentChat';
-import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
-import ILucideWrench from '~icons/lucide/wrench';
-import ILucidePaperclip from '~icons/lucide/paperclip';
-import ILucideCamera from '~icons/lucide/camera';
-import ILucideImage from '~icons/lucide/image';
-import ILucideX from '~icons/lucide/x';
-import ILucideMaximize2 from '~icons/lucide/maximize-2';
-import ILucideChevronDown from '~icons/lucide/chevron-down';
-import ILucideSquare from '~icons/lucide/square';
+import { computed, nextTick, ref, toRef } from 'vue';
 import ILucideArrowUp from '~icons/lucide/arrow-up';
+import ILucideCamera from '~icons/lucide/camera';
+import ILucideCrosshair from '~icons/lucide/crosshair';
+import ILucideImage from '~icons/lucide/image';
+import ILucideMaximize2 from '~icons/lucide/maximize-2';
+import ILucidePaperclip from '~icons/lucide/paperclip';
+import ILucideSquare from '~icons/lucide/square';
+import ILucideWrench from '~icons/lucide/wrench';
+import ILucideX from '~icons/lucide/x';
+import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import ComposerDrawer from './ComposerDrawer.vue';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
 
@@ -280,6 +328,13 @@ const props = defineProps<{
   engineName?: string;
   // Fake caret feature flag
   enableFakeCaret?: boolean;
+  /** Marked elements for the current page — shown as a compact context strip */
+  markers?: Array<{
+    id: string;
+    name: string;
+    selector: string;
+    selectorType?: string;
+  }>;
 }>();
 
 /**
@@ -386,6 +441,7 @@ const emit = defineEmits<{
   'attachment:dragover': [event: DragEvent];
   'attachment:dragleave': [event: DragEvent];
   'tools:open': [];
+  'marker:open': [];
   'session:reset': [];
 }>();
 
@@ -485,6 +541,10 @@ function handleOpenTools(): void {
   emit('tools:open');
 }
 
+function handleOpenMarker(): void {
+  emit('marker:open');
+}
+
 // Drag and drop handlers - delegate to parent
 // Always preventDefault to avoid browser default behavior (opening files)
 function handleDragOver(event: DragEvent): void {
@@ -547,5 +607,27 @@ defineExpose({
 .expand-btn-leave-to {
   opacity: 0;
   transform: scale(0.9);
+}
+
+/* Marker context strip */
+.marker-strip {
+  scrollbar-width: none;
+}
+.marker-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.marker-strip-enter-active,
+.marker-strip-leave-active {
+  transition:
+    opacity 0.15s ease,
+    max-height 0.15s ease;
+  max-height: 40px;
+  overflow: hidden;
+}
+.marker-strip-enter-from,
+.marker-strip-leave-to {
+  opacity: 0;
+  max-height: 0;
 }
 </style>

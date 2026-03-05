@@ -79,6 +79,7 @@
             :placeholder="composerPlaceholder"
             :engine-name="selectedEngineName"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
+            :markers="pageMarkers"
             @update:model-value="chat.input.value = $event"
             @submit="handleSend"
             @cancel="chat.cancelCurrentRequest()"
@@ -90,6 +91,7 @@
             @attachment:dragover="attachments.handleDragOver"
             @attachment:dragleave="attachments.handleDragLeave"
             @tools:open="handleComposerOpenTools"
+            @marker:open="handleOpenMarker"
             @session:reset="handleComposerReset"
           />
         </template>
@@ -257,6 +259,7 @@ import {
   getDefaultModelForCli,
   getModelsForCli,
 } from '@/common/agent-models';
+import type { ElementMarker } from '@/common/element-marker-types';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import {
   emosUpsertMemory,
@@ -1098,6 +1101,22 @@ function handleComposerOpenTools(): void {
   void handleOpenToolSelection();
 }
 
+async function handleOpenMarker(): Promise<void> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+    if (typeof tabId !== 'number') return;
+    await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.ELEMENT_MARKER_START,
+      tabId,
+    });
+    // Refresh immediately (catches any pre-existing markers for this URL)
+    void fetchPageMarkers();
+  } catch (e) {
+    console.warn('[AgentChat] handleOpenMarker failed:', e);
+  }
+}
+
 async function handleComposerReset(): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
   if (sessionId) {
@@ -1492,6 +1511,68 @@ function injectToolRestrictions(
   return `${restrictionText}\n\n${instruction}`;
 }
 
+/**
+ * Fetch element markers for the active tab's URL from the background store.
+ * Returns an empty array on any failure.
+ */
+async function fetchMarkersForCurrentTab(): Promise<ElementMarker[]> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const url = tabs[0]?.url;
+    if (!url) return [];
+    const response: { success: boolean; markers?: ElementMarker[] } =
+      await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.ELEMENT_MARKER_LIST_FOR_URL,
+        url,
+      });
+    return response?.success && Array.isArray(response.markers) ? response.markers : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Prepend element marker context to the instruction when markers are present.
+ */
+function injectMarkerContext(instruction: string, markers: ElementMarker[]): string {
+  if (markers.length === 0) return instruction;
+  const lines = [
+    '[MarkedElements]',
+    'The following page elements have been annotated by the user. Prefer these when interacting with the page:',
+    ...markers.map((m) => {
+      const sel = `${m.selectorType ?? 'css'}: ${m.selector}`;
+      const action = m.action && m.action !== 'custom' ? ` [action: ${m.action}]` : '';
+      return `- "${m.name}" (${sel})${action}`;
+    }),
+    '',
+    'Use chrome_read_page or relevant interaction tools with the selectors above when acting on these elements.',
+  ];
+  return `${lines.join('\n')}\n\n${instruction}`;
+}
+
+// Reactive page markers (refreshed on mount, tab switch, and visibility change)
+const pageMarkers = ref<ElementMarker[]>([]);
+
+async function fetchPageMarkers(): Promise<void> {
+  pageMarkers.value = await fetchMarkersForCurrentTab();
+}
+
+function handlePageVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    void fetchPageMarkers();
+  }
+}
+
+function handleTabActivated(): void {
+  void fetchPageMarkers();
+}
+
+function handleMarkerSavedMessage(message: any): void {
+  if (message?.type === BACKGROUND_MESSAGE_TYPES.ELEMENT_MARKER_SAVE) {
+    void fetchPageMarkers();
+  }
+}
+
 // Attachment handlers
 function handleAttachmentAdd(): void {
   // Create and click a hidden file input
@@ -1656,18 +1737,21 @@ async function handleSend(): Promise<void> {
 
   // Apply tool restrictions (based on Ruminer tool toggles) for all engines.
   // This is prompt-layer guidance; runtime enforcement still happens at tool-call boundary.
-  const [toolGroups, individualToolState] = await Promise.all([
+  const [toolGroups, individualToolState, currentPageMarkers] = await Promise.all([
     getToolGroupState(),
     getIndividualToolState(),
+    fetchMarkersForCurrentTab(),
   ]);
+  const instructionWithMarkers = injectMarkerContext(instructionWithContext, currentPageMarkers);
   const finalInstruction = injectToolRestrictions(
-    instructionWithContext,
+    instructionWithMarkers,
     toolGroups,
     individualToolState,
   );
 
   // Use getAttachments() to strip previewUrl and avoid payload bloat
-  chat.attachments.value = attachments.getAttachments() ?? [];
+  const outgoingAttachments = attachments.getAttachments();
+  chat.attachments.value = outgoingAttachments ?? [];
 
   // Session-level config is now used by backend; no need to pass cliPreference/model
   // For selection context messages, use the user's input as displayText
@@ -1679,6 +1763,7 @@ async function handleSend(): Promise<void> {
     instruction: finalInstruction,
     // Always send displayText so persisted history never shows injected boilerplate.
     displayText: messageText,
+    attachments: outgoingAttachments,
     clientMeta: selectionClientMeta,
   });
 
@@ -1898,10 +1983,17 @@ const handleEscape = (e: KeyboardEvent) => {
 
 onMounted(() => {
   document.addEventListener('keydown', handleEscape);
+  document.addEventListener('visibilitychange', handlePageVisibilityChange);
+  chrome.tabs.onActivated.addListener(handleTabActivated);
+  chrome.runtime.onMessage.addListener(handleMarkerSavedMessage);
+  void fetchPageMarkers();
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscape);
+  document.removeEventListener('visibilitychange', handlePageVisibilityChange);
+  chrome.tabs.onActivated.removeListener(handleTabActivated);
+  chrome.runtime.onMessage.removeListener(handleMarkerSavedMessage);
   emosSuggestions.clear();
   if (toastTimer) {
     clearTimeout(toastTimer);

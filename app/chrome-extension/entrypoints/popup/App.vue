@@ -1,52 +1,92 @@
 <template>
   <div class="popup-root">
-    <header>
-      <h1>Ruminer</h1>
-      <p>Browser agent for personal memory integration</p>
+    <!-- Header with branding -->
+    <header class="popup-header">
+      <div class="logo-mark">
+        <svg
+          class="logo-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" />
+        </svg>
+        <div>
+          <span class="logo-text">Ruminer</span>
+          <p class="tagline">Browser agent for personal memory integration</p>
+        </div>
+      </div>
+      <button class="btn-icon" :disabled="refreshing" @click="refreshStatus">
+        <ILucideRefreshCw class="icon" :class="{ 'animate-spin': refreshing }" />
+      </button>
     </header>
 
-    <section class="status-card" :class="serverReady ? 'ok' : 'warn'">
-      <div class="status-row">
-        <strong>MCP Server</strong>
-        <span>{{ serverReady ? 'Running' : 'Stopped' }}</span>
+    <!-- Status Card -->
+    <section class="settings-card" :class="serverReady ? 'ok' : 'warn'">
+      <div class="settings-card-header">
+        <span class="settings-label">MCP Server</span>
+        <span class="settings-value" :class="serverReady ? 'ok' : 'warn'">
+          {{ serverReady ? 'Running' : 'Stopped' }}
+        </span>
       </div>
       <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
-      <button class="secondary" @click="refreshStatus">Refresh</button>
     </section>
 
+    <!-- Actions -->
     <section class="actions">
-      <button class="primary" @click="openSidepanel">Open Sidepanel</button>
-      <button class="secondary" @click="openOptions">Open Settings</button>
-      <button class="secondary" @click="openWelcome">Plugin Guide</button>
+      <button class="btn-primary" @click="openSidepanel">
+        <ILucidePanelLeftOpen class="icon" />
+        <span>Open Sidepanel</span>
+      </button>
+      <button class="btn-secondary" @click="openOptions">
+        <ILucideSettings class="icon" />
+        <span>Open Settings</span>
+      </button>
+      <button class="btn-secondary" @click="openWelcome">
+        <ILucideBookOpen class="icon" />
+        <span>Plugin Guide</span>
+      </button>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { onMounted, ref } from 'vue';
+import ILucideBookOpen from '~icons/lucide/book-open';
+import ILucidePanelLeftOpen from '~icons/lucide/panel-left-open';
+import ILucideRefreshCw from '~icons/lucide/refresh-cw';
+import ILucideSettings from '~icons/lucide/settings';
 
 const serverReady = ref(false);
 const statusMessage = ref('');
+const refreshing = ref(false);
 
 async function refreshStatus(): Promise<void> {
-  const response = await chrome.runtime.sendMessage({
-    type: BACKGROUND_MESSAGE_TYPES.GET_SERVER_STATUS,
-  });
+  refreshing.value = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.GET_SERVER_STATUS,
+    });
 
-  if (!response?.success) {
-    serverReady.value = false;
-    statusMessage.value = response?.error || 'Unable to query MCP server status';
-    return;
+    if (!response?.success) {
+      serverReady.value = false;
+      statusMessage.value = response?.error || 'Unable to query MCP server status';
+      return;
+    }
+
+    const isRunning = response?.serverStatus?.isRunning === true;
+    const port = response?.serverStatus?.port;
+
+    serverReady.value = isRunning;
+    statusMessage.value = isRunning
+      ? `MCP server running${typeof port === 'number' ? ' on port ' + port : ''}`
+      : 'MCP server not running (open the extension sidepanel and connect native host)';
+  } finally {
+    refreshing.value = false;
   }
-
-  const isRunning = response?.serverStatus?.isRunning === true;
-  const port = response?.serverStatus?.port;
-
-  serverReady.value = isRunning;
-  statusMessage.value = isRunning
-    ? `MCP server running${typeof port === 'number' ? ` on port ${port}` : ''}`
-    : 'MCP server not running (open the extension sidepanel and connect native host)';
 }
 
 async function openSidepanel(): Promise<void> {
@@ -114,54 +154,147 @@ onMounted(() => {
 <style scoped>
 .popup-root {
   width: 360px;
-  min-height: 260px;
-  padding: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  font-family: var(--ac-font-body);
+}
+
+/* Header */
+.popup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: var(--ac-border-width) solid var(--ac-border);
+}
+
+.logo-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--ac-accent);
+}
+
+.logo-text {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ac-text);
+  font-family: var(--ac-font-heading);
+}
+
+.tagline {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ac-text-muted);
+}
+
+/* Cards */
+.settings-card {
+  padding: 16px;
   display: grid;
   gap: 12px;
-  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-  color: #0f172a;
+  background-color: var(--ac-surface);
+  border: var(--ac-border-width) solid var(--ac-border);
+  border-radius: var(--ac-radius-card);
+  box-shadow: var(--ac-shadow-card);
 }
 
-header h1 {
-  margin: 0;
-  font-size: 22px;
-}
-
-header p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #475569;
-}
-
-.status-card {
-  border: 1px solid;
-  border-radius: 10px;
-  padding: 10px;
-  display: grid;
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.status-card.ok {
-  background: #ecfdf5;
-  border-color: #86efac;
+.settings-card-header .settings-card-title {
+  margin: 0;
 }
 
-.status-card.warn {
-  background: #fff7ed;
-  border-color: #fdba74;
+.settings-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ac-text);
+  font-family: var(--ac-font-heading);
 }
 
-.status-row {
+.settings-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: 13px;
+}
+
+.settings-label {
+  color: var(--ac-text-muted);
+  font-weight: 500;
+}
+
+.settings-value {
+  color: var(--ac-text);
+}
+
+.settings-value.ok {
+  color: var(--ac-success);
+}
+
+.settings-value.warn {
+  color: var(--ac-warning, var(--ac-text-muted));
 }
 
 .status-message {
   margin: 0;
-  font-size: 12px;
-  color: #334155;
+  font-size: 11px;
+  color: var(--ac-text-muted);
+  padding: 8px 10px;
+  background-color: var(--ac-surface-muted);
+  border-radius: var(--ac-radius-inner);
+}
+
+/* Buttons */
+.btn-icon {
+  width: 28px;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--ac-border-width) solid var(--ac-border);
+  border-radius: var(--ac-radius-inner);
+  background-color: var(--ac-surface-muted);
+  color: var(--ac-text);
+  cursor: pointer;
+  transition: background-color var(--ac-motion-fast);
+}
+
+.btn-icon:hover:not(:disabled) {
+  background-color: var(--ac-hover-bg);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.animate-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .actions {
@@ -169,25 +302,45 @@ header p {
   gap: 8px;
 }
 
-.primary,
-.secondary {
+.btn-primary,
+.btn-secondary {
   width: 100%;
-  border-radius: 8px;
-  padding: 9px 10px;
-  font-size: 12px;
+  border-radius: var(--ac-radius-button);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  border: 1px solid;
+  border: var(--ac-border-width) solid;
+  transition:
+    background-color var(--ac-motion-fast),
+    border-color var(--ac-motion-fast);
 }
 
-.primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
+.btn-primary {
+  border-color: var(--ac-accent);
+  background: var(--ac-accent);
+  color: var(--ac-accent-contrast);
 }
 
-.secondary {
-  border-color: #94a3b8;
-  background: #ffffff;
-  color: #334155;
+.btn-primary:hover {
+  background: var(--ac-accent-hover);
+  border-color: var(--ac-accent-hover);
+}
+
+.btn-secondary {
+  border-color: var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-text);
+}
+
+.btn-secondary:hover {
+  background: var(--ac-hover-bg);
+  border-color: var(--ac-border-strong);
+}
+
+.btn-secondary .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ac-text-muted);
 }
 </style>
