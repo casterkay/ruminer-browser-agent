@@ -44,6 +44,8 @@ export interface QuickPanelAiChatPanelOptions {
   subtitle?: string;
   /** Optional brand icon URL shown in the header (engine icon). */
   brandIconUrl?: string;
+  /** Engine name used to apply per-engine background on the brand avatar (e.g. "openclaw", "codex", "claude"). */
+  engineName?: string;
   /** Input placeholder. Default: "Ask the agent..." */
   placeholder?: string;
   /** Auto-focus textarea on mount. Default: true */
@@ -72,7 +74,12 @@ export interface QuickPanelAiChatPanelManager {
   focusInput: () => void;
   clearMessages: () => void;
   /** Update header branding (title/subtitle/icon) without remounting. */
-  setBranding: (branding: { title?: string; subtitle?: string; brandIconUrl?: string }) => void;
+  setBranding: (branding: {
+    title?: string;
+    subtitle?: string;
+    brandIconUrl?: string;
+    engineName?: string;
+  }) => void;
   close: () => void;
   dispose: () => void;
 }
@@ -207,7 +214,8 @@ interface PanelDOMElements {
   brandEl: HTMLDivElement;
   titleNameEl: HTMLDivElement;
   titleSubEl: HTMLDivElement;
-  emptyIconEl: HTMLDivElement;
+  titleSubTextEl: HTMLSpanElement;
+  emptyIconEl: HTMLImageElement;
   streamIndicator: HTMLDivElement;
   streamText: HTMLSpanElement;
   closeBtn: HTMLButtonElement;
@@ -237,8 +245,6 @@ function renderBrandIcon(target: HTMLElement, brandIconUrl?: string): void {
   img.decoding = 'async';
   img.loading = 'lazy';
   img.className = 'qp-brand-img';
-  // Keep consistent with AgentChat icon styling
-  img.style.backgroundColor = 'var(--ac-surface)';
   target.append(img);
 }
 
@@ -269,6 +275,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
 
   const brand = document.createElement('div');
   brand.className = 'qp-brand';
+  if (options.engineName) brand.dataset.engine = options.engineName;
   renderBrandIcon(brand, brandIconUrl);
 
   const titleWrap = document.createElement('div');
@@ -280,7 +287,11 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
 
   const titleSubEl = document.createElement('div');
   titleSubEl.className = 'qp-title-sub';
-  titleSubEl.textContent = subtitle;
+
+  const titleSubTextEl = document.createElement('span');
+  titleSubTextEl.textContent = subtitle;
+
+  titleSubEl.append(titleSubTextEl);
 
   titleWrap.append(titleNameEl, titleSubEl);
   headerLeft.append(brand, titleWrap);
@@ -328,9 +339,22 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
   const emptyEl = document.createElement('div');
   emptyEl.className = 'qp-empty';
 
-  const emptyIcon = document.createElement('div');
+  const emptyIcon = document.createElement('img');
   emptyIcon.className = 'qp-empty-icon';
-  renderBrandIcon(emptyIcon, brandIconUrl);
+  emptyIcon.alt = '';
+  emptyIcon.decoding = 'async';
+  (() => {
+    const path = 'icon/icon.svg';
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+        emptyIcon.src = chrome.runtime.getURL(path);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    emptyIcon.src = `/${path}`;
+  })();
 
   const emptyText = document.createElement('div');
   emptyText.className = 'qp-empty-text';
@@ -405,6 +429,7 @@ function buildPanelDOM(options: QuickPanelAiChatPanelOptions): PanelDOMElements 
     brandEl: brand,
     titleNameEl,
     titleSubEl,
+    titleSubTextEl,
     emptyIconEl: emptyIcon,
     streamIndicator,
     streamText,
@@ -564,20 +589,20 @@ export function mountQuickPanelAiChatPanel(
 
   function renderHeaderSubtitle(): void {
     if (state.errorMessage) {
-      dom.titleSubEl.textContent = 'Error';
+      dom.titleSubTextEl.textContent = 'Error';
       return;
     }
     if (state.streaming) {
-      dom.titleSubEl.textContent = 'Streaming\u2026';
+      dom.titleSubTextEl.textContent = 'Streaming\u2026';
       return;
     }
     if (state.sending) {
-      dom.titleSubEl.textContent = 'Sending\u2026';
+      dom.titleSubTextEl.textContent = 'Sending\u2026';
       return;
     }
 
     const usageText = formatUsageStats(state.lastUsage);
-    dom.titleSubEl.textContent = usageText ? `Last: ${usageText}` : defaultSubtitle;
+    dom.titleSubTextEl.textContent = usageText ? `Last: ${usageText}` : defaultSubtitle;
   }
 
   function renderControls(): void {
@@ -981,6 +1006,7 @@ export function mountQuickPanelAiChatPanel(
     title?: string;
     subtitle?: string;
     brandIconUrl?: string;
+    engineName?: string;
   }): void {
     if (disposed) return;
 
@@ -991,12 +1017,19 @@ export function mountQuickPanelAiChatPanel(
     }
 
     if (typeof branding.subtitle === 'string') {
-      dom.titleSubEl.textContent = branding.subtitle.trim() || defaultSubtitle;
+      dom.titleSubTextEl.textContent = branding.subtitle.trim() || defaultSubtitle;
+    }
+
+    if (typeof branding.engineName === 'string') {
+      if (branding.engineName) {
+        dom.brandEl.dataset.engine = branding.engineName;
+      } else {
+        delete dom.brandEl.dataset.engine;
+      }
     }
 
     if (typeof branding.brandIconUrl === 'string') {
       renderBrandIcon(dom.brandEl, branding.brandIconUrl);
-      renderBrandIcon(dom.emptyIconEl, branding.brandIconUrl);
     }
   }
 

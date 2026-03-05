@@ -1,13 +1,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { setupTools } from './register-tools';
 
-export let mcpServer: Server | null = null;
-
+/**
+ * Create a fresh MCP Server instance per call.
+ * The SDK Server only supports one active transport at a time, so HTTP sessions
+ * must each get their own instance.
+ */
 export const getMcpServer = () => {
-  if (mcpServer) {
-    return mcpServer;
-  }
-  mcpServer = new Server(
+  const mcpServer = new Server(
     {
       name: 'ChromeMcpServer',
       version: '1.0.0',

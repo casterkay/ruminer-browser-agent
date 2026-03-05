@@ -103,6 +103,7 @@ export default defineConfig({
           '/models/*', // 允许访问 public/models/ 下的所有文件
           '/workers/*', // 允许访问 workers 文件
           '/inject-scripts/*', // 允许内容脚本注入的助手文件
+          '/icon/*', // app icon for quick panel empty state
         ],
         matches: ['<all_urls>'],
       },

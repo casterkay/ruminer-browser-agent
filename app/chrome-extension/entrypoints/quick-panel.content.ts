@@ -37,13 +37,13 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
-    console.log('[QuickPanelContentScript] Content script loaded on:', window.location.href);
     let controller: QuickPanelController | null = null;
     let floatingIcon: FloatingIconManager | null = null;
 
     async function resolveSelectedEngineBranding(): Promise<{
       subtitle: string;
       brandIconUrl: string;
+      engineName: string;
     }> {
       try {
         const response = (await chrome.runtime.sendMessage({
@@ -54,20 +54,21 @@ export default defineContentScript({
           return {
             subtitle: response.engineDisplayName || 'Agent',
             brandIconUrl: response.brandIconUrl || '',
+            engineName: response.engineName || '',
           };
         }
       } catch {
         // ignore
       }
 
-      return { subtitle: 'Agent', brandIconUrl: '' };
+      return { subtitle: 'Agent', brandIconUrl: '', engineName: '' };
     }
 
     function refreshBranding(): void {
       if (!controller) return;
 
-      void resolveSelectedEngineBranding().then(({ subtitle, brandIconUrl }) => {
-        controller?.setBranding({ subtitle, brandIconUrl });
+      void resolveSelectedEngineBranding().then(({ subtitle, brandIconUrl, engineName }) => {
+        controller?.setBranding({ subtitle, brandIconUrl, engineName });
       });
     }
 
@@ -105,11 +106,7 @@ export default defineContentScript({
     async function initFloatingIcon(): Promise<void> {
       // Check if enabled
       const enabled = await isFloatingIconEnabled();
-      if (!enabled) {
-        console.log('[QuickPanelContentScript] Floating icon disabled');
-        return;
-      }
-
+      if (!enabled) return;
       if (floatingIcon) return;
 
       floatingIcon = createFloatingIcon({
@@ -119,9 +116,6 @@ export default defineContentScript({
           const ctrl = ensureController();
           refreshBranding();
           ctrl.toggle();
-        },
-        onPositionChange: (position) => {
-          console.log('[QuickPanelContentScript] Icon moved to:', position);
         },
       });
 
@@ -171,13 +165,11 @@ export default defineContentScript({
       const msg = message as { action?: string } | undefined;
 
       if (msg?.action === 'toggle_quick_panel') {
-        console.log('[QuickPanelContentScript] Received toggle_quick_panel message');
         try {
           const ctrl = ensureController();
           refreshBranding();
           ctrl.toggle();
           const visible = ctrl.isVisible();
-          console.log('[QuickPanelContentScript] Toggle completed, visible:', visible);
           sendResponse({ success: true, visible });
         } catch (err) {
           console.error('[QuickPanelContentScript] Toggle error:', err);

@@ -65,7 +65,12 @@ export interface QuickPanelController {
   /** Check if panel is currently visible */
   isVisible: () => boolean;
   /** Update header branding (title/subtitle/icon) without remounting. */
-  setBranding: (branding: { title?: string; subtitle?: string; brandIconUrl?: string }) => void;
+  setBranding: (branding: {
+    title?: string;
+    subtitle?: string;
+    brandIconUrl?: string;
+    engineName?: string;
+  }) => void;
   /** Fully dispose all resources */
   dispose: () => void;
 }
@@ -111,11 +116,12 @@ export function createQuickPanelController(
 ): QuickPanelController {
   let disposed = false;
 
-  let branding: { title?: string; subtitle?: string; brandIconUrl?: string } = {
-    title: options.title,
-    subtitle: options.subtitle,
-    brandIconUrl: options.brandIconUrl,
-  };
+  let branding: { title?: string; subtitle?: string; brandIconUrl?: string; engineName?: string } =
+    {
+      title: options.title,
+      subtitle: options.subtitle,
+      brandIconUrl: options.brandIconUrl,
+    };
 
   // Shared agent bridge (persists across show/hide cycles)
   let agentBridge: QuickPanelAgentBridge | null = null;
@@ -198,18 +204,26 @@ export function createQuickPanelController(
       title: branding.title ?? options.title,
       subtitle: branding.subtitle ?? options.subtitle,
       brandIconUrl: branding.brandIconUrl ?? options.brandIconUrl,
+      engineName: branding.engineName,
       placeholder: options.placeholder,
       autoFocus: true,
       onRequestClose: () => hide(),
     });
   }
 
-  function setBranding(next: { title?: string; subtitle?: string; brandIconUrl?: string }): void {
-    const patch: { title?: string; subtitle?: string; brandIconUrl?: string } = {};
+  function setBranding(next: {
+    title?: string;
+    subtitle?: string;
+    brandIconUrl?: string;
+    engineName?: string;
+  }): void {
+    const patch: { title?: string; subtitle?: string; brandIconUrl?: string; engineName?: string } =
+      {};
 
     if (typeof next?.title === 'string') patch.title = next.title;
     if (typeof next?.subtitle === 'string') patch.subtitle = next.subtitle;
     if (typeof next?.brandIconUrl === 'string') patch.brandIconUrl = next.brandIconUrl;
+    if (typeof next?.engineName === 'string') patch.engineName = next.engineName;
 
     branding = { ...branding, ...patch };
 

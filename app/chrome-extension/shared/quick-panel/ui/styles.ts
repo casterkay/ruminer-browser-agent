@@ -346,10 +346,13 @@ export const QUICK_PANEL_STYLES = /* css */ `
     font-size: 24px;
   }
 
+  .qp-brand[data-engine='openclaw'] { background: transparent; }
+  .qp-brand[data-engine='codex'] { background: #ffffff; }
+  .qp-brand[data-engine='claude'] { background: #CC785C; }
+
   .qp-brand-img {
-    width: 22px;
-    height: 22px;
-    border-radius: 9999px;
+    width: 75%;
+    height: 75%;
     object-fit: cover;
     display: block;
   }
@@ -630,8 +633,11 @@ export const QUICK_PANEL_STYLES = /* css */ `
   }
 
   .qp-empty-icon {
-    font-size: 32px;
-    opacity: 0.6;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--ac-radius-card);
+    opacity: 0.82;
+    display: block;
   }
 
   .qp-empty-text {
