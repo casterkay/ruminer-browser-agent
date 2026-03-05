@@ -87,9 +87,12 @@
 body {
   margin: 0;
   padding: 0;
-  width: 340px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 300px;
   min-height: auto;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-family: var(--ac-font-body);
   background: var(--ac-bg);
   color: var(--ac-text);

@@ -314,11 +314,14 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
       const url = `http://127.0.0.1:${serverPort}/agent/chat/${encodeURIComponent(sessionId)}/act`;
 
+      const outgoingAttachments =
+        chatOptions.attachments ?? (attachments.value.length > 0 ? attachments.value : undefined);
+
       const body: AgentActRequest = {
         instruction,
         cliPreference: (chatOptions.cliPreference as AgentCliPreference | undefined) ?? undefined,
         model: chatOptions.model?.trim() || undefined,
-        attachments: chatOptions.attachments,
+        attachments: outgoingAttachments,
         projectId: chatOptions.projectId,
         dbSessionId: chatOptions.dbSessionId,
         projectRoot: chatOptions.projectRoot,

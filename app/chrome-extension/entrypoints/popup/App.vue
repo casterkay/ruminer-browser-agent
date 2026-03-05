@@ -153,7 +153,10 @@ onMounted(() => {
 
 <style scoped>
 .popup-root {
-  width: 360px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 300px;
+  box-sizing: border-box;
   padding: 16px;
   display: grid;
   gap: 16px;
@@ -166,6 +169,7 @@ onMounted(() => {
 .popup-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding-bottom: 12px;
   border-bottom: var(--ac-border-width) solid var(--ac-border);
@@ -175,26 +179,40 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.logo-mark > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
   color: var(--ac-accent);
 }
 
 .logo-text {
+  display: block;
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--ac-text);
   font-family: var(--ac-font-heading);
+  line-height: 1.1;
 }
 
 .tagline {
   margin: 0;
   font-size: 11px;
   color: var(--ac-text-muted);
+  line-height: 1.3;
+  overflow-wrap: break-word;
 }
 
 /* Cards */
@@ -263,7 +281,8 @@ onMounted(() => {
 /* Buttons */
 .btn-icon {
   width: 28px;
-  height: 27px;
+  height: 28px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -282,6 +301,11 @@ onMounted(() => {
 .btn-icon:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-icon .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .animate-spin {
@@ -305,15 +329,26 @@ onMounted(() => {
 .btn-primary,
 .btn-secondary {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   border-radius: var(--ac-radius-button);
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.2;
   cursor: pointer;
   border: var(--ac-border-width) solid;
   transition:
     background-color var(--ac-motion-fast),
     border-color var(--ac-motion-fast);
+}
+
+.btn-primary .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .btn-primary {
@@ -339,8 +374,9 @@ onMounted(() => {
 }
 
 .btn-secondary .icon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   color: var(--ac-text-muted);
 }
 </style>

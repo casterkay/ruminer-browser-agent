@@ -2,11 +2,7 @@
  * Composable for grouping messages into conversation threads.
  * Transforms flat AgentMessage[] into structured AgentThread[] for UI rendering.
  */
-import type {
-  AgentMessage,
-  AgentMessageAttachmentMetadata,
-  AttachmentMetadata,
-} from 'chrome-mcp-shared';
+import type { AgentMessage, AttachmentMetadata } from 'chrome-mcp-shared';
 import { computed, type InjectionKey, type Ref } from 'vue';
 import type { RequestState } from './useAgentChat';
 
@@ -482,7 +478,7 @@ function isAttachmentMetadata(value: unknown): value is AttachmentMetadata {
  * Returns sorted by index for consistent display order.
  */
 function getMessageAttachments(msg: AgentMessage): AttachmentMetadata[] {
-  const meta = (msg.metadata ?? {}) as AgentMessageAttachmentMetadata;
+  const meta = (msg.metadata ?? {}) as { attachments?: unknown };
   const attachments = meta.attachments;
   if (!Array.isArray(attachments)) return [];
   return attachments.filter(isAttachmentMetadata).sort((a, b) => a.index - b.index);

@@ -197,6 +197,12 @@ install_openclaw_plugins() {
   # Auto-write config (best-effort)
   openclaw config set plugins.entries.mcp-client.config.mcpUrl "${RUMINER_MCP_URL}" || true
 
+  # Ensure plugins are allowed and enabled in config (best-effort).
+  # Prefer explicit allowlist setting; note this will overwrite plugins.allow if present.
+  openclaw config set plugins.allow '["mcp-client", "evermemos"]' --strict-json || true
+  openclaw config set plugins.entries.mcp-client.enabled true || true
+  openclaw config set plugins.entries.evermemos.enabled true || true
+
   if [[ -n "${EVERMEMOS_BASE_URL}" ]]; then
     openclaw config set plugins.entries.evermemos.config.evermemosBaseUrl "${EVERMEMOS_BASE_URL}" || true
   fi

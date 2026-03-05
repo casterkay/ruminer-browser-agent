@@ -92,6 +92,8 @@
             @attachment:dragleave="attachments.handleDragLeave"
             @tools:open="handleComposerOpenTools"
             @marker:open="handleOpenMarker"
+            @marker:delete="handleDeleteMarker"
+            @marker:highlight="handleHighlightMarker"
             @session:reset="handleComposerReset"
           />
         </template>
@@ -463,6 +465,7 @@ const isEmosAutosaveEnabled = computed(() => {
 });
 
 let queuedEmosMessageIds = new Set<string>();
+let pendingEmosMessageIds = new Set<string>();
 let emosAutosaveQueue: Promise<void> = Promise.resolve();
 
 function buildEmosGroupId(): string {
@@ -481,9 +484,33 @@ function shouldAutosaveToEmos(msg: AgentMessage): boolean {
   if (!msg) return false;
   if (msg.messageType !== 'chat') return false;
   if (msg.role !== 'user' && msg.role !== 'assistant') return false;
-  if (msg.role === 'assistant' && msg.isFinal !== true) return false;
+  // Never autosave optimistic placeholder messages.
+  if (typeof msg.id === 'string' && msg.id.startsWith('temp-')) return false;
+
+  // Persisted history messages may not include isFinal.
+  // Only skip assistant messages that are explicitly non-final, or still streaming.
+  if (msg.role === 'assistant') {
+    if (msg.isFinal === false) return false;
+    if (msg.isStreaming === true && msg.isFinal !== true) return false;
+  }
   if (typeof msg.content !== 'string' || !msg.content.trim()) return false;
   return true;
+}
+
+function getDisplayTextFromMetadata(metadata: Record<string, unknown> | undefined): string {
+  const raw = metadata?.displayText;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function stripInjectedContext(content: string): string {
+  const text = String(content || '');
+  // Best-effort: if the selection wrapper is present, return the user's original input.
+  const marker = '[UserRequest]\n';
+  const idx = text.indexOf(marker);
+  if (idx >= 0) {
+    return text.slice(idx + marker.length).trim();
+  }
+  return text.trim();
 }
 
 function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
@@ -498,7 +525,10 @@ function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
     create_time: msg.createdAt,
     sender: msg.role === 'assistant' ? 'bot' : 'me',
     sender_name: msg.role === 'assistant' ? engineDisplayName.value : 'Me',
-    content: msg.content,
+    content:
+      msg.role === 'user'
+        ? getDisplayTextFromMetadata(msg.metadata) || stripInjectedContext(msg.content)
+        : msg.content,
     group_id,
     group_name: session.name || session.preview || undefined,
     source_url: null,
@@ -506,13 +536,30 @@ function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
   };
 }
 
-function queueEmosUpsert(item: EmosSingleMessage): void {
+let lastEmosAutosaveToastAt = 0;
+
+function queueEmosUpsert(item: EmosSingleMessage, emosId: string): void {
   emosAutosaveQueue = emosAutosaveQueue
     .then(async () => {
       await emosUpsertMemory(item);
+      queuedEmosMessageIds.add(emosId);
+      pendingEmosMessageIds.delete(emosId);
     })
     .catch((error) => {
       console.warn('[EverMemOS autosave] Upsert failed:', error);
+      pendingEmosMessageIds.delete(emosId);
+      // Throttle toast to avoid spamming when EMOS is misconfigured/offline.
+      const now = Date.now();
+      if (now - lastEmosAutosaveToastAt > 5000) {
+        lastEmosAutosaveToastAt = now;
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'EverMemOS autosave failed.';
+        showToast(message);
+      }
     });
 }
 
@@ -526,12 +573,14 @@ function enqueueEligibleEmosMessages(): void {
     const emosId = buildEmosMessageId(msg.id);
     if (!emosId) continue;
     if (queuedEmosMessageIds.has(emosId)) continue;
+    if (pendingEmosMessageIds.has(emosId)) continue;
 
     const emosMsg = toEmosMessage(msg);
     if (!emosMsg) continue;
 
-    queuedEmosMessageIds.add(emosId);
-    queueEmosUpsert(emosMsg);
+    // Only mark as queued on success; failures should retry on next enqueue.
+    pendingEmosMessageIds.add(emosId);
+    queueEmosUpsert(emosMsg, emosId);
   }
 }
 
@@ -539,6 +588,7 @@ watch(
   () => sessions.selectedSessionId.value,
   () => {
     queuedEmosMessageIds = new Set<string>();
+    pendingEmosMessageIds = new Set<string>();
     emosAutosaveQueue = Promise.resolve();
     enqueueEligibleEmosMessages();
   },
@@ -554,12 +604,25 @@ watch(
   { immediate: true },
 );
 
+const emosAutosaveSignature = computed(() =>
+  chat.messages.value
+    .map((m) =>
+      [
+        m.id,
+        m.role,
+        m.messageType,
+        m.isFinal === true ? 'final' : m.isFinal === false ? 'nonfinal' : 'unknown',
+        m.isStreaming === true ? 'streaming' : 'stable',
+      ].join('|'),
+    )
+    .join('\n'),
+);
+
 watch(
-  () => chat.messages.value,
+  () => emosAutosaveSignature.value,
   () => {
     enqueueEligibleEmosMessages();
   },
-  { deep: true },
 );
 
 const composerPlaceholder = computed(() =>
@@ -1117,6 +1180,49 @@ async function handleOpenMarker(): Promise<void> {
   }
 }
 
+async function handleDeleteMarker(id: string): Promise<void> {
+  try {
+    if (!id) return;
+    await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.ELEMENT_MARKER_DELETE,
+      id,
+    });
+    void fetchPageMarkers();
+  } catch (e) {
+    console.warn('[AgentChat] handleDeleteMarker failed:', e);
+  }
+}
+
+async function handleHighlightMarker(marker: {
+  selector: string;
+  selectorType?: string;
+  listMode?: boolean;
+}): Promise<void> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+    if (typeof tabId !== 'number') return;
+    // Ensure element-marker.js is injected
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ['inject-scripts/element-marker.js'],
+        world: 'ISOLATED',
+      } as any);
+    } catch {
+      // Already injected, ignore
+    }
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'element_marker_highlight',
+      selector: marker.selector,
+      selectorType: marker.selectorType || 'css',
+      listMode: !!marker.listMode,
+    });
+  } catch (e) {
+    console.warn('[AgentChat] handleHighlightMarker failed:', e);
+  }
+}
+
 async function handleComposerReset(): Promise<void> {
   const sessionId = sessions.selectedSessionId.value;
   if (sessionId) {
@@ -1535,17 +1641,11 @@ async function fetchMarkersForCurrentTab(): Promise<ElementMarker[]> {
  * Prepend element marker context to the instruction when markers are present.
  */
 function injectMarkerContext(instruction: string, markers: ElementMarker[]): string {
-  if (markers.length === 0) return instruction;
+  const active = markers.filter((m) => !!m.selector);
+  if (active.length === 0) return instruction;
   const lines = [
     '[MarkedElements]',
-    'The following page elements have been annotated by the user. Prefer these when interacting with the page:',
-    ...markers.map((m) => {
-      const sel = `${m.selectorType ?? 'css'}: ${m.selector}`;
-      const action = m.action && m.action !== 'custom' ? ` [action: ${m.action}]` : '';
-      return `- "${m.name}" (${sel})${action}`;
-    }),
-    '',
-    'Use chrome_read_page or relevant interaction tools with the selectors above when acting on these elements.',
+    ...active.map((m) => `- ${m.name}: ${m.selectorType ?? 'css'}=${m.selector}`),
   ];
   return `${lines.join('\n')}\n\n${instruction}`;
 }

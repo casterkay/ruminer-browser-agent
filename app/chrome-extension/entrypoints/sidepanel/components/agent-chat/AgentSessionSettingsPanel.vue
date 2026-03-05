@@ -536,8 +536,9 @@ watch(
     if (session) {
       localModel.value = session.model || getDefaultModelForCli(session.engineName);
       localPermissionMode.value = session.permissionMode || '';
+      // Runtime default: enabled when unset; only disabled when explicitly false.
       localSaveConversationToEverMemOS.value =
-        session.optionsConfig?.saveConversationToEverMemOS === true;
+        session.optionsConfig?.saveConversationToEverMemOS !== false;
 
       const selectedAgent = (props.selectedOpenclawAgentId || '').trim();
       localOpenClawAgentId.value = selectedAgent || localOpenClawAgentId.value || 'main';

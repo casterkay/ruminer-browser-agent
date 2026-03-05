@@ -82,6 +82,67 @@
         boxShadow: 'var(--ac-shadow-float)',
       }"
     >
+      <!-- Marked elements context strip -->
+      <Transition name="marker-strip">
+        <div
+          v-if="markers && markers.length > 0"
+          class="marker-strip flex flex-col px-1 py-1 gap-y-px"
+          :style="{ borderBottom: 'var(--ac-border-width) solid var(--ac-border)' }"
+        >
+          <div
+            v-for="marker in markers"
+            :key="marker.id"
+            class="group flex items-center gap-1.5 w-full min-w-0 rounded px-1"
+            :style="{
+              transition: 'background 0.3s',
+            }"
+          >
+            <!-- Clickable area -->
+            <div
+              class="flex items-center p-1 gap-1 flex-1 min-w-0 cursor-pointer"
+              :style="{
+                transition: 'background 0.3s',
+                borderRadius: '5px',
+              }"
+              :title="marker.selector"
+              @mouseover="
+                ($event.currentTarget as HTMLElement).style.backgroundColor =
+                  'var(--ac-surface-muted)'
+              "
+              @mouseleave="($event.currentTarget as HTMLElement).style.backgroundColor = ''"
+              @click="handleHighlightMarker(marker)"
+            >
+              <span
+                class="text-[10px] font-semibold leading-none shrink-0 max-w-[240px] truncate"
+                :style="{ color: 'var(--ac-accent)' }"
+                >{{ marker.name }}</span
+              >
+              <code
+                class="text-[9px] font-mono leading-none truncate flex-1 min-w-0"
+                :style="{ color: 'var(--ac-text-subtle)' }"
+                >{{ marker.selector }}</code
+              >
+            </div>
+
+            <!-- Remove button moved outside clickable area -->
+            <button
+              type="button"
+              class="p-0.5 ac-btn shrink-0 opacity-40 group-hover:opacity-100 -ml-1"
+              :style="{
+                color: 'var(--ac-text-subtle)',
+                borderRadius: '999px',
+                transition: 'opacity 0.1s',
+              }"
+              title="Remove"
+              aria-label="Remove marker"
+              @click.stop="handleDeleteMarker(marker.id)"
+            >
+              <ILucideX class="w-2.5 h-2.5" />
+            </button>
+          </div>
+        </div>
+      </Transition>
+
       <!-- Textarea wrapper with expand button -->
       <div class="relative">
         <textarea
@@ -128,37 +189,6 @@
           </button>
         </Transition>
       </div>
-
-      <!-- Marked elements context strip -->
-      <Transition name="marker-strip">
-        <div
-          v-if="markers && markers.length > 0"
-          class="marker-strip flex items-center gap-x-4 overflow-x-auto px-3 py-1"
-          :style="{ borderBottom: 'var(--ac-border-width) solid var(--ac-border)' }"
-        >
-          <div
-            v-for="marker in markers"
-            :key="marker.id"
-            class="inline-flex items-center gap-1.5 shrink-0"
-            :title="`${marker.selectorType ?? 'css'}: ${marker.selector}`"
-          >
-            <ILucideCrosshair
-              class="w-2.5 h-2.5 shrink-0"
-              :style="{ color: 'var(--ac-accent)', opacity: '0.55' }"
-            />
-            <span
-              class="text-[10px] font-medium leading-none"
-              :style="{ color: 'var(--ac-text)' }"
-              >{{ marker.name }}</span
-            >
-            <code
-              class="text-[9px] font-mono leading-none max-w-[144px] truncate"
-              :style="{ color: 'var(--ac-text-subtle)' }"
-              >{{ marker.selector }}</code
-            >
-          </div>
-        </div>
-      </Transition>
 
       <div class="flex items-center justify-between px-2 pb-2">
         <!-- Left Tools -->
@@ -334,6 +364,7 @@ const props = defineProps<{
     name: string;
     selector: string;
     selectorType?: string;
+    listMode?: boolean;
   }>;
 }>();
 
@@ -442,6 +473,16 @@ const emit = defineEmits<{
   'attachment:dragleave': [event: DragEvent];
   'tools:open': [];
   'marker:open': [];
+  'marker:delete': [id: string];
+  'marker:highlight': [
+    marker: {
+      id: string;
+      name: string;
+      selector: string;
+      selectorType?: string;
+      listMode?: boolean;
+    },
+  ];
   'session:reset': [];
 }>();
 
@@ -543,6 +584,20 @@ function handleOpenTools(): void {
 
 function handleOpenMarker(): void {
   emit('marker:open');
+}
+
+function handleDeleteMarker(id: string): void {
+  emit('marker:delete', id);
+}
+
+function handleHighlightMarker(marker: {
+  id: string;
+  name: string;
+  selector: string;
+  selectorType?: string;
+  listMode?: boolean;
+}): void {
+  emit('marker:highlight', marker);
 }
 
 // Drag and drop handlers - delegate to parent

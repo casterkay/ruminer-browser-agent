@@ -1,5 +1,5 @@
 import { emosDeleteMemory, emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 import { computed, ref, type Ref } from 'vue';
 
 export interface MemoryItem {
@@ -34,6 +34,29 @@ export interface UseEmosSearch {
   selectItem: (item: MemoryItem | null) => void;
 }
 
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function capitalizeSenderId(value: string): string {
+  if (!value) return '';
+  return value[0].toUpperCase() + value.slice(1);
+}
+
+function getRawSenderId(raw: any): string {
+  const direct = toTrimmedString(raw?.sender) || toTrimmedString(raw?.user_id);
+  if (direct) return direct;
+
+  const metadata = raw?.metadata;
+  if (metadata && typeof metadata === 'object') {
+    const metaSender =
+      toTrimmedString((metadata as any).sender) || toTrimmedString((metadata as any).user_id);
+    if (metaSender) return metaSender;
+  }
+
+  return '';
+}
+
 function normalizeItem(raw: any): MemoryItem {
   const content =
     raw?.content ?? raw?.text ?? raw?.summary ?? raw?.memory ?? raw?.message ?? raw?.excerpt ?? '';
@@ -51,8 +74,16 @@ function normalizeItem(raw: any): MemoryItem {
   return {
     message_id: messageId,
     content: String(content || ''),
-    sender: typeof raw?.sender === 'string' ? raw.sender : undefined,
-    sender_name: typeof raw?.sender_name === 'string' ? raw.sender_name : undefined,
+    sender: (() => {
+      const senderId = getRawSenderId(raw);
+      return senderId || undefined;
+    })(),
+    sender_name: (() => {
+      const explicit = toTrimmedString(raw?.sender_name);
+      if (explicit) return explicit;
+      const senderId = getRawSenderId(raw);
+      return senderId ? capitalizeSenderId(senderId) : undefined;
+    })(),
     role: typeof raw?.role === 'string' ? raw.role : undefined,
     create_time:
       typeof raw?.create_time === 'string'
@@ -98,17 +129,18 @@ async function fetchSearchResult(body: Record<string, unknown>, speakers?: strin
   }
 
   const requests = userIds.map(async (userId) => {
-    return emosSearchMemories({
+    const response = await emosSearchMemories({
       ...body,
       query: String(body.query || ''),
       user_id: userId,
     });
+    return { userId, response };
   });
 
   const settled = await Promise.allSettled(requests);
   const fulfilled = settled
     .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
-    .map((result) => result.value);
+    .map((result) => result.value as { userId: string; response: any });
 
   if (fulfilled.length === 0) {
     const firstError = settled.find(
@@ -119,7 +151,33 @@ async function fetchSearchResult(body: Record<string, unknown>, speakers?: strin
       : new Error(String(firstError?.reason ?? 'EMOS search failed'));
   }
 
-  return { result: { memories: fulfilled.map((entry) => extractRawItems(entry)).flat() } };
+  const merged = fulfilled
+    .map(({ userId, response }) => {
+      const rawItems = extractRawItems(response);
+      return rawItems.map((raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+
+        // Ensure identity fields exist for UI + delete operations.
+        const record = raw as Record<string, unknown>;
+        const existingSender = toTrimmedString(record.sender) || toTrimmedString(record.user_id);
+        if (!existingSender && userId) {
+          record.sender = userId;
+        }
+
+        if (!toTrimmedString(record.sender_name)) {
+          const senderId =
+            toTrimmedString(record.sender) || toTrimmedString(record.user_id) || userId;
+          if (senderId) {
+            record.sender_name = capitalizeSenderId(senderId);
+          }
+        }
+
+        return record;
+      });
+    })
+    .flat();
+
+  return { result: { memories: merged } };
 }
 
 function looksLikeMemoryItem(value: unknown): boolean {
@@ -141,6 +199,7 @@ function looksLikeMemoryItem(value: unknown): boolean {
     item.timestamp,
     item.create_time,
     item.sender,
+    item.user_id,
     item.group_id,
   ].some((field) => field !== undefined);
 }
@@ -289,9 +348,21 @@ export function useEmosSearch(): UseEmosSearch {
 
   async function remove(item: MemoryItem): Promise<boolean> {
     try {
+      const userId = (() => {
+        const direct = toTrimmedString(item.sender);
+        if (direct) return direct;
+        const meta = item.metadata;
+        if (meta && typeof meta === 'object') {
+          const fromMeta =
+            toTrimmedString((meta as any).user_id) || toTrimmedString((meta as any).sender);
+          if (fromMeta) return fromMeta;
+        }
+        return '';
+      })();
+
       await emosDeleteMemory({
         event_id: item.message_id,
-        user_id: item.sender,
+        user_id: userId || undefined,
         group_id: item.group_id,
       });
       items.value = items.value.filter((entry) => entry.message_id !== item.message_id);
