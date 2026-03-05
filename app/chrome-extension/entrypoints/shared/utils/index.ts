@@ -5,42 +5,44 @@
 
 // Flow conversion utilities
 export {
+  extractFlowCandidates,
   flowV2ToV3ForRpc,
   flowV3ToV2ForBuilder,
-  isFlowV3,
   isFlowV2,
-  extractFlowCandidates,
+  isFlowV3,
   type FlowConversionResult,
 } from './rr-flow-convert';
 
-// OpenClaw settings and tool-group helpers
+// Gateway/OpenClaw settings
 export {
+  getDefaultGatewaySettings,
   getGatewaySettings,
-  setGatewaySettings,
   getGatewayStatus,
-  setGatewayStatus,
   getOrCreateGatewayDeviceId,
   isGatewayConfigured,
-  getEmosSettings,
-  setEmosSettings,
-  getDefaultGatewaySettings,
-  getDefaultEmosSettings,
+  setGatewaySettings,
+  setGatewayStatus,
   type GatewayConnectionSettings,
   type GatewayConnectionStatus,
-  type EmosConnectionSettings,
-} from './openclaw-settings';
+} from './gateway-settings';
+
+// EverMemOS settings
 export {
-  buildToolGroupRestrictionText,
+  getDefaultEmosSettings,
+  getEmosSettings,
+  setEmosSettings,
+  type EmosConnectionSettings,
+} from './emos-settings';
+export {
   clearIndividualToolOverrides,
   getDefaultToolGroupState,
   getEffectiveEnabledToolIds,
   getIndividualToolState,
   getToolGroupState,
-  setIndividualToolOverride,
-  setToolGroupState,
-  setToolGroupEnabled,
   isToolGroupEnabled,
-  getDisabledToolGroups,
+  setIndividualToolOverride,
+  setToolGroupEnabled,
+  setToolGroupState,
   type IndividualToolState,
   type ToolGroupId,
   type ToolGroupState,

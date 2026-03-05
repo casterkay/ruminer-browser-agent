@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
-import type { AgentMessage, RealtimeEvent } from '../types';
+import { getChromeMcpUrl } from '../../constant';
 import { detectCcr, validateCcrConfig } from '../ccr-detector';
 import { getProject } from '../project-service';
-import { getChromeMcpUrl } from '../../constant';
+import type { AgentMessage } from '../types';
+import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
 
 // Images are provided to Claude Code via local file paths referenced in the prompt text.
 // Claude Code CLI reads images from local paths, so we write base64 images to temp files and reference them.
@@ -1271,6 +1271,25 @@ export class ClaudeEngine implements AgentEngine {
       env.PATH = [nodeBinDir, currentPath].filter(Boolean).join(path.delimiter);
     }
 
+    // Ensure claude binary directory is on PATH.
+    // Chrome-launched native hosts inherit a minimal env PATH that typically won't
+    // include wherever the user installed the claude CLI. The SDK spawns `claude`
+    // as a child process, so if it isn't reachable, the SDK falls back to
+    // "login required" even when the user already ran `claude login`.
+    const claudeBinPath = await this.findClaudeBinary(env.PATH || '');
+    if (claudeBinPath) {
+      const claudeBinDir = path.dirname(claudeBinPath);
+      const envPath = env.PATH || '';
+      if (!envPath.split(path.delimiter).includes(claudeBinDir)) {
+        env.PATH = [claudeBinDir, envPath].filter(Boolean).join(path.delimiter);
+        console.error(`[ClaudeEngine] Added claude bin dir to PATH: ${claudeBinDir}`);
+      }
+    } else {
+      console.error(
+        '[ClaudeEngine] claude binary not found in common paths — SDK may report auth error',
+      );
+    }
+
     // Only detect CCR if explicitly enabled for this project
     if (useCcr && !env.ANTHROPIC_BASE_URL) {
       try {
@@ -1305,6 +1324,66 @@ export class ClaudeEngine implements AgentEngine {
     }
 
     return env;
+  }
+
+  /**
+   * Locate the `claude` CLI binary by searching the given PATH string and then
+   * well-known installation locations.  Returns the absolute path to the binary,
+   * or undefined if not found.
+   *
+   * This is needed because Chrome-launched native message hosts receive a minimal
+   * OS-level PATH that usually omits user-managed package managers (Homebrew, NVM,
+   * the claude standalone installer, etc.).
+   */
+  private async findClaudeBinary(envPath: string): Promise<string | undefined> {
+    const { access, constants } = await import('node:fs/promises');
+    const os = await import('node:os');
+    const homedir = os.homedir();
+
+    const isExecutable = async (p: string): Promise<boolean> => {
+      try {
+        await access(p, constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // 1. Check directories already on PATH
+    for (const dir of envPath.split(path.delimiter).filter(Boolean)) {
+      const candidate = path.join(dir, 'claude');
+      if (await isExecutable(candidate)) {
+        console.error(`[ClaudeEngine] Found claude on PATH: ${candidate}`);
+        return candidate;
+      }
+    }
+
+    // 2. Well-known installation locations (ordered by prevalence on macOS/Linux)
+    const knownPaths = [
+      // Official standalone installer
+      path.join(homedir, '.claude', 'local', 'claude'),
+      // Homebrew (Apple Silicon / Intel)
+      '/opt/homebrew/bin/claude',
+      '/usr/local/bin/claude',
+      // npm / yarn global
+      path.join(homedir, '.npm-global', 'bin', 'claude'),
+      path.join(homedir, '.yarn', 'bin', 'claude'),
+      // pnpm global
+      path.join(homedir, '.local', 'share', 'pnpm', 'claude'),
+      // Generic local bin
+      path.join(homedir, '.local', 'bin', 'claude'),
+      // System
+      '/usr/bin/claude',
+    ];
+
+    for (const candidate of knownPaths) {
+      if (await isExecutable(candidate)) {
+        console.error(`[ClaudeEngine] Found claude at known path: ${candidate}`);
+        return candidate;
+      }
+    }
+
+    return undefined;
   }
 
   /**

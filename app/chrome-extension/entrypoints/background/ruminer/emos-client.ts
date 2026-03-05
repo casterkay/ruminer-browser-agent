@@ -1,4 +1,4 @@
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 
 export interface EmosSingleMessage {
   message_id: string;

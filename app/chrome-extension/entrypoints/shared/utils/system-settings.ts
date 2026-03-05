@@ -6,7 +6,7 @@
  */
 
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import { setGatewaySettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { setGatewaySettings } from '@/entrypoints/shared/utils/gateway-settings';
 
 export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
 

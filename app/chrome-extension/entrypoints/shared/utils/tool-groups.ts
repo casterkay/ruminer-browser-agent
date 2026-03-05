@@ -438,65 +438,6 @@ export async function clearIndividualToolOverrides(): Promise<IndividualToolStat
   return next;
 }
 
-export function getDisabledToolGroups(state: ToolGroupState): ToolGroupId[] {
-  return (Object.keys(state) as (keyof ToolGroupState)[])
-    .filter((key): key is ToolGroupId => key !== 'updatedAt')
-    .filter((key) => state[key] === false);
-}
-
-export function buildToolGroupRestrictionText(
-  state: ToolGroupState,
-  individualState?: IndividualToolState | null,
-): string {
-  const disabledGroups = getDisabledToolGroups(state);
-  const lines: string[] = [];
-
-  for (const groupId of disabledGroups) {
-    switch (groupId) {
-      case 'interact':
-        lines.push(
-          '- Interact: disabled (no DOM interaction, cookie-network/file tools, or bookmarks writes)',
-        );
-        break;
-      case 'execute':
-        lines.push('- Execute: disabled (no JavaScript eval/injection tools)');
-        break;
-      case 'navigate':
-        lines.push('- Navigate: disabled (no navigation or tab switch/close actions)');
-        break;
-      case 'observe':
-        lines.push('- Observe: disabled (no snapshot/screenshot/history/bookmark/console reads)');
-        break;
-      case 'workflow':
-        lines.push('- Workflow: disabled (no RR-V3 flow/trigger/run actions)');
-        break;
-      case 'memory':
-        lines.push('- Memory: disabled (no EverMemOS memory read/search tools)');
-        break;
-    }
-  }
-
-  const overrides = individualState?.overrides ?? {};
-  for (const group of TOOL_GROUP_DEFINITIONS) {
-    if (!state[group.id]) continue;
-    const disabledTools = group.tools.filter((t) => overrides[t.id] === false).map((t) => t.id);
-    if (disabledTools.length > 0) {
-      lines.push(`- ${group.label}: disabled tools: ${disabledTools.join(', ')}`);
-    }
-  }
-
-  if (lines.length === 0) return '';
-
-  return [
-    'Tool group restrictions:',
-    ...lines,
-    '',
-    'Ask the user to enable a group or tool before using it.',
-  ]
-    .join('\n')
-    .trim();
-}
-
 export function getEffectiveEnabledToolIds(
   state: ToolGroupState,
   individualState?: IndividualToolState | null,

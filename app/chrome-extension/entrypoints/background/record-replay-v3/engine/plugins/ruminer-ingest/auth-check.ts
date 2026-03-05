@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
+import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject } from '../../../domain/json';

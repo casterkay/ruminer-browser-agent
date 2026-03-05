@@ -143,10 +143,12 @@ app/
 │   │   │   │   ├── index.ts
 │   │   │   │   └── useRRV3Rpc.ts
 │   │   │   └── utils
+│   │   │       ├── emos-settings.ts
+│   │   │       ├── gateway-settings.ts
 │   │   │       ├── index.ts
-│   │   │       ├── openclaw-device-auth.ts
 │   │   │       ├── openclaw-settings.ts
 │   │   │       ├── rr-flow-convert.ts
+│   │   │       ├── settings-internals.ts
 │   │   │       ├── stable-json.ts
 │   │   │       ├── system-settings.ts
 │   │   │       └── tool-groups.ts
@@ -266,7 +268,6 @@ app/
 │   │   │   ├── 32.png
 │   │   │   ├── 48.png
 │   │   │   ├── 64.png
-│   │   │   ├── 96.png
 │   │   │   └── icon.svg
 │   │   └── libs
 │   │       └── ort.min.js
@@ -431,4 +432,4 @@ app/
         ├── openclaw.plugin.json
         └── package.json
 
-99 directories, 308 files
+99 directories, 309 files
