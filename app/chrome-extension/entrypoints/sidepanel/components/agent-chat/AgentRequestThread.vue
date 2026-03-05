@@ -25,10 +25,9 @@
           <!-- Default title rendering for regular messages -->
           <h2
             v-else
-            class="min-w-0 text-base font-medium leading-snug break-words"
+            class="min-w-0 text-base leading-snug break-words"
             :style="{
-              color: 'var(--ac-text-inverse, #ffffff)',
-              overflowWrap: 'anywhere',
+              overflowWrap: 'normal',
             }"
           >
             {{ thread.title }}
@@ -148,10 +147,10 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, inject, onMounted, ref, watch } from 'vue';
 import type { AttachmentMetadata } from 'chrome-mcp-shared';
-import type { AgentThread } from '../../composables/useAgentThreads';
+import { computed, inject, onMounted, ref, watch } from 'vue';
 import { AGENT_SERVER_PORT_KEY } from '../../composables';
+import type { AgentThread } from '../../composables/useAgentThreads';
 import AgentTimeline from './AgentTimeline.vue';
 import ApplyMessageChip from './ApplyMessageChip.vue';
 
@@ -226,13 +225,12 @@ onMounted(() => {
 <style scoped>
 .user-header-bubble {
   border-radius: var(--ac-radius-card);
+  border-color: color-mix(in srgb, var(--ac-accent) 75%, transparent);
+  border-width: var(--ac-border-width);
   padding: 10px 12px;
-  background-color: var(--ac-accent-subtle);
-  background-color: color-mix(in srgb, var(--ac-accent) 75%, transparent);
-  color: var(--ac-text-inverse, #ffffff);
 }
 
 .user-header-bubble :deep(*) {
-  color: inherit;
+  color: var(--ac-text);
 }
 </style>
