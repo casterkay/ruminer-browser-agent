@@ -163,9 +163,9 @@ Both paths target the same EMOS instance. The duplication is intentional — it 
 Ruminer runs as a single local user, and uses simple, human-readable sender IDs.
 
 - `sender` (EverMemOS `user_id`):
-  - User messages: `me` or user-configured `{user_id}`
-  - AI assistant replies: `{platform}` (e.g., `chatgpt`, `gemini`, `claude`, `deepseek`)
-  - OpenClaw agent replies (from sidepanel chat): `agent`
+  - User messages: `me`
+  - AI assistant replies: `bot`
+  - Use `sender_name` for the human-readable display name (e.g., `Me`, `ChatGPT`, `Claude`, `OpenClaw`).
 - `group_id`: `{platform}:{conversation_id}`
   - `conversation_id` is the platform-native conversation/thread ID.
 
@@ -177,8 +177,8 @@ All ingestion workflows normalize extracted chat messages into **standard EverMe
 {
   "message_id": "{item_key}",
   "create_time": "iso8601_of_creation_time_or_ingestion_time",
-  "sender": "me|agent|chatgpt|gemini|claude|deepseek",
-  "sender_name": "Optional human-readable name",
+  "sender": "me|bot",
+  "sender_name": "Human readable name (e.g., 'Me', 'ChatGPT')",
   "content": "Plain text content",
   "group_id": "chatgpt:platform_conversation_id",
   "group_name": "Optional conversation title",
@@ -191,7 +191,7 @@ Notes:
 
 - `message_id` MUST be stable and derived from `item_key = platform:conversation_id:message_index`.
 - `message_index` is the required, stable 0-based position of the message within the canonical conversation order.
-- For AI messages, set `sender = {platform}` and `sender_name = {platform_name}`.
+- For AI messages, set `sender = bot` and `sender_name = {platform_name}`.
 - If the source does not expose message timestamps, use ingestion time for `create_time`.
 
 ### 5.4 Idempotency Keys
@@ -393,7 +393,7 @@ The Chat tab is the primary interaction surface.
 1. Search/browse EMOS items (messages from all AI platforms + OpenClaw conversations).
 2. Filter by source platform, date range, keyword.
 3. View item details: full content, conversation context, canonical URL.
-4. Basic management: open canonical URL in new tab (read-only; no delete).
+4. Basic management: open canonical URL in new tab; allow deletion via EverMemOS filter-based `DELETE /memories` using `event_id` (message_id).
 
 ### 8.5 Sidepanel Workflows Tab (MVP)
 
@@ -536,7 +536,7 @@ When extraction fails repeatedly:
 ### Phase 2 -- Remaining Platforms + Memory Tab
 
 1. Build platform packs for **Gemini**, **Claude**, and **DeepSeek**.
-2. Implement sidepanel Memory tab: search/browse EMOS items, filter by platform/date, view details, open canonical URL (read-only; no delete).
+2. Implement sidepanel Memory tab: search/browse EMOS items, filter by platform/date, view details, open canonical URL, delete item.
 3. Implement sidepanel Workflows tab: list workflows, one-click run, active run progress, run history with event timeline.
 
 ### Phase 3 -- AI Authoring + Repair

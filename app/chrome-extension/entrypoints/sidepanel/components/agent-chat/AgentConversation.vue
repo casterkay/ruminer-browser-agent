@@ -45,15 +45,18 @@
         </div>
       </div>
       <div v-else class="empty-state-placeholder">
-        <p
-          class="text-2xl italic opacity-40"
-          :style="{
-            fontFamily: 'var(--ac-font-heading)',
-            color: 'var(--ac-text-subtle)',
-          }"
-        >
-          How can I help you today?
-        </p>
+        <div class="empty-state-inner">
+          <img class="empty-app-icon" :src="appIconUrl" alt="" />
+          <p
+            class="text-2xl italic opacity-40"
+            :style="{
+              fontFamily: 'var(--ac-font-heading)',
+              color: 'var(--ac-text-subtle)',
+            }"
+          >
+            How can I help you today?
+          </p>
+        </div>
       </div>
     </div>
 
@@ -77,10 +80,10 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue';
 import type { AgentThread } from '../../composables/useAgentThreads';
-import type { MemorySuggestion } from '../../composables/useEmosSuggestions';
 import type { MemoryItem } from '../../composables/useEmosSearch';
-import AgentRequestThread from './AgentRequestThread.vue';
+import type { MemorySuggestion } from '../../composables/useEmosSuggestions';
 import MemoryItemDetails from '../memory/MemoryItemDetails.vue';
+import AgentRequestThread from './AgentRequestThread.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -102,6 +105,19 @@ const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 
 const trimmedQuery = computed(() => props.searchQuery.trim());
 const selectedMemoryItem = ref<MemoryItem | null>(null);
 const detailsVisible = computed(() => !!selectedMemoryItem.value);
+
+const appIconUrl = computed(() => {
+  const path = 'icon/icon.svg';
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+      return chrome.runtime.getURL(path);
+    }
+  } catch {
+    // ignore
+  }
+  return `/${path}`;
+});
+
 const PLATFORM_LABELS: Record<string, string> = {
   agent: 'OpenClaw',
   chatgpt: 'ChatGPT',
@@ -116,7 +132,6 @@ function compactSnippet(content: string): string {
 
 function toMemoryItem(suggestion: MemorySuggestion): MemoryItem {
   return {
-    id: suggestion.id,
     message_id: suggestion.messageId || suggestion.id,
     content: suggestion.content,
     sender: suggestion.sender,
@@ -208,6 +223,20 @@ function formatSource(suggestion: MemorySuggestion): string {
   padding: 12rem 1.25rem;
 }
 
+.empty-state-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.empty-app-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--ac-radius-card);
+  opacity: 0.88;
+}
+
 .memory-suggestion-layout {
   min-height: 100%;
   display: grid;
@@ -297,6 +326,7 @@ function formatSource(suggestion: MemorySuggestion): string {
   font-family: var(--ac-font-body);
   display: -webkit-box;
   overflow: hidden;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }

@@ -2,9 +2,12 @@ import { PersistentQueue } from './queue';
 import {
   AddMemoryPayload,
   EverMemSingleMessage,
-  HookContext,
-  OpenClawMessageEvent,
+  GatewayHandlerOpts,
+  OpenClawPluginServiceContext,
   PluginConfig,
+  PluginHookMessageContext,
+  PluginHookMessageReceivedEvent,
+  PluginHookMessageSentEvent,
   SearchMemPayload,
 } from './types';
 
@@ -14,13 +17,42 @@ type AgentToolResult = {
 };
 
 type OpenClawPluginApi = {
-  on: (event: string, handler: (ev: OpenClawMessageEvent, ctx: HookContext) => void) => void;
-  registerService: (svc: {
+  // Named metadata injected by OpenClaw.
+  id: string;
+  name: string;
+  source: string;
+  // Full gateway config — NOT the plugin config.
+  config: Record<string, unknown>;
+  // Plugin-scoped config from plugins.entries.<id>.config — use this.
+  pluginConfig?: Record<string, unknown>;
+  logger: {
+    info: (msg: string, meta?: unknown) => void;
+    warn: (msg: string, meta?: unknown) => void;
+    error: (msg: string, meta?: unknown) => void;
+  };
+  resolvePath: (input: string) => string;
+  on(
+    hookName: 'message_received',
+    handler: (
+      ev: PluginHookMessageReceivedEvent,
+      ctx: PluginHookMessageContext,
+    ) => void | Promise<void>,
+    opts?: { priority?: number },
+  ): void;
+  on(
+    hookName: 'message_sent',
+    handler: (
+      ev: PluginHookMessageSentEvent,
+      ctx: PluginHookMessageContext,
+    ) => void | Promise<void>,
+    opts?: { priority?: number },
+  ): void;
+  registerService(svc: {
     id: string;
-    start: () => Promise<void> | void;
-    stop: () => Promise<void> | void;
-  }) => void;
-  registerTool?: (
+    start: (ctx: OpenClawPluginServiceContext) => Promise<void> | void;
+    stop?: (ctx: OpenClawPluginServiceContext) => Promise<void> | void;
+  }): void;
+  registerTool?(
     def: {
       name: string;
       description: string;
@@ -28,55 +60,86 @@ type OpenClawPluginApi = {
       execute: (toolCallId: string, params: unknown) => Promise<AgentToolResult>;
     },
     opts?: { optional?: boolean },
-  ) => void;
-  registerGatewayMethod: (
-    id: string,
-    handler: (args: {
-      respond: (ok: boolean, payload: unknown) => void;
-      payload?: unknown;
-    }) => void,
-  ) => void;
-  logger: {
-    info: (msg: string, meta?: unknown) => void;
-    warn: (msg: string, meta?: unknown) => void;
-    error: (msg: string, meta?: unknown) => void;
-  };
-  // OpenClaw passes the full config here.
-  config: unknown;
-  // OpenClaw passes plugin-scoped config (plugins.entries.<id>.config) here.
-  pluginConfig?: unknown;
+  ): void;
+  registerGatewayMethod(
+    method: string,
+    handler: (opts: GatewayHandlerOpts) => void | Promise<void>,
+  ): void;
 };
 
 const RETRY_INTERVAL_MS = 30_000;
 
-function resolveGroupId(cfg: PluginConfig, ctx: HookContext): string {
-  const key = `${ctx.channelId || 'unknown'}:${ctx.conversationId || ctx.accountId || ''}`;
-  const fromMap = cfg.groupMapping?.[key];
-  if (fromMap) return fromMap;
-  const prefix = cfg.ingestGroupIdPrefix || 'oc-';
-  return `${prefix}${ctx.channelId || 'ch'}-${ctx.conversationId || ctx.accountId || 'conv'}`;
+function ensureBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, '');
 }
 
-function buildPayload(
+function resolveMemoriesApiPrefix(cfg: PluginConfig): '/api/v0' | '/api/v1' {
+  const base = ensureBaseUrl(cfg.evermemosBaseUrl || '');
+  if (!base) return '/api/v1';
+  if (base.includes('/api/v0')) return '/api/v0';
+  if (base.includes('/api/v1')) return '/api/v1';
+  // Cloud uses v0; local uses v1.
+  if (base.includes('api.evermind.ai')) return '/api/v0';
+  return '/api/v1';
+}
+
+function getMemoriesBaseUrl(cfg: PluginConfig): string {
+  const base = ensureBaseUrl(cfg.evermemosBaseUrl || '');
+  const prefix = resolveMemoriesApiPrefix(cfg);
+  if (base.endsWith(prefix)) return base;
+  return `${base}${prefix}`;
+}
+
+function resolveGroupId(cfg: PluginConfig, ctx: PluginHookMessageContext): string {
+  const key = `${ctx.channelId || 'unknown'}:${ctx.conversationId || ctx.accountId || ''}`;
+  const fromMap = cfg.groupMapping?.[key];
+  if (typeof fromMap === 'string' && fromMap.trim()) {
+    const trimmed = fromMap.trim();
+    return trimmed.includes(':') ? trimmed : `openclaw:${trimmed}`;
+  }
+
+  const conv = ctx.conversationId || ctx.accountId || 'conv';
+  return `openclaw:${conv}`;
+}
+
+function buildInboundPayload(
   cfg: PluginConfig,
-  ev: OpenClawMessageEvent,
-  ctx: HookContext,
+  ev: PluginHookMessageReceivedEvent,
+  ctx: PluginHookMessageContext,
 ): EverMemSingleMessage {
-  const messageId = ev.id || `${ctx.conversationId || 'conv'}-${Date.now()}`;
+  const groupId = resolveGroupId(cfg, ctx);
   const ts = ev.timestamp ? new Date(ev.timestamp) : new Date();
-  const role = ev.direction === 'outbound' ? 'assistant' : 'user';
-  const sender = ev.senderId || cfg.defaultUserId || 'unknown';
-  const referList = ev.replyToId ? [ev.replyToId] : undefined;
+  // No stable message ID on the event; synthesize from context + timestamp.
+  const messageId = `${ctx.conversationId || ctx.channelId}-${ts.getTime()}-me`;
   return {
-    message_id: messageId,
+    message_id: `${groupId}:${messageId}`,
     create_time: ts.toISOString(),
-    sender,
-    sender_name: sender,
-    content: ev.text || '',
-    role,
-    group_id: resolveGroupId(cfg, ctx),
+    sender: 'me',
+    sender_name: 'Me',
+    content: ev.content,
+    role: 'user',
+    group_id: groupId,
     group_name: ctx.channelId,
-    refer_list: referList,
+  };
+}
+
+function buildOutboundPayload(
+  cfg: PluginConfig,
+  ev: PluginHookMessageSentEvent,
+  ctx: PluginHookMessageContext,
+): EverMemSingleMessage {
+  const groupId = resolveGroupId(cfg, ctx);
+  const ts = new Date();
+  const messageId = `${ctx.conversationId || ctx.channelId}-${ts.getTime()}-bot`;
+  return {
+    message_id: `${groupId}:${messageId}`,
+    create_time: ts.toISOString(),
+    sender: 'bot',
+    sender_name: 'OpenClaw',
+    content: ev.content,
+    role: 'assistant',
+    group_id: groupId,
+    group_name: ctx.channelId,
   };
 }
 
@@ -84,7 +147,7 @@ async function postToEverMem(cfg: PluginConfig, body: EverMemSingleMessage): Pro
   if (!cfg.evermemosBaseUrl || !cfg.apiKey) {
     throw new Error('EverMemOS plugin is not configured (missing evermemosBaseUrl/apiKey)');
   }
-  const url = `${cfg.evermemosBaseUrl.replace(/\/$/, '')}/api/v1/memories`;
+  const url = `${getMemoriesBaseUrl(cfg)}/memories`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${cfg.apiKey}`,
@@ -98,14 +161,23 @@ async function searchEverMem(cfg: PluginConfig, body: SearchMemPayload): Promise
   if (!cfg.evermemosBaseUrl || !cfg.apiKey) {
     throw new Error('EverMemOS plugin is not configured (missing evermemosBaseUrl/apiKey)');
   }
-  const url = `${cfg.evermemosBaseUrl.replace(/\/$/, '')}/api/v1/memories/search`;
+  const params = new URLSearchParams();
+  if (body.query) params.append('query', body.query);
+  if (body.user_id) params.append('user_id', body.user_id);
+  if (body.group_id) params.append('group_id', body.group_id);
+  if (body.limit) params.append('limit', String(body.limit));
+  if (body.retrieve_method) params.append('retrieve_method', body.retrieve_method);
+  if (Array.isArray(body.memory_types)) {
+    for (const t of body.memory_types) params.append('memory_types', String(t));
+  }
+
+  const url = `${getMemoriesBaseUrl(cfg)}/memories/search?${params.toString()}`;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     Authorization: `Bearer ${cfg.apiKey}`,
   };
   if (cfg.tenantId) headers['X-Tenant-Id'] = cfg.tenantId;
   if (cfg.spaceId) headers['X-Space-Id'] = cfg.spaceId;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: 'GET', headers });
   if (!res.ok) {
     throw new Error(`EverMemOS search failed: ${res.status}`);
   }
@@ -141,15 +213,16 @@ function startRetryLoop(
   queue: PersistentQueue,
   cfg: PluginConfig,
   api: OpenClawPluginApi,
-): NodeJS.Timeout {
+): ReturnType<typeof setInterval> {
   return setInterval(() => {
     void processQueue(queue, cfg, api.logger);
   }, RETRY_INTERVAL_MS);
 }
 
 export default function register(api: OpenClawPluginApi) {
-  const cfg = ((api.pluginConfig ?? api.config) || {}) as PluginConfig;
-  const queueDir = './data/evermemos/pending';
+  // api.config is the full gateway config — never use it as plugin config.
+  const cfg = (api.pluginConfig ?? {}) as PluginConfig;
+  const queueDir = api.resolvePath('./data/evermemos/pending');
   const queue = new PersistentQueue(queueDir);
   const backlogWarn = cfg.backlogWarning ?? 100;
 
@@ -162,7 +235,7 @@ export default function register(api: OpenClawPluginApi) {
 
   if (isConfigured) {
     api.on('message_received', async (ev, ctx) => {
-      const payload = buildPayload(cfg, ev, ctx);
+      const payload = buildInboundPayload(cfg, ev, ctx);
       try {
         const res = await postToEverMem(cfg, payload);
         if (!res.ok) {
@@ -174,21 +247,41 @@ export default function register(api: OpenClawPluginApi) {
         api.logger.warn('EverMemOS POST error, queued', { err: String(err) });
       }
     });
+
+    api.on('message_sent', async (ev, ctx) => {
+      if (!ev.success) return; // skip failed sends
+      const payload = buildOutboundPayload(cfg, ev, ctx);
+      try {
+        const res = await postToEverMem(cfg, payload);
+        if (!res.ok) {
+          await queue.enqueue(payload);
+          api.logger.warn('EverMemOS POST non-200 (outbound), queued', { status: res.status });
+        }
+      } catch (err) {
+        await queue.enqueue(payload);
+        api.logger.warn('EverMemOS POST error (outbound), queued', { err: String(err) });
+      }
+    });
   }
+
+  let retryInterval: ReturnType<typeof setInterval> | undefined;
 
   api.registerService({
     id: 'evermemos-retry',
-    start: async () => {
+    start: async (_ctx) => {
       if (!isConfigured) return;
       void processQueue(queue, cfg, api.logger);
-      startRetryLoop(queue, cfg, api);
+      retryInterval = startRetryLoop(queue, cfg, api);
     },
-    stop: async () => {
-      return;
+    stop: async (_ctx) => {
+      if (retryInterval !== undefined) {
+        clearInterval(retryInterval);
+        retryInterval = undefined;
+      }
     },
   });
 
-  api.registerGatewayMethod('evermemos.status', ({ respond }) => {
+  api.registerGatewayMethod('evermemos.status', ({ params: _params, respond }) => {
     queue
       .list()
       .then((files) => {
@@ -201,7 +294,7 @@ export default function register(api: OpenClawPluginApi) {
       .catch((err) => respond(false, { error: String(err) }));
   });
 
-  api.registerGatewayMethod('evermemos.addMemory', ({ payload, respond }) => {
+  api.registerGatewayMethod('evermemos.addMemory', ({ params, respond }) => {
     if (!isConfigured) {
       respond(false, {
         error:
@@ -209,7 +302,7 @@ export default function register(api: OpenClawPluginApi) {
       });
       return;
     }
-    const body = (payload || {}) as AddMemoryPayload;
+    const body = (params || {}) as AddMemoryPayload;
     if (!body.message_id || !body.create_time || !body.sender || !body.content) {
       respond(false, {
         error: 'Missing required fields: message_id, create_time, sender, content',
@@ -225,7 +318,7 @@ export default function register(api: OpenClawPluginApi) {
       .catch((err) => respond(false, { error: String(err) }));
   });
 
-  api.registerGatewayMethod('evermemos.searchMemory', ({ payload, respond }) => {
+  api.registerGatewayMethod('evermemos.searchMemory', ({ params, respond }) => {
     if (!isConfigured) {
       respond(false, {
         error:
@@ -233,7 +326,7 @@ export default function register(api: OpenClawPluginApi) {
       });
       return;
     }
-    const body = (payload || {}) as SearchMemPayload;
+    const body = (params || {}) as SearchMemPayload;
     if (!body.query) {
       respond(false, { error: 'Missing required field: query' });
       return;

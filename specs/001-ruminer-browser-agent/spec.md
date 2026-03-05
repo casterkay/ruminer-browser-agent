@@ -91,8 +91,9 @@ direct EMOS client (autonomous ingestion workflows).
 ### Session 2026-02-27 (round 2)
 
 - Q: Does EverMemOS expose a delete API for individual memories? → A:
-  No. Remove "delete" from FR-010; Memory tab is read-only + open
-  canonical URL. EMOS does not support deletion.
+  Yes, but it is filter-based: `DELETE /memories` with a JSON body
+  containing filters such as `event_id` (message_id), `user_id`, and/or
+  `group_id`. There is no `DELETE /memories/{id}` path.
 - Q: How should the system handle message insertion/reordering in
   source conversations (index shift breaking idempotency)? → A: Not
   applicable. None of the target AI chat platforms (ChatGPT, Gemini,
@@ -507,8 +508,8 @@ a flow, run the flow, and verify it executes the recorded actions.
 
 - **FR-010**: Memory tab MUST support searching and browsing EverMemOS
   items by keyword, source platform, and date, with the ability to
-  open canonical URLs. Memory tab is read-only (no delete); EMOS does
-  not expose a delete API.
+  open canonical URLs, and delete individual items by calling
+  `DELETE /memories` with an `event_id` (message_id) filter.
 - **FR-011**: Workflows tab MUST list saved workflows with platform
   name, last run status, and a one-click "Run" action.
 - **FR-012**: Workflows tab MUST display real-time run progress and
@@ -789,10 +790,11 @@ Enable it in Ruminer → Tools.` Internal RR‑V3 workflow execution MUST
   autonomous ingestion workflows. Both paths target the same EMOS
   instance with the same credentials. The system degrades gracefully
   when one path is unavailable.
-- **Ruminer identity conventions** (single-user local): sender =
-  "me" for user messages, sender = "{platform}" (e.g., "chatgpt",
-  "gemini", "claude", "deepseek") for AI replies, sender = "agent" for
-  OpenClaw agent replies, and group_id = "{platform}:{conversation_id}".
+- **Ruminer identity conventions** (single-user local): sender is
+  canonicalized to `me` (human) or `bot` (AI). Use `sender_name` for the
+  display name (e.g., "Me", "ChatGPT", "Claude", "OpenClaw"). Use
+  group_id = `{platform}:{conversation_id}` and message_id =
+  `{group_id}:{message_index}`.
 - The user's Chrome browser is running and the extension is installed
   with appropriate host permissions for AI chat platform domains.
 - The OpenClaw Gateway binds to localhost only; no LAN or remote access

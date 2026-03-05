@@ -228,8 +228,8 @@ const newSpeakerInputRef = ref<HTMLInputElement | null>(null);
 function resetFilters(): void {
   emit('update:query', '');
   emit('update:platform', [...allPlatformValues]);
-  emit('update:speakerOptions', ['user', 'assistant']);
-  emit('update:speakers', ['user', 'assistant']);
+  emit('update:speakerOptions', ['me', 'bot']);
+  emit('update:speakers', ['me', 'bot']);
   emit('clearDateFilter');
   emit('search');
 }

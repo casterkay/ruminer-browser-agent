@@ -22,20 +22,52 @@ type McpClientPluginConfig = {
   clientName?: string;
 };
 
-type OpenClawPluginApi = {
-  registerGatewayMethod: (
-    id: string,
-    handler: (args: {
-      respond: (ok: boolean, payload: unknown) => void;
-      payload?: unknown;
-    }) => void,
+type PluginServiceCtx = {
+  config: Record<string, unknown>;
+  workspaceDir?: string;
+  stateDir: string;
+  logger: {
+    info: (msg: string) => void;
+    warn: (msg: string) => void;
+    error: (msg: string) => void;
+  };
+};
+
+type GatewayHandlerOpts = {
+  params: Record<string, unknown>;
+  respond: (
+    ok: boolean,
+    payload?: unknown,
+    error?: { message: string; code?: string },
+    meta?: Record<string, unknown>,
   ) => void;
-  registerService?: (svc: {
+  [key: string]: unknown;
+};
+
+type OpenClawPluginApi = {
+  id: string;
+  name: string;
+  source: string;
+  // Full gateway config — NOT the plugin config.
+  config: Record<string, unknown>;
+  // Plugin-scoped config from plugins.entries.<id>.config — use this.
+  pluginConfig?: Record<string, unknown>;
+  logger: {
+    info: (message: string, meta?: unknown) => void;
+    warn: (message: string, meta?: unknown) => void;
+    error: (message: string, meta?: unknown) => void;
+  };
+  resolvePath: (input: string) => string;
+  registerGatewayMethod(
+    method: string,
+    handler: (opts: GatewayHandlerOpts) => void | Promise<void>,
+  ): void;
+  registerService(svc: {
     id: string;
-    start: () => Promise<void> | void;
-    stop: () => Promise<void> | void;
-  }) => void;
-  registerTool?: (
+    start: (ctx: PluginServiceCtx) => Promise<void> | void;
+    stop?: (ctx: PluginServiceCtx) => Promise<void> | void;
+  }): void;
+  registerTool?(
     def: {
       name: string;
       description: string;
@@ -46,16 +78,7 @@ type OpenClawPluginApi = {
       ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
     },
     opts?: { optional?: boolean },
-  ) => void;
-  logger: {
-    info: (message: string, meta?: unknown) => void;
-    warn: (message: string, meta?: unknown) => void;
-    error: (message: string, meta?: unknown) => void;
-  };
-  // OpenClaw passes the full config here.
-  config: unknown;
-  // OpenClaw passes plugin-scoped config (plugins.entries.<id>.config) here.
-  pluginConfig?: unknown;
+  ): void;
 };
 
 const DEFAULT_MCP_URL = 'http://127.0.0.1:12306/mcp';
@@ -169,6 +192,7 @@ async function ensureClient(
     .catch((error) => {
       client = null;
       transport = null;
+      connectPromise = null;
       throw error;
     })
     .finally(() => {
@@ -243,9 +267,8 @@ async function callToolViaMcp(
 }
 
 export default function register(api: OpenClawPluginApi) {
-  // OpenClaw plugin API provides plugin-scoped config via `pluginConfig`.
-  // Fall back to `config` for backward compatibility with older runtimes.
-  const config = normalizeConfig(api.pluginConfig ?? api.config);
+  // api.config is the full gateway config — never use it as plugin config.
+  const config = normalizeConfig(api.pluginConfig ?? {});
 
   api.registerGatewayMethod('mcp-client.status', ({ respond }) => {
     respond(true, {
@@ -261,8 +284,8 @@ export default function register(api: OpenClawPluginApi) {
       .catch((error) => respond(false, { error: String(error) }));
   });
 
-  api.registerGatewayMethod('mcp-client.request', ({ payload, respond }) => {
-    const body = (payload || {}) as McpCallPayload;
+  api.registerGatewayMethod('mcp-client.request', ({ params, respond }) => {
+    const body = (params || {}) as McpCallPayload;
     callToolViaMcp(api, config, body)
       .then((result) => respond(true, { result }))
       .catch((error) => {
@@ -271,17 +294,15 @@ export default function register(api: OpenClawPluginApi) {
       });
   });
 
-  if (typeof api.registerService === 'function') {
-    api.registerService({
-      id: 'mcp-client-connection',
-      start: async () => {
-        return;
-      },
-      stop: async () => {
-        await disconnectMcp(api);
-      },
-    });
-  }
+  api.registerService({
+    id: 'mcp-client-connection',
+    start: async (_ctx) => {
+      return;
+    },
+    stop: async (_ctx) => {
+      await disconnectMcp(api);
+    },
+  });
 
   if (typeof api.registerTool === 'function') {
     for (const tool of TOOL_SCHEMAS) {

@@ -125,13 +125,24 @@ export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosS
   return payload || {};
 }
 
-export async function emosDeleteMemory(messageId: string): Promise<unknown> {
+export interface EmosDeleteFilters {
+  event_id: string;
+  user_id?: string;
+  group_id?: string;
+}
+
+export async function emosDeleteMemory(filters: EmosDeleteFilters): Promise<unknown> {
   const baseUrl = await getBaseUrl();
   const headers = await buildHeaders();
 
-  const response = await fetch(`${baseUrl}/api/v0/memories/${encodeURIComponent(messageId)}`, {
+  const body: Record<string, string> = { event_id: filters.event_id };
+  if (filters.user_id) body.user_id = filters.user_id;
+  if (filters.group_id) body.group_id = filters.group_id;
+
+  const response = await fetch(`${baseUrl}/api/v0/memories`, {
     method: 'DELETE',
     headers,
+    body: JSON.stringify(body),
   });
 
   const payload = await parseJsonResponse(response);

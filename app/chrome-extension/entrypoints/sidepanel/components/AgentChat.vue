@@ -493,11 +493,13 @@ function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
   return {
     message_id: buildEmosMessageId(msg.id),
     create_time: msg.createdAt,
-    sender: msg.role,
+    sender: msg.role === 'assistant' ? 'bot' : 'me',
+    sender_name: msg.role === 'assistant' ? engineDisplayName.value : 'Me',
     content: msg.content,
     group_id,
     group_name: session.name || session.preview || undefined,
     source_url: null,
+    role: msg.role,
   };
 }
 
@@ -686,7 +688,7 @@ const sessionForPanels = computed<AgentSession | null>(() => {
     model: modelForUi,
     permissionMode: draft?.permissionMode || 'default',
     allowDangerouslySkipPermissions: false,
-    systemPromptConfig: draft?.systemPromptConfig ?? null,
+    systemPromptConfig: draft?.systemPromptConfig ?? undefined,
     optionsConfig: draft?.optionsConfig,
     managementInfo: undefined,
     createdAt: now,

@@ -30,6 +30,40 @@ function normalizeSender(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizeRole(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizePlatformLabel(platform: string): string {
+  const key = platform.trim().toLowerCase();
+  if (!key) return 'Bot';
+  const labels: Record<string, string> = {
+    openclaw: 'OpenClaw',
+    chatgpt: 'ChatGPT',
+    claude: 'Claude',
+    gemini: 'Gemini',
+    deepseek: 'DeepSeek',
+    codex: 'Codex',
+  };
+  return labels[key] || platform.trim();
+}
+
+function canonicalizeSender(input: {
+  sender: string | null;
+  role: string | null;
+}): 'me' | 'bot' | null {
+  const role = input.role?.trim().toLowerCase() || '';
+  if (role === 'user') return 'me';
+  if (role === 'assistant') return 'bot';
+
+  const sender = input.sender?.trim().toLowerCase() || '';
+  if (sender === 'me' || sender === 'bot') return sender;
+  if (['user', 'human', 'self'].includes(sender)) return 'me';
+  if (['assistant', 'ai', 'model', 'system'].includes(sender)) return 'bot';
+
+  return null;
+}
+
 function normalizeContent(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
@@ -83,7 +117,8 @@ export const normalizeAndHashNodeDefinition: NodeDefinition<
         (typeof rawMessage.conversation_id === 'string' && rawMessage.conversation_id.trim()) ||
         groupParts.conversationId ||
         node.config.defaultConversationId;
-      const sender = normalizeSender(rawMessage.sender);
+      const role = normalizeRole(rawMessage.role);
+      const sender = canonicalizeSender({ sender: normalizeSender(rawMessage.sender), role });
       const content = normalizeContent(rawMessage.content);
 
       if (!platform) {
@@ -95,7 +130,9 @@ export const normalizeAndHashNodeDefinition: NodeDefinition<
         continue;
       }
       if (!sender) {
-        invalidMessages.push(`index ${i}: missing sender`);
+        invalidMessages.push(
+          `index ${i}: missing/unsupported sender (expected role user/assistant or sender me/bot)`,
+        );
         continue;
       }
       if (!content) {
@@ -116,10 +153,16 @@ export const normalizeAndHashNodeDefinition: NodeDefinition<
       });
 
       const createTime = isValidIsoString(rawMessage.create_time) ? rawMessage.create_time : nowIso;
-      const groupId =
-        typeof rawMessage.group_id === 'string' && rawMessage.group_id.trim()
-          ? rawMessage.group_id
-          : `${platform}:${conversationId}`;
+      const groupId = `${platform}:${conversationId}`;
+
+      const senderNameRaw =
+        typeof rawMessage.sender_name === 'string' && rawMessage.sender_name.trim()
+          ? rawMessage.sender_name.trim()
+          : undefined;
+      const senderName =
+        senderNameRaw || (sender === 'me' ? 'Me' : normalizePlatformLabel(platform));
+
+      const normalizedRole = role || (sender === 'me' ? 'user' : 'assistant');
 
       normalized.push({
         message_id: item_key,
@@ -131,16 +174,8 @@ export const normalizeAndHashNodeDefinition: NodeDefinition<
           typeof rawMessage.group_name === 'string' && rawMessage.group_name.trim()
             ? rawMessage.group_name
             : undefined,
-        sender_name:
-          typeof rawMessage.sender_name === 'string' && rawMessage.sender_name.trim()
-            ? rawMessage.sender_name
-            : undefined,
-        role:
-          typeof rawMessage.role === 'string'
-            ? rawMessage.role
-            : rawMessage.role === null
-              ? null
-              : null,
+        sender_name: senderName,
+        role: normalizedRole,
         refer_list: toStringList(rawMessage.refer_list),
         item_key,
         content_hash,

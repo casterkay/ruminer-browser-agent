@@ -51,14 +51,7 @@
               title="Date range"
               @click="openDateMenu"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 3h8M8 21h8M5 7h14v12H5z"
-                />
-              </svg>
+              <ILucideCalendar class="w-3.5 h-3.5" />
             </button>
             <button
               class="refresh-btn ac-btn ac-focus-ring"
@@ -147,10 +140,14 @@
 
           <button
             v-for="item in memory.items.value"
-            :key="item.id"
+            :key="item.message_id"
             class="memory-item ac-btn"
-            :class="{ active: memory.selectedItem.value?.id === item.id }"
-            :style="memory.selectedItem.value?.id === item.id ? activeItemStyle : inactiveItemStyle"
+            :class="{ active: memory.selectedItem.value?.message_id === item.message_id }"
+            :style="
+              memory.selectedItem.value?.message_id === item.message_id
+                ? activeItemStyle
+                : inactiveItemStyle
+            "
             @click="handleSelectItem(item)"
           >
             <div class="memory-item-top">
@@ -160,7 +157,7 @@
               <span class="platform-badge">{{ formatPlatform(item) }}</span>
             </div>
             <div class="memory-item-meta" :title="formatAbsoluteTime(item.create_time)">
-              {{ formatSender(item.sender) }} · {{ formatRelativeTime(item.create_time) }}
+              {{ formatSenderDisplay(item) }} · {{ formatRelativeTime(item.create_time) }}
             </div>
             <div class="memory-item-snippet">{{ buildSnippet(item.content) }}</div>
           </button>
@@ -183,14 +180,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import ILucideCalendar from '~icons/lucide/calendar';
 import { useEmosSearch, type MemoryItem } from '../../composables/useEmosSearch';
 import MemoryFilters from './MemoryFilters.vue';
 import MemoryItemDetails from './MemoryItemDetails.vue';
 
 const memory = useEmosSearch();
 const detailsOpen = ref(false);
-const ALL_PLATFORMS = ['openclaw', 'chatgpt', 'gemini', 'claude', 'deepseek'] as const;
-const DEFAULT_SPEAKERS = ['user', 'assistant'];
+const ALL_PLATFORMS = ['openclaw', 'claude', 'chatgpt', 'codex', 'gemini', 'deepseek'] as const;
+const DEFAULT_SPEAKERS = ['me', 'bot'];
 const speakerOptions = ref<string[]>([...DEFAULT_SPEAKERS]);
 const dateMenuVisible = ref(false);
 const tempDateRange = reactive({ start: '', end: '' });
@@ -201,7 +199,8 @@ const KNOWN_PLATFORM_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   claude: 'Claude',
   deepseek: 'DeepSeek',
-  agent: 'OpenClaw',
+  codex: 'Codex',
+  openclaw: 'OpenClaw',
 };
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -368,14 +367,21 @@ async function handleDeleteItem(item: MemoryItem): Promise<void> {
 
   const removed = await memory.remove(item);
   if (removed) {
-    detailsOpen.value = false;
+    closeDetails();
   }
 }
 
 function formatSender(sender?: string): string {
   if (!sender) return 'Unknown';
   if (sender === 'me') return 'Me';
+  if (sender === 'bot') return 'Bot';
   return KNOWN_PLATFORM_LABELS[sender.toLowerCase()] || sender;
+}
+
+function formatSenderDisplay(item: MemoryItem): string {
+  const senderName = item.sender_name?.trim();
+  if (senderName) return senderName;
+  return formatSender(item.sender);
 }
 
 function getPlatformKey(item: MemoryItem): string {

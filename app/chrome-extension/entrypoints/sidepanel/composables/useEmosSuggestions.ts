@@ -1,5 +1,4 @@
 import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
-import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import { computed, onUnmounted, ref, type Ref } from 'vue';
 
 export interface MemorySuggestion {
@@ -130,7 +129,7 @@ export function useEmosSuggestions(): UseEmosSuggestions {
 
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const DEFAULT_SPEAKER_IDS = ['user', 'assistant'] as const;
+  const DEFAULT_SPEAKER_IDS = ['me', 'bot'] as const;
 
   function getSearchUserIds(): string[] {
     return [...DEFAULT_SPEAKER_IDS];
@@ -190,10 +189,6 @@ export function useEmosSuggestions(): UseEmosSuggestions {
     error.value = null;
 
     try {
-      const settings = await getEmosSettings();
-      if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
-        throw new Error('EMOS is not configured');
-      }
       const userIds = getSearchUserIds();
       const queryText = text.trim();
       const allRawItems = await runEmosSearch(queryText, userIds);

@@ -1,12 +1,13 @@
-import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
+import { emosDeleteMemory, emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
 import { getEmosSettings } from '@/entrypoints/shared/utils/openclaw-settings';
 import { computed, ref, type Ref } from 'vue';
 
 export interface MemoryItem {
-  id: string;
   message_id: string;
   content: string;
   sender?: string;
+  sender_name?: string;
+  role?: string;
   create_time?: string;
   group_id?: string;
   group_name?: string;
@@ -37,21 +38,22 @@ function normalizeItem(raw: any): MemoryItem {
   const content =
     raw?.content ?? raw?.text ?? raw?.summary ?? raw?.memory ?? raw?.message ?? raw?.excerpt ?? '';
 
-  const stableIdCandidate =
-    raw?.id ||
+  const messageId = String(
     raw?.message_id ||
-    raw?.memory_id ||
-    (raw?.group_id && (raw?.timestamp || raw?.create_time)
-      ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
-      : null);
-
-  const id = stableIdCandidate ? String(stableIdCandidate) : crypto.randomUUID();
+      raw?.id ||
+      raw?.memory_id ||
+      (raw?.group_id && (raw?.timestamp || raw?.create_time)
+        ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
+        : null) ||
+      crypto.randomUUID(),
+  );
 
   return {
-    id,
-    message_id: String(raw?.message_id || raw?.id || raw?.memory_id || id),
+    message_id: messageId,
     content: String(content || ''),
     sender: typeof raw?.sender === 'string' ? raw.sender : undefined,
+    sender_name: typeof raw?.sender_name === 'string' ? raw.sender_name : undefined,
+    role: typeof raw?.role === 'string' ? raw.role : undefined,
     create_time:
       typeof raw?.create_time === 'string'
         ? raw.create_time
@@ -83,14 +85,9 @@ function normalizeItem(raw: any): MemoryItem {
   };
 }
 
-const DEFAULT_SPEAKER_IDS = ['user', 'assistant'] as const;
+const DEFAULT_SPEAKER_IDS = ['me', 'bot'] as const;
 
 async function fetchSearchResult(body: Record<string, unknown>, speakers?: string[]): Promise<any> {
-  const settings = await getEmosSettings();
-  if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
-    throw new Error('EMOS is not configured');
-  }
-
   const userIds = Array.from(
     new Set(
       (speakers && speakers.length > 0 ? speakers : [...DEFAULT_SPEAKER_IDS]).map((v) => v.trim()),
@@ -123,30 +120,6 @@ async function fetchSearchResult(body: Record<string, unknown>, speakers?: strin
   }
 
   return { result: { memories: fulfilled.map((entry) => extractRawItems(entry)).flat() } };
-}
-
-async function deleteMemory(messageId: string): Promise<void> {
-  const settings = await getEmosSettings();
-  if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
-    throw new Error('EMOS is not configured');
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${settings.apiKey}`,
-  };
-
-  const response = await fetch(
-    `${settings.baseUrl.replace(/\/$/, '')}/api/v0/memories/${encodeURIComponent(messageId)}`,
-    {
-      method: 'DELETE',
-      headers,
-    },
-  );
-
-  if (!response.ok) {
-    const json = await response.json().catch(() => ({}));
-    throw new Error(`EMOS delete failed (${response.status}) ${JSON.stringify(json)}`);
-  }
 }
 
 function looksLikeMemoryItem(value: unknown): boolean {
@@ -265,7 +238,7 @@ export function useEmosSearch(): UseEmosSearch {
         .map((raw) => normalizeItem(raw))
         .filter((item) => item.content.trim().length > 0);
       const deduped = Array.from(
-        new Map(normalized.map((item) => [item.message_id || item.id, item])).values(),
+        new Map(normalized.map((item) => [item.message_id, item])).values(),
       );
 
       const explicitPlatformArray = Array.isArray(filters.platform);
@@ -300,7 +273,10 @@ export function useEmosSearch(): UseEmosSearch {
           : filteredByPlatform;
 
       items.value = filteredByDate;
-      if (selectedItem.value && !items.value.some((entry) => entry.id === selectedItem.value?.id)) {
+      if (
+        selectedItem.value &&
+        !items.value.some((entry) => entry.message_id === selectedItem.value?.message_id)
+      ) {
         selectedItem.value = null;
       }
     } catch (reason) {
@@ -313,9 +289,13 @@ export function useEmosSearch(): UseEmosSearch {
 
   async function remove(item: MemoryItem): Promise<boolean> {
     try {
-      await deleteMemory(item.message_id || item.id);
-      items.value = items.value.filter((entry) => entry.id !== item.id);
-      if (selectedItem.value?.id === item.id) {
+      await emosDeleteMemory({
+        event_id: item.message_id,
+        user_id: item.sender,
+        group_id: item.group_id,
+      });
+      items.value = items.value.filter((entry) => entry.message_id !== item.message_id);
+      if (selectedItem.value?.message_id === item.message_id) {
         selectedItem.value = null;
       }
       return true;

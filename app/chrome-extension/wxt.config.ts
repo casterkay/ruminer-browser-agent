@@ -140,6 +140,10 @@ export default defineConfig({
             dest: 'inject-scripts',
           },
           {
+            src: 'public/icon/*',
+            dest: 'icon',
+          },
+          {
             src: ['workers/*'],
             dest: 'workers',
           },
