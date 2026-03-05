@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { PersistentQueue } from './queue';
 import {
   AddMemoryPayload,
@@ -222,9 +224,18 @@ function startRetryLoop(
 export default function register(api: OpenClawPluginApi) {
   // api.config is the full gateway config — never use it as plugin config.
   const cfg = (api.pluginConfig ?? {}) as PluginConfig;
-  const queueDir = api.resolvePath('./data/evermemos/pending');
-  const queue = new PersistentQueue(queueDir);
+  let queue: PersistentQueue | undefined;
+  let stateDir: string | undefined;
   const backlogWarn = cfg.backlogWarning ?? 100;
+
+  const ensureQueue = (): PersistentQueue => {
+    if (queue) return queue;
+    const dir = stateDir
+      ? path.join(stateDir, 'evermemos', 'pending')
+      : api.resolvePath('./data/evermemos/pending');
+    queue = new PersistentQueue(dir);
+    return queue;
+  };
 
   const isConfigured = !!(cfg.evermemosBaseUrl && cfg.apiKey);
   if (!isConfigured) {
@@ -239,11 +250,11 @@ export default function register(api: OpenClawPluginApi) {
       try {
         const res = await postToEverMem(cfg, payload);
         if (!res.ok) {
-          await queue.enqueue(payload);
+          await ensureQueue().enqueue(payload);
           api.logger.warn('EverMemOS POST non-200, queued', { status: res.status });
         }
       } catch (err) {
-        await queue.enqueue(payload);
+        await ensureQueue().enqueue(payload);
         api.logger.warn('EverMemOS POST error, queued', { err: String(err) });
       }
     });
@@ -254,11 +265,11 @@ export default function register(api: OpenClawPluginApi) {
       try {
         const res = await postToEverMem(cfg, payload);
         if (!res.ok) {
-          await queue.enqueue(payload);
+          await ensureQueue().enqueue(payload);
           api.logger.warn('EverMemOS POST non-200 (outbound), queued', { status: res.status });
         }
       } catch (err) {
-        await queue.enqueue(payload);
+        await ensureQueue().enqueue(payload);
         api.logger.warn('EverMemOS POST error (outbound), queued', { err: String(err) });
       }
     });
@@ -270,8 +281,18 @@ export default function register(api: OpenClawPluginApi) {
     id: 'evermemos-retry',
     start: async (_ctx) => {
       if (!isConfigured) return;
-      void processQueue(queue, cfg, api.logger);
-      retryInterval = startRetryLoop(queue, cfg, api);
+
+      stateDir = _ctx.stateDir;
+
+      const q = ensureQueue();
+
+      const files = await q.list();
+      if (files.length > backlogWarn) {
+        api.logger.warn('EverMemOS queue backlog high', { pending: files.length });
+      }
+
+      void processQueue(q, cfg, api.logger);
+      retryInterval = startRetryLoop(q, cfg, api);
     },
     stop: async (_ctx) => {
       if (retryInterval !== undefined) {
@@ -282,15 +303,23 @@ export default function register(api: OpenClawPluginApi) {
   });
 
   api.registerGatewayMethod('evermemos.status', ({ params: _params, respond }) => {
+    if (!queue) {
+      respond(true, {
+        configured: isConfigured,
+        pending: 0,
+        evermemosBaseUrl: cfg.evermemosBaseUrl || null,
+      });
+      return;
+    }
     queue
       .list()
-      .then((files) => {
+      .then((files) =>
         respond(true, {
           configured: isConfigured,
           pending: files.length,
           evermemosBaseUrl: cfg.evermemosBaseUrl || null,
-        });
-      })
+        }),
+      )
       .catch((err) => respond(false, { error: String(err) }));
   });
 
@@ -349,7 +378,7 @@ export default function register(api: OpenClawPluginApi) {
           additionalProperties: false,
         },
         execute: async () => {
-          const files = await queue.list();
+          const files = await ensureQueue().list();
           const payload = {
             configured: isConfigured,
             pending: files.length,
@@ -455,9 +484,5 @@ export default function register(api: OpenClawPluginApi) {
 
   // TODO: add agentic retrieval methods
 
-  void queue.list().then((files) => {
-    if (files.length > backlogWarn) {
-      api.logger.warn('EverMemOS queue backlog high', { pending: files.length });
-    }
-  });
+  // Backlog warning is handled on service start (where stateDir is available).
 }

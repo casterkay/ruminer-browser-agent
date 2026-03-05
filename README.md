@@ -7,6 +7,8 @@ Ruminer Browser Agent is your browser agent with:
 - EverMemOS (EMOS) integration (search + ingestion)
 - RR-V3 workflows that survive MV3 service worker restarts
 
+前端可收集四个 AI 聊天平台的消息记录（ChatGPT, Gemini, DeepSeek, Claude），后端可连接三种 AI 智能体进行任务自动化（OpenClaw，Claude Code, Codex）。
+
 This repository is a pnpm monorepo. It is not “installable via npm” as a single upstream package in the way the old mcp-chrome docs suggest. Use the local build + registration flow below.
 
 ## Architecture (quick mental model)
