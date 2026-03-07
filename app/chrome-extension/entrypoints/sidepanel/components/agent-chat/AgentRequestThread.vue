@@ -27,7 +27,7 @@
             v-else
             class="min-w-0 text-base leading-snug break-words"
             :style="{
-              overflowWrap: 'normal',
+              overflowWrap: 'anywhere',
             }"
           >
             {{ thread.title }}

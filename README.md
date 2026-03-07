@@ -63,10 +63,6 @@ Chrome does not allow “Load unpacked” via a script.
 3. Click “Load unpacked”
 4. Select this folder:
 
-- app/chrome-extension/.output/chrome-mv3
-
-After loading, open the Ruminer sidepanel and click Connect (or equivalent) so the native host and local MCP server become reachable.
-
 ## Start OpenClaw Gateway (for sidepanel chat)
 
 Run the Gateway locally (default port expected by the extension is 18789):

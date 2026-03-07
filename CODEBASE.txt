@@ -430,6 +430,7 @@ app/
     └── mcp-client
         ├── index.ts
         ├── openclaw.plugin.json
-        └── package.json
+        ├── package.json
+        └── tools.ts
 
-99 directories, 309 files
+99 directories, 310 files
