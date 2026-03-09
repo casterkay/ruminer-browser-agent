@@ -7,14 +7,8 @@
           <div class="header-id">{{ edge.id }}</div>
         </div>
         <button class="btn-delete" type="button" title="删除边" @click.stop="onRemove">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="m4 4 8 8M12 4 4 12"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-            />
-          </svg>
+          <ILucideTrash2 class="w-4 h-4" />
+          删除
         </button>
       </div>
 
@@ -53,8 +47,9 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue';
 import type { Edge as EdgeV2, NodeBase } from '@/entrypoints/background/record-replay/types';
+import { computed } from 'vue';
+import ILucideTrash2 from '~icons/lucide/trash-2';
 
 const props = defineProps<{ edge: EdgeV2 | null; nodes: NodeBase[] }>();
 const emit = defineEmits<{ (e: 'remove-edge', id: string): void }>();
@@ -119,6 +114,31 @@ function onRemove() {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.btn-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: none;
+  background: var(--rr-danger);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-delete:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+.btn-delete:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.3);
 }
 .header-title {
   font-size: 15px;

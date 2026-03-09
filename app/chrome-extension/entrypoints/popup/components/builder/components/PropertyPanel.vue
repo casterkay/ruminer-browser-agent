@@ -8,14 +8,8 @@
           <div class="header-id">{{ node.id }}</div>
         </div>
         <button class="btn-delete" type="button" title="删除节点" @click.stop="onRemove">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="m4 4 8 8M12 4 4 12"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-            />
-          </svg>
+          <ILucideTrash2 class="w-4 h-4" />
+          删除
         </button>
       </div>
 
@@ -90,11 +84,12 @@
 
 <script lang="ts" setup>
 /* eslint-disable vue/no-mutating-props */
-import { computed, watch, onMounted, ref } from 'vue';
-import type { NodeBase } from '@/entrypoints/background/record-replay/types';
-import { validateNodeWithRegistry } from '@/entrypoints/popup/components/builder/model/ui-nodes';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import type { NodeBase } from '@/entrypoints/background/record-replay/types';
 import PropertyFromSpec from '@/entrypoints/popup/components/builder/components/properties/PropertyFromSpec.vue';
+import { validateNodeWithRegistry } from '@/entrypoints/popup/components/builder/model/ui-nodes';
+import { computed, onMounted, ref, watch } from 'vue';
+import ILucideTrash2 from '~icons/lucide/trash-2';
 
 const props = defineProps<{
   node: NodeBase | null;
@@ -541,20 +536,28 @@ watch(
 }
 
 .btn-delete {
-  width: 28px;
-  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--rr-border);
-  background: var(--rr-card);
-  color: var(--rr-danger);
+  gap: 5px;
+  padding: 6px 10px;
+  border: none;
+  background: var(--rr-danger);
+  color: #fff;
   border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .btn-delete:hover {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+.btn-delete:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.3);
 }
 
 /* 内容区 */

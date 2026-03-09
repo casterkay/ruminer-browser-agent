@@ -151,397 +151,249 @@
         />
       </div>
 
-      <!-- Advanced Settings (Collapsible) -->
-      <div class="px-4 pb-4">
-        <div class="advanced-divider" :style="dividerStyle">
-          <span
-            :style="{
-              backgroundColor: 'var(--ac-surface)',
-              padding: '0 12px',
-              color: 'var(--ac-text-subtle)',
-            }"
-          >
-            More
-          </span>
-        </div>
+      <!-- Run History Section -->
+      <div class="advanced-section m-4" :style="sectionStyle">
+        <button
+          class="advanced-section-header"
+          :style="sectionHeaderStyle"
+          @click="toggleSection('runs')"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              class="w-4 h-4 transition-transform"
+              :class="{ 'rotate-90': expandedSections.has('runs') }"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <span>Run History</span>
+          </div>
+          <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">{{ runs.length }}</span>
+        </button>
 
-        <!-- Run History Section -->
-        <div class="advanced-section" :style="sectionStyle">
-          <button
-            class="advanced-section-header"
-            :style="sectionHeaderStyle"
-            @click="toggleSection('runs')"
-          >
-            <div class="flex items-center gap-2">
-              <svg
-                class="w-4 h-4 transition-transform"
-                :class="{ 'rotate-90': expandedSections.has('runs') }"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              <span>Run History</span>
+        <Transition name="section-expand">
+          <div v-if="expandedSections.has('runs')" class="advanced-section-content">
+            <div
+              v-if="runs.length === 0"
+              class="text-sm py-3"
+              :style="{ color: 'var(--ac-text-muted)' }"
+            >
+              No run history yet
             </div>
-            <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">{{
-              runs.length
-            }}</span>
-          </button>
-
-          <Transition name="section-expand">
-            <div v-if="expandedSections.has('runs')" class="advanced-section-content">
+            <div v-else class="space-y-2 py-2">
               <div
-                v-if="runs.length === 0"
-                class="text-sm py-3"
-                :style="{ color: 'var(--ac-text-muted)' }"
+                v-for="run in runs.slice(0, 5)"
+                :key="run.id"
+                class="run-item"
+                :style="runItemStyle"
+                @click="$emit('toggleRun', run.id)"
               >
-                No run history yet
-              </div>
-              <div v-else class="space-y-2 py-2">
-                <div
-                  v-for="run in runs.slice(0, 5)"
-                  :key="run.id"
-                  class="run-item"
-                  :style="runItemStyle"
-                  @click="$emit('toggleRun', run.id)"
-                >
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <span
-                        class="w-2 h-2 rounded-full"
-                        :class="{ 'animate-pulse': run.isInProgress }"
-                        :style="{ backgroundColor: getRunStatusColor(run) }"
-                      ></span>
-                      <span class="text-sm" :style="{ color: 'var(--ac-text)' }">{{
-                        getFlowName(run.flowId)
-                      }}</span>
-                      <span
-                        v-if="run.status"
-                        class="text-xs px-1.5 py-0.5 rounded"
-                        :style="{
-                          backgroundColor: run.isInProgress
-                            ? 'var(--ac-primary-light, #dbeafe)'
-                            : run.success
-                              ? 'var(--ac-success-light, #dcfce7)'
-                              : 'var(--ac-danger-light, #fee2e2)',
-                          color: getRunStatusColor(run),
-                        }"
-                      >
-                        {{ getRunStatusText(run) }}
-                      </span>
-                    </div>
-                    <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">
-                      {{ formatTime(run.startedAt) }}
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="w-2 h-2 rounded-full"
+                      :class="{ 'animate-pulse': run.isInProgress }"
+                      :style="{ backgroundColor: getRunStatusColor(run) }"
+                    ></span>
+                    <span class="text-sm" :style="{ color: 'var(--ac-text)' }">{{
+                      getFlowName(run.flowId)
+                    }}</span>
+                    <span
+                      v-if="run.status"
+                      class="text-xs px-1.5 py-0.5 rounded"
+                      :style="{
+                        backgroundColor: run.isInProgress
+                          ? 'var(--ac-primary-light, #dbeafe)'
+                          : run.success
+                            ? 'var(--ac-success-light, #dcfce7)'
+                            : 'var(--ac-danger-light, #fee2e2)',
+                        color: getRunStatusColor(run),
+                      }"
+                    >
+                      {{ getRunStatusText(run) }}
                     </span>
                   </div>
-                  <!-- Run details (if expanded) -->
+                  <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">
+                    {{ formatTime(run.startedAt) }}
+                  </span>
+                </div>
+                <!-- Run details (if expanded) -->
+                <div
+                  v-if="openRunId === run.id"
+                  class="mt-2 pt-2 border-t"
+                  :style="{ borderColor: 'var(--ac-border)' }"
+                >
+                  <!-- V3: Show status info when no entries -->
                   <div
-                    v-if="openRunId === run.id"
-                    class="mt-2 pt-2 border-t"
-                    :style="{ borderColor: 'var(--ac-border)' }"
+                    v-if="run.entries.length === 0 && run.status"
+                    class="text-xs py-1"
+                    :style="{ color: 'var(--ac-text-muted)' }"
                   >
-                    <!-- V3: Show status info when no entries -->
-                    <div
-                      v-if="run.entries.length === 0 && run.status"
-                      class="text-xs py-1"
-                      :style="{ color: 'var(--ac-text-muted)' }"
-                    >
-                      <div class="flex items-center justify-between gap-2">
-                        <div class="flex items-center gap-2">
-                          <span>状态: {{ getRunStatusText(run) }}</span>
-                          <span v-if="run.finishedAt"
-                            >• 耗时:
-                            {{
-                              Math.round(
-                                (new Date(run.finishedAt).getTime() -
-                                  new Date(run.startedAt).getTime()) /
-                                  1000,
-                              )
-                            }}s</span
-                          >
-                          <span v-if="run.currentNodeId">• 当前节点: {{ run.currentNodeId }}</span>
-                          <span
-                            v-if="run.flowVersionHash"
-                            :title="run.flowVersionHash"
-                            class="truncate"
-                            >• hash: {{ formatHash(run.flowVersionHash) }}</span
-                          >
-                        </div>
-
-                        <button
-                          v-if="run.isInProgress"
-                          class="text-xs px-2 py-1 rounded"
-                          :style="{
-                            backgroundColor: 'var(--ac-danger-light, #fee2e2)',
-                            color: 'var(--ac-danger, #ef4444)',
-                          }"
-                          @click.stop="$emit('stopRun', { runId: run.id, status: run.status })"
-                          title="Stop this run"
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <span>状态: {{ getRunStatusText(run) }}</span>
+                        <span v-if="run.finishedAt"
+                          >• 耗时:
+                          {{
+                            Math.round(
+                              (new Date(run.finishedAt).getTime() -
+                                new Date(run.startedAt).getTime()) /
+                                1000,
+                            )
+                          }}s</span
                         >
-                          Stop
-                        </button>
+                        <span v-if="run.currentNodeId">• 当前节点: {{ run.currentNodeId }}</span>
+                        <span
+                          v-if="run.flowVersionHash"
+                          :title="run.flowVersionHash"
+                          class="truncate"
+                          >• hash: {{ formatHash(run.flowVersionHash) }}</span
+                        >
                       </div>
 
-                      <div
-                        v-if="run.repair?.needed"
-                        class="mt-2 text-xs px-2 py-1 rounded"
-                        :style="{
-                          backgroundColor: 'var(--ac-warning-light, #fef3c7)',
-                          color: 'var(--ac-warning, #d97706)',
-                        }"
-                      >
-                        Needs repair • node={{ run.repair.nodeId }}
-                      </div>
-
-                      <div
-                        v-if="run.error?.message"
-                        class="mt-2 text-xs px-2 py-1 rounded"
+                      <button
+                        v-if="run.isInProgress"
+                        class="text-xs px-2 py-1 rounded"
                         :style="{
                           backgroundColor: 'var(--ac-danger-light, #fee2e2)',
                           color: 'var(--ac-danger, #ef4444)',
                         }"
+                        @click.stop="$emit('stopRun', { runId: run.id, status: run.status })"
+                        title="Stop this run"
                       >
-                        {{ run.error.message }}
+                        Stop
+                      </button>
+                    </div>
+
+                    <div
+                      v-if="run.repair?.needed"
+                      class="mt-2 text-xs px-2 py-1 rounded"
+                      :style="{
+                        backgroundColor: 'var(--ac-warning-light, #fef3c7)',
+                        color: 'var(--ac-warning, #d97706)',
+                      }"
+                    >
+                      Needs repair • node={{ run.repair.nodeId }}
+                    </div>
+
+                    <div
+                      v-if="run.error?.message"
+                      class="mt-2 text-xs px-2 py-1 rounded"
+                      :style="{
+                        backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                        color: 'var(--ac-danger, #ef4444)',
+                      }"
+                    >
+                      {{ run.error.message }}
+                    </div>
+
+                    <div class="mt-2">
+                      <div
+                        v-if="openRunEventsLoading"
+                        class="text-xs py-1"
+                        :style="{ color: 'var(--ac-text-subtle)' }"
+                      >
+                        Loading events…
                       </div>
-
-                      <div class="mt-2">
-                        <div
-                          v-if="openRunEventsLoading"
-                          class="text-xs py-1"
-                          :style="{ color: 'var(--ac-text-subtle)' }"
-                        >
-                          Loading events…
-                        </div>
-                        <div
-                          v-else-if="openRunEvents.length === 0"
-                          class="text-xs py-1"
-                          :style="{ color: 'var(--ac-text-subtle)' }"
-                        >
-                          No events yet
-                        </div>
-                        <div v-else class="space-y-1">
-                          <div
-                            v-for="(event, idx) in openRunEvents"
-                            :key="eventKey(event, idx)"
-                            class="text-xs px-2 py-1 rounded"
-                            :style="{
-                              backgroundColor: 'var(--ac-surface-muted)',
-                              color: 'var(--ac-text-muted)',
-                            }"
-                          >
-                            <div class="flex items-start justify-between gap-2">
-                              <div class="min-w-0">
-                                <div class="truncate">{{ formatEventLabel(event) }}</div>
-                                <div
-                                  v-if="event.type === 'log' && event.message"
-                                  class="mt-0.5"
-                                  :style="{ color: 'var(--ac-text-subtle)' }"
-                                >
-                                  {{ event.message }}
-                                </div>
-                              </div>
-                              <div
-                                class="flex-shrink-0"
-                                :style="{ color: 'var(--ac-text-subtle)' }"
-                              >
-                                {{ formatEventTime(event) }}
-                              </div>
-                            </div>
-
-                            <div
-                              v-if="event.type === 'artifact.screenshot' && event.data"
-                              class="mt-2"
-                            >
-                              <img
-                                :src="screenshotSrc(event.data)"
-                                alt="artifact screenshot"
-                                class="w-full rounded"
-                                style="max-height: 220px; object-fit: cover"
-                              />
-                            </div>
-
-                            <details
-                              v-if="event.type === 'artifact.html_snippet' && event.data"
-                              class="mt-2"
-                            >
-                              <summary class="cursor-pointer">HTML snippet</summary>
-                              <pre class="mt-2 whitespace-pre-wrap break-words">{{
-                                event.data
-                              }}</pre>
-                            </details>
-                          </div>
-                        </div>
+                      <div
+                        v-else-if="openRunEvents.length === 0"
+                        class="text-xs py-1"
+                        :style="{ color: 'var(--ac-text-subtle)' }"
+                      >
+                        No events yet
                       </div>
-
-                      <div v-if="run.args?.conversationUrl" class="mt-2">
-                        <button
+                      <div v-else class="space-y-1">
+                        <div
+                          v-for="(event, idx) in openRunEvents"
+                          :key="eventKey(event, idx)"
                           class="text-xs px-2 py-1 rounded"
                           :style="{
                             backgroundColor: 'var(--ac-surface-muted)',
                             color: 'var(--ac-text-muted)',
-                            border: '1px solid var(--ac-border)',
                           }"
-                          @click.stop="openRunUrl(run.args.conversationUrl)"
-                          title="Open the failing page in a new tab"
                         >
-                          Open page
-                        </button>
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                              <div class="truncate">{{ formatEventLabel(event) }}</div>
+                              <div
+                                v-if="event.type === 'log' && event.message"
+                                class="mt-0.5"
+                                :style="{ color: 'var(--ac-text-subtle)' }"
+                              >
+                                {{ event.message }}
+                              </div>
+                            </div>
+                            <div class="flex-shrink-0" :style="{ color: 'var(--ac-text-subtle)' }">
+                              {{ formatEventTime(event) }}
+                            </div>
+                          </div>
+
+                          <div
+                            v-if="event.type === 'artifact.screenshot' && event.data"
+                            class="mt-2"
+                          >
+                            <img
+                              :src="screenshotSrc(event.data)"
+                              alt="artifact screenshot"
+                              class="w-full rounded"
+                              style="max-height: 220px; object-fit: cover"
+                            />
+                          </div>
+
+                          <details
+                            v-if="event.type === 'artifact.html_snippet' && event.data"
+                            class="mt-2"
+                          >
+                            <summary class="cursor-pointer">HTML snippet</summary>
+                            <pre class="mt-2 whitespace-pre-wrap break-words">{{ event.data }}</pre>
+                          </details>
+                        </div>
                       </div>
                     </div>
-                    <!-- V2: Show entries -->
-                    <div
-                      v-for="(entry, idx) in run.entries"
-                      :key="idx"
-                      class="text-xs py-1"
-                      :style="{
-                        color:
-                          entry.status === 'failed' ? 'var(--ac-danger)' : 'var(--ac-text-muted)',
-                      }"
-                    >
-                      #{{ idx + 1 }} {{ entry.status }} - step={{ entry.stepId }}
-                      <span v-if="entry.tookMs" class="ml-2">{{ entry.tookMs }}ms</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </div>
 
-        <!-- Triggers Section -->
-        <div class="advanced-section" :style="sectionStyle">
-          <button
-            class="advanced-section-header"
-            :style="sectionHeaderStyle"
-            @click="toggleSection('triggers')"
-          >
-            <div class="flex items-center gap-2">
-              <svg
-                class="w-4 h-4 transition-transform"
-                :class="{ 'rotate-90': expandedSections.has('triggers') }"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              <span>Triggers</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">{{
-                triggers.length
-              }}</span>
-              <button
-                class="trigger-add-btn"
-                :style="triggerAddStyle"
-                @click.stop="$emit('createTrigger')"
-                title="Add trigger"
-              >
-                <svg
-                  class="w-3 h-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            </div>
-          </button>
-
-          <Transition name="section-expand">
-            <div v-if="expandedSections.has('triggers')" class="advanced-section-content">
-              <div
-                v-if="triggers.length === 0"
-                class="text-sm py-3"
-                :style="{ color: 'var(--ac-text-muted)' }"
-              >
-                No triggers configured
-              </div>
-              <div v-else class="space-y-2 py-2">
-                <div
-                  v-for="trigger in triggers"
-                  :key="trigger.id"
-                  class="trigger-item"
-                  :style="triggerItemStyle"
-                >
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <span
-                        class="w-2 h-2 rounded-full"
+                    <div v-if="run.args?.conversationUrl" class="mt-2">
+                      <button
+                        class="text-xs px-2 py-1 rounded"
                         :style="{
-                          backgroundColor:
-                            trigger.enabled !== false
-                              ? 'var(--ac-success)'
-                              : 'var(--ac-text-subtle)',
+                          backgroundColor: 'var(--ac-surface-muted)',
+                          color: 'var(--ac-text-muted)',
+                          border: '1px solid var(--ac-border)',
                         }"
-                      ></span>
-                      <span class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">{{
-                        trigger.type
-                      }}</span>
-                      <span class="text-xs" :style="{ color: 'var(--ac-text-muted)' }">
-                        {{ getFlowName(trigger.flowId) }}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                      <button
-                        class="trigger-action"
-                        :style="triggerActionStyle"
-                        @click="$emit('editTrigger', trigger.id)"
-                        title="Edit"
+                        @click.stop="openRunUrl(run.args.conversationUrl)"
+                        title="Open the failing page in a new tab"
                       >
-                        <svg
-                          class="w-3.5 h-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          stroke-width="2"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        class="trigger-action trigger-action-danger"
-                        :style="triggerActionDangerStyle"
-                        @click="$emit('removeTrigger', trigger.id)"
-                        title="Delete"
-                      >
-                        <svg
-                          class="w-3.5 h-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          stroke-width="2"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
+                        Open page
                       </button>
                     </div>
+                  </div>
+                  <!-- V2: Show entries -->
+                  <div
+                    v-for="(entry, idx) in run.entries"
+                    :key="idx"
+                    class="text-xs py-1"
+                    :style="{
+                      color:
+                        entry.status === 'failed' ? 'var(--ac-danger)' : 'var(--ac-text-muted)',
+                    }"
+                  >
+                    #{{ idx + 1 }} {{ entry.status }} - step={{ entry.stepId }}
+                    <span v-if="entry.tookMs" class="ml-2">{{ entry.tookMs }}ms</span>
                   </div>
                 </div>
               </div>
             </div>
-          </Transition>
-        </div>
+          </div>
+        </Transition>
       </div>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import WorkflowListItem from './WorkflowListItem.vue';
 
 interface FlowLite {

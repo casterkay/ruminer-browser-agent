@@ -25,7 +25,8 @@
 
       <div class="topbar rr-topbar backdrop-blur">
         <div class="left">
-          <strong class="text-[var(--rr-text)]">{{ title }}</strong>
+          <strong>{{ title }}</strong>
+          <span class="left-sep" />
           <span class="tip">工作流可视化编排</span>
         </div>
         <div class="right">
@@ -68,7 +69,7 @@
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
             </svg>
-            Rename
+            重命名
           </button>
           <button
             class="top-btn"
@@ -86,11 +87,11 @@
             >
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
             </svg>
-            Triggers
+            触发器
           </button>
           <span class="divider-vert" />
           <button
-            class="top-btn"
+            class="top-btn warn"
             :disabled="!selectedId"
             @click="runFromSelected"
             title="从选中节点回放"
@@ -120,7 +121,6 @@
             </svg>
             运行
           </button>
-          <span class="divider-vert" />
           <span class="status" :data-state="saveState">{{ saveLabel }}</span>
 
           <button class="top-btn success" @click="save">
@@ -270,8 +270,6 @@
 
 <script lang="ts" setup>
 // Dedicated full-page builder using the same inner components as popup modal
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import type { Flow as FlowV2 } from '@/entrypoints/background/record-replay/types';
 import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import type {
   FlowId,
@@ -280,21 +278,23 @@ import type {
 } from '@/entrypoints/background/record-replay-v3/domain/ids';
 import type { JsonObject } from '@/entrypoints/background/record-replay-v3/domain/json';
 import type { TriggerSpec } from '@/entrypoints/background/record-replay-v3/domain/triggers';
+import type { Flow as FlowV2 } from '@/entrypoints/background/record-replay/types';
 import { useRRV3Rpc } from '@/entrypoints/shared/composables';
 import {
+  extractFlowCandidates,
   flowV2ToV3ForRpc,
   flowV3ToV2ForBuilder,
   isFlowV3,
-  extractFlowCandidates,
 } from '@/entrypoints/shared/utils';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { useBuilderStore } from '@/entrypoints/popup/components/builder/store/useBuilderStore';
-import { validateFlow } from '@/entrypoints/popup/components/builder/model/validation';
 import Canvas from '@/entrypoints/popup/components/builder/components/Canvas.vue';
-import Sidebar from '@/entrypoints/popup/components/builder/components/Sidebar.vue';
-import PropertyPanel from '@/entrypoints/popup/components/builder/components/PropertyPanel.vue';
 import EdgePropertyPanel from '@/entrypoints/popup/components/builder/components/EdgePropertyPanel.vue';
+import PropertyPanel from '@/entrypoints/popup/components/builder/components/PropertyPanel.vue';
+import Sidebar from '@/entrypoints/popup/components/builder/components/Sidebar.vue';
 import TriggerPanel from '@/entrypoints/popup/components/builder/components/TriggerPanel.vue';
+import { validateFlow } from '@/entrypoints/popup/components/builder/model/validation';
+import { useBuilderStore } from '@/entrypoints/popup/components/builder/store/useBuilderStore';
 
 const title = ref('工作流编辑器');
 // theme state: persisted in localStorage and default to system preference
@@ -362,7 +362,7 @@ async function bootstrap() {
         const { flow: flowV2, warnings } = flowV3ToV2ForBuilder(flowV3);
         warnings.forEach((w) => pushToast(w, 'warn'));
         store.initFromFlow(flowV2);
-        title.value = `编辑：${flowV2.name || flowV2.id}`;
+        title.value = flowV2.name || flowV2.id;
 
         if (q.focus) {
           setTimeout(() => {
@@ -950,13 +950,16 @@ function focusNode(id: string) {
   top: 0;
   left: 0;
   right: 0;
-  height: 52px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  border: none;
-  background: #ededed;
+  padding: 0 16px;
+  background: var(--rr-topbar);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--rr-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   z-index: 20;
   pointer-events: none;
 }
@@ -966,7 +969,7 @@ function focusNode(id: string) {
 
 .rr-toast-container {
   position: fixed;
-  top: 60px;
+  top: 56px;
   right: 16px;
   z-index: 1000;
   display: flex;
@@ -994,16 +997,32 @@ function focusNode(id: string) {
 }
 .topbar .left {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+  min-width: 0;
+}
+.topbar .left strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rr-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.topbar .left-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--rr-border);
 }
 .topbar .tip {
   color: var(--rr-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .topbar .right {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 .main {
@@ -1017,7 +1036,7 @@ function focusNode(id: string) {
 .floating-sidebar {
   position: absolute;
   left: 0;
-  top: 36px;
+  top: 48px;
   z-index: 10;
   pointer-events: auto;
 }
@@ -1025,14 +1044,14 @@ function focusNode(id: string) {
   position: absolute;
   right: 0;
   /* keep below topbar and pinned above bottom */
-  top: 52px;
+  top: 48px;
   z-index: 10;
   pointer-events: auto;
 }
 .floating-trigger {
   position: absolute;
   right: 400px; /* offset from property panel */
-  top: 52px;
+  top: 48px;
   z-index: 10;
   pointer-events: auto;
 }
@@ -1080,25 +1099,30 @@ function focusNode(id: string) {
 .top-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
+  gap: 5px;
+  padding: 5px 11px;
   border: 1px solid var(--rr-border);
   background: var(--rr-card);
   color: var(--rr-text);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 7px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
+  white-space: nowrap;
 }
 .top-btn:hover:not(:disabled) {
-  background: var(--rr-hover);
+  background: var(--rr-subtle);
   border-color: var(--rr-text-weak);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 .top-btn:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(0.97);
+  box-shadow: none;
 }
 .top-btn:disabled {
   opacity: 0.5;
@@ -1117,6 +1141,20 @@ function focusNode(id: string) {
 .top-btn.primary:hover {
   background: #2563eb;
   border-color: #2563eb;
+}
+.top-btn.warn {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #f59e0b;
+}
+.top-btn.warn:hover:not(:disabled) {
+  background: #d97706;
+  border-color: #d97706;
+}
+.top-btn.warn:disabled {
+  background: rgba(245, 158, 11, 0.35);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: rgba(255, 255, 255, 0.7);
 }
 .top-btn.success {
   background: #10b981;
@@ -1155,15 +1193,17 @@ function focusNode(id: string) {
 }
 .divider-vert {
   width: 1px;
-  height: 24px;
+  height: 18px;
   background: var(--rr-border);
-  margin: 0 8px;
+  margin: 0 4px;
+  flex-shrink: 0;
 }
 .topbar .status {
   color: var(--rr-muted);
-  font-size: 12px;
-  margin-right: 8px;
-  min-width: 48px;
+  font-size: 11px;
+  margin-right: 4px;
+  min-width: 40px;
+  text-align: right;
   display: inline-block;
 }
 .btn.import {
