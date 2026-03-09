@@ -293,6 +293,7 @@ app/
 │   │   │       ├── message-renderer.ts
 │   │   │       ├── panel-shell.ts
 │   │   │       ├── quick-entries.ts
+│   │   │       ├── quick-launcher.ts
 │   │   │       ├── search-input.ts
 │   │   │       ├── shadow-host.ts
 │   │   │       ├── styles.ts
@@ -433,4 +434,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 310 files
+99 directories, 311 files

@@ -60,7 +60,7 @@ interface QueuedMessage {
 
 const LAUNCHER_WIDTH = 394;
 const LAUNCHER_HEIGHT = 600;
-const ICON_WIDTH_PLUS_GAP = 74;
+const ICON_WIDTH = 64;
 
 const QUICK_LAUNCHER_STYLES = /* css */ `
   ${QUICK_PANEL_STYLES}
@@ -84,7 +84,6 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px;
   }
 
   /* Keep the icon + input on one visual axis. The icon's hover translateY causes a vertical misalignment/jump
@@ -151,7 +150,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     gap: 10px;
     overflow-y: auto;
     height: 100%;
-    padding: 14px 6px 6px 6px;
+    padding: 6px;
     scrollbar-width: none;
 
     /* Mask is applied dynamically via JS (updateScrollMask) based on scroll position. */
@@ -297,7 +296,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   }
 
   .qp-quick-launcher[data-expanded='true'] .qp-quick-launcher-input {
-    width: ${LAUNCHER_WIDTH - ICON_WIDTH_PLUS_GAP}px;
+    width: ${LAUNCHER_WIDTH - ICON_WIDTH}px;
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
     pointer-events: auto;
@@ -308,6 +307,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   .qp-quick-launcher-input-shell {
     border-radius: 24px;
     padding: 4px 5px 4px 12px;
+    margin: 0 10px 0 6px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -583,7 +583,7 @@ export function createQuickPanelLauncher(
     const hasMessages = messagesScrollEl.childElementCount > 0;
 
     // Use fixed pixel width during expand to avoid jumping when parent width changes during collapse.
-    // LAUNCHER_WIDTH - ICON_WIDTH_PLUS_GAP = 394 - 74 = 320px for messages.
+    // LAUNCHER_WIDTH - ICON_WIDTH = 394 - 74 = 320px for messages.
     messagesWrapEl.style.maxWidth = expanded && hasMessages ? `${LAUNCHER_WIDTH}px` : '0px';
     messagesWrapEl.style.maxHeight = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
     messagesScrollEl.style.height = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
