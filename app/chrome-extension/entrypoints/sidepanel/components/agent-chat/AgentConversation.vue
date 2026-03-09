@@ -207,6 +207,7 @@ function formatSource(suggestion: MemorySuggestion): string {
 .thread-list {
   padding: 1.5rem 1.25rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2rem;
 }
 

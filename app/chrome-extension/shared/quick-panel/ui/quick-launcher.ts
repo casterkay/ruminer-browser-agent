@@ -132,7 +132,6 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     overflow: hidden;
     pointer-events: none;
     transition:
-      max-width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
       max-height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
       opacity 280ms ease,
       transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -567,6 +566,15 @@ export function createQuickPanelLauncher(
       // Animate to content height
       requestAnimationFrame(() => {
         updateDynamicHeights();
+        // Collapsing resets scrollTop to 0 (height → 0px); restore to bottom on re-expand.
+        if (messagesScrollEl) {
+          try {
+            messagesScrollEl.scrollTop = messagesScrollEl.scrollHeight;
+          } catch {
+            // ignore
+          }
+          updateScrollMask();
+        }
         if (options.floatingIcon.getElements().icon) {
           // Cosmetic: stop pulsing while in-use
           options.floatingIcon.getElements().icon?.classList.remove('pulsing');
@@ -583,7 +591,6 @@ export function createQuickPanelLauncher(
     const hasMessages = messagesScrollEl.childElementCount > 0;
 
     // Use fixed pixel width during expand to avoid jumping when parent width changes during collapse.
-    // LAUNCHER_WIDTH - ICON_WIDTH = 394 - 74 = 320px for messages.
     messagesWrapEl.style.maxWidth = expanded && hasMessages ? `${LAUNCHER_WIDTH}px` : '0px';
     messagesWrapEl.style.maxHeight = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
     messagesScrollEl.style.height = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
@@ -743,16 +750,20 @@ export function createQuickPanelLauncher(
 
     messagesScrollEl.replaceChildren(frag);
 
-    // Keep bottom visible
-    try {
-      messagesScrollEl.scrollTop = messagesScrollEl.scrollHeight;
-    } catch {
-      // ignore
-    }
-
+    // Apply height first so scrollHeight is correct when we read it.
     updateDynamicHeights();
-    // Update mask after content change + scroll-to-bottom so boundary state is correct.
-    requestAnimationFrame(updateScrollMask);
+
+    // Scroll to bottom and update the mask in one rAF so the browser has committed
+    // the new layout (height + content) before either measurement is taken.
+    requestAnimationFrame(() => {
+      if (!messagesScrollEl) return;
+      try {
+        messagesScrollEl.scrollTop = messagesScrollEl.scrollHeight;
+      } catch {
+        // ignore
+      }
+      updateScrollMask();
+    });
   }
 
   function renderQueuedCard(queued: QueuedMessage): HTMLElement {
@@ -966,7 +977,7 @@ export function createQuickPanelLauncher(
     const el = messagesScrollEl;
     if (!el) return;
     const atTop = el.scrollTop <= 0;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 3;
     // Build a gradient that fades at each end if there's hidden content there.
     // Top fade: transparent 0% → opaque 20%
     // Bottom fade: opaque 80% → transparent 100%

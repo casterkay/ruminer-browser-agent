@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="group">
+  <div ref="rootRef" class="group min-w-0">
     <!-- User Query Header -->
     <div class="mb-4">
       <div class="flex items-start gap-2">

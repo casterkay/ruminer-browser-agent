@@ -25,9 +25,9 @@
 </template>
 
 <script lang="ts" setup>
-import type { TimelineItem } from '../../../composables/useAgentThreads';
 import MarkdownRender from 'markstream-vue';
 import 'markstream-vue/index.css';
+import type { TimelineItem } from '../../../composables/useAgentThreads';
 // Import to register custom components (side-effect)
 import { AGENTCHAT_MD_SCOPE } from './markstream-thinking';
 
@@ -44,6 +44,13 @@ defineProps<{
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* markstream-vue ships contain-intrinsic-size:800px 600px with a :deep() override that
+   is invalid in plain CSS and silently ignored by browsers, leaving ghost 800px widths
+   when content-visibility:auto skips off-screen elements. Force visible rendering. */
+.markdown-content :deep(.markdown-renderer) {
+  content-visibility: visible;
 }
 
 .markdown-content :deep(pre) {
