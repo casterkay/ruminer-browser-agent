@@ -3,7 +3,7 @@
  * Note: Native message types are imported from the shared package
  */
 
-import type { RealtimeEvent } from 'chrome-mcp-shared';
+import type { AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
 
 // Message targets for routing
 export enum MessageTarget {
@@ -86,6 +86,7 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
   QUICK_PANEL_OPEN_SIDEPANEL: 'quick_panel_open_sidepanel',
   QUICK_PANEL_GET_BRANDING: 'quick_panel_get_branding',
+  QUICK_PANEL_ACTIVATE_SESSION: 'quick_panel_activate_session',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
@@ -273,6 +274,36 @@ export interface QuickPanelGetBrandingMessage {
 
 export type QuickPanelGetBrandingResponse =
   | { success: true; engineName: string; engineDisplayName: string; brandIconUrl: string }
+  | { success: false; error: string };
+
+/**
+ * Payload for activating (selecting/creating) a Quick Panel session.
+ * Background decides whether to resume the previous Quick Panel session
+ * (within a time threshold) or create a new one named "Quick Session N".
+ */
+export interface QuickPanelActivateSessionPayload {
+  /** Optional reason for telemetry/debugging. */
+  reason?: 'expand' | 'send' | 'shortcut';
+  /** When true, always create a new session. */
+  forceNew?: boolean;
+}
+
+export interface QuickPanelActivateSessionMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_ACTIVATE_SESSION;
+  payload?: QuickPanelActivateSessionPayload;
+}
+
+export type QuickPanelActivateSessionResponse =
+  | {
+      success: true;
+      sessionId: string;
+      sessionName: string;
+      reused: boolean;
+      engineName: string;
+      engineDisplayName: string;
+      brandIconUrl: string;
+      recentMessages?: AgentMessage[];
+    }
   | { success: false; error: string };
 
 /**

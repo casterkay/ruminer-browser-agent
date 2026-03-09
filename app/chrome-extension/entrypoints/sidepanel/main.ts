@@ -17,6 +17,30 @@ async function init(): Promise<void> {
   // This happens before Vue mounts, preventing theme flash
   await preloadAgentTheme();
 
+  // Sidepanel presence: used for Quick Panel icon toggle behavior.
+  try {
+    const port = chrome.runtime.connect({ name: 'ruminer_sidepanel_presence' });
+    const params = new URLSearchParams(location.search || '');
+    const tabIdFromUrl = Number(params.get('tabId') || '');
+    if (Number.isFinite(tabIdFromUrl) && tabIdFromUrl > 0) {
+      port.postMessage({ tabId: tabIdFromUrl });
+    } else {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof tab?.id === 'number') {
+        port.postMessage({ tabId: tab.id });
+      }
+    }
+    window.addEventListener('pagehide', () => {
+      try {
+        port.disconnect();
+      } catch {
+        // ignore
+      }
+    });
+  } catch {
+    // ignore
+  }
+
   // Mount Vue app
   createApp(App).mount('#app');
 }

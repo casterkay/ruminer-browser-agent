@@ -5,7 +5,7 @@
       <div class="flex items-start gap-2">
         <!-- Edit button (placeholder, appears on hover) -->
         <button
-          class="opacity-50 group-hover:opacity-100 transition-all p-1 cursor-pointer"
+          class="opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
           :style="{ color: 'var(--ac-text-subtle)' }"
           title="Edit (coming soon)"
         >

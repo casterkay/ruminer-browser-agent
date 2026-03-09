@@ -14,6 +14,13 @@ const CHROME_EXTENSION_KEY = process.env.CHROME_EXTENSION_KEY;
 // Detect dev mode early for manifest-level switches
 const IS_DEV = process.env.NODE_ENV !== 'production' && process.env.MODE !== 'production';
 
+const DEV_SERVER_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+].join(' ');
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
@@ -111,7 +118,14 @@ export default defineConfig({
     // 注意：以下安全策略在开发环境会阻断 dev server 的资源加载，
     // 只在生产环境启用，开发环境交由 WXT 默认策略处理。
     ...(IS_DEV
-      ? {}
+      ? {
+          // Dev-only CSP: allow WXT/Vite dev server scripts.
+          // WXT may pick 3000 or 3001 depending on availability; allow both.
+          content_security_policy: {
+            extension_pages: `script-src 'self' 'wasm-unsafe-eval' ${DEV_SERVER_ORIGINS}; object-src 'self';`,
+            sandbox: `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${DEV_SERVER_ORIGINS}; sandbox allow-scripts allow-forms allow-popups allow-modals; child-src 'self';`,
+          },
+        }
       : {
           cross_origin_embedder_policy: { value: 'require-corp' as const },
           cross_origin_opener_policy: { value: 'same-origin' as const },

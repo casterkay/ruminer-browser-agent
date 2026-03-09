@@ -32,6 +32,16 @@ export interface FloatingIconManager {
   toggle: () => void;
   /** Check if visible */
   isVisible: () => boolean;
+  /**
+   * Get internal DOM elements for composition.
+   * Returns nulls before `show()` creates the Shadow DOM.
+   */
+  getElements: () => {
+    host: HTMLElement | null;
+    shadowRoot: ShadowRoot | null;
+    container: HTMLElement | null;
+    icon: HTMLElement | null;
+  };
   /** Get current position */
   getPosition: () => { bottom: number; right: number };
   /** Set position programmatically */
@@ -328,12 +338,12 @@ const FLOATING_ICON_STYLES = /* css */ `
     position: absolute;
     bottom: calc(100% + 14px);
     right: 0;
-    padding: 8px 14px;
+    padding: 6px 12px;
     background: #1e1b18;
     border: 1px solid rgba(255, 200, 100, 0.15);
-    border-radius: 10px;
+    border-radius: 99px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: #f5e6d3;
     white-space: nowrap;
@@ -471,6 +481,7 @@ function savePosition(position: { bottom: number; right: number }): void {
 export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingIconManager {
   let hostElement: HTMLElement | null = null;
   let shadowRoot: ShadowRoot | null = null;
+  let containerElement: HTMLElement | null = null;
   let iconElement: HTMLElement | null = null;
   let tooltipElement: HTMLElement | null = null;
   let rippleElement: HTMLElement | null = null;
@@ -516,6 +527,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
       bottom: ${currentBottom}px;
       right: ${currentRight}px;
     `;
+    containerElement = container;
 
     // Create icon button
     iconElement = document.createElement('div');
@@ -530,7 +542,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     // Create tooltip
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'floating-icon-tooltip';
-    tooltipElement.textContent = 'Ask AI (Ctrl+Shift+U)';
+    tooltipElement.textContent = 'Quick Chat (Hover) · Side Panel (Click)';
     iconElement.appendChild(tooltipElement);
 
     // Add event listeners
@@ -566,7 +578,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     // Keyboard accessibility
     element.setAttribute('tabindex', '0');
     element.setAttribute('role', 'button');
-    element.setAttribute('aria-label', 'Open AI Chat');
+    element.setAttribute('aria-label', 'Toggle Side Panel');
     element.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -785,6 +797,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
       hostElement = null;
     }
     shadowRoot = null;
+    containerElement = null;
     iconElement = null;
     tooltipElement = null;
     rippleElement = null;
@@ -796,6 +809,12 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     hide,
     toggle,
     isVisible: checkVisible,
+    getElements: () => ({
+      host: hostElement,
+      shadowRoot,
+      container: containerElement,
+      icon: iconElement,
+    }),
     getPosition,
     setPosition,
     pulse,

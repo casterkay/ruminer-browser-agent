@@ -269,7 +269,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
   return [
     createBaseFlow(nowIso, {
       id: 'ruminer.chatgpt.scanner.v1',
-      name: 'ChatGPT — Scanner',
+      name: 'ChatGPT - Import All',
       description:
         'Scans the ChatGPT sidebar and enqueues ingestion runs for new/moved conversations.',
       entryNodeId: 'n.navigate_list',
@@ -293,7 +293,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
     }),
     createBaseFlow(nowIso, {
       id: 'ruminer.chatgpt.conversation_ingest.v1',
-      name: 'ChatGPT — Conversation ingest',
+      name: 'ChatGPT - Import Conversation',
       description: 'Extracts messages from a ChatGPT conversation and upserts them into EverMemOS.',
       entryNodeId: 'n.navigate_conversation',
       nodes: conversationNodes,

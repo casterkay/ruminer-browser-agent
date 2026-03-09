@@ -23,7 +23,8 @@ export async function openAgentChatSidepanel(
 ): Promise<void> {
   try {
     // Build deep-link path with optional session navigation
-    let path = 'sidepanel.html?tab=agent-chat';
+    // Always include tabId so sidepanel can report presence reliably (without querying tabs API).
+    let path = `sidepanel.html?tab=agent-chat&tabId=${encodeURIComponent(String(tabId))}`;
     if (sessionId) {
       path += `&view=chat&sessionId=${encodeURIComponent(sessionId)}`;
     }

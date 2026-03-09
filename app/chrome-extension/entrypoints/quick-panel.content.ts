@@ -14,10 +14,12 @@
  */
 
 import {
+  createAgentBridge,
   createFloatingIcon,
-  createQuickPanelController,
+  createQuickPanelLauncher,
   type FloatingIconManager,
-  type QuickPanelController,
+  type QuickPanelAgentBridge,
+  type QuickPanelLauncherManager,
 } from '@/shared/quick-panel';
 
 import {
@@ -37,11 +39,12 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
-    let controller: QuickPanelController | null = null;
     let floatingIcon: FloatingIconManager | null = null;
+    let launcher: QuickPanelLauncherManager | null = null;
+    let agentBridge: QuickPanelAgentBridge | null = null;
 
     async function resolveSelectedEngineBranding(): Promise<{
-      subtitle: string;
+      engineDisplayName: string;
       brandIconUrl: string;
       engineName: string;
     }> {
@@ -52,7 +55,7 @@ export default defineContentScript({
 
         if (response?.success) {
           return {
-            subtitle: response.engineDisplayName || 'Agent',
+            engineDisplayName: response.engineDisplayName || 'Agent',
             brandIconUrl: response.brandIconUrl || '',
             engineName: response.engineName || '',
           };
@@ -61,14 +64,14 @@ export default defineContentScript({
         // ignore
       }
 
-      return { subtitle: 'Agent', brandIconUrl: '', engineName: '' };
+      return { engineDisplayName: 'Agent', brandIconUrl: '', engineName: '' };
     }
 
     function refreshBranding(): void {
-      if (!controller) return;
+      if (!launcher) return;
 
-      void resolveSelectedEngineBranding().then(({ subtitle, brandIconUrl, engineName }) => {
-        controller?.setBranding({ subtitle, brandIconUrl, engineName });
+      void resolveSelectedEngineBranding().then(({ engineDisplayName, brandIconUrl }) => {
+        launcher?.setBranding({ engineDisplayName, brandIconUrl });
       });
     }
 
@@ -87,25 +90,38 @@ export default defineContentScript({
     /**
      * Ensure controller is initialized (lazy initialization)
      */
-    function ensureController(): QuickPanelController {
-      if (!controller) {
-        controller = createQuickPanelController({
-          title: 'Ruminer Browser Agent',
-          subtitle: 'Agent',
-          placeholder: 'Ask about this page...',
-          brandIconUrl: '',
-        });
+    function ensureBridge(): QuickPanelAgentBridge {
+      if (!agentBridge || agentBridge.isDisposed()) {
+        agentBridge = createAgentBridge();
       }
+      return agentBridge;
+    }
+
+    function ensureLauncher(): QuickPanelLauncherManager {
+      if (!floatingIcon) {
+        throw new Error('Floating icon not initialized');
+      }
+
+      if (!launcher) {
+        launcher = createQuickPanelLauncher({
+          floatingIcon,
+          agentBridge: ensureBridge(),
+          placeholder: 'Ask about this page…',
+          maxRecentMessages: 10,
+        });
+        launcher.mount();
+      }
+
       refreshBranding();
-      return controller;
+      return launcher;
     }
 
     /**
      * Initialize floating icon
      */
-    async function initFloatingIcon(): Promise<void> {
+    async function initFloatingIcon(options?: { force?: boolean }): Promise<void> {
       // Check if enabled
-      const enabled = await isFloatingIconEnabled();
+      const enabled = options?.force === true ? true : await isFloatingIconEnabled();
       if (!enabled) return;
       if (floatingIcon) return;
 
@@ -113,14 +129,15 @@ export default defineContentScript({
         initialBottom: 24,
         initialRight: 24,
         onClick: () => {
-          const ctrl = ensureController();
-          refreshBranding();
-          ctrl.toggle();
+          const bridge = ensureBridge();
+          void bridge.openSidepanel();
+          launcher?.collapse({ force: true });
         },
       });
 
       // Show the floating icon
       floatingIcon.show();
+      ensureLauncher();
 
       // Initial pulse after a delay to draw attention
       setTimeout(() => {
@@ -140,6 +157,8 @@ export default defineContentScript({
             initFloatingIcon();
           }
         } else {
+          launcher?.dispose();
+          launcher = null;
           if (floatingIcon) {
             floatingIcon.dispose();
             floatingIcon = null;
@@ -165,37 +184,40 @@ export default defineContentScript({
       const msg = message as { action?: string } | undefined;
 
       if (msg?.action === 'toggle_quick_panel') {
-        try {
-          const ctrl = ensureController();
-          refreshBranding();
-          ctrl.toggle();
-          const visible = ctrl.isVisible();
-          sendResponse({ success: true, visible });
-        } catch (err) {
-          console.error('[QuickPanelContentScript] Toggle error:', err);
-          sendResponse({ success: false, error: String(err) });
-        }
+        void (async () => {
+          try {
+            await initFloatingIcon({ force: true });
+            if (!floatingIcon) throw new Error('Floating icon is disabled');
+            const ui = ensureLauncher();
+            ui.toggle({ focus: true });
+            sendResponse({ success: true, visible: ui.isExpanded() });
+          } catch (err) {
+            console.error('[QuickPanelContentScript] Toggle error:', err);
+            sendResponse({ success: false, error: String(err) });
+          }
+        })();
         return true; // Async response
       }
 
       if (msg?.action === 'show_quick_panel') {
-        try {
-          const ctrl = ensureController();
-          refreshBranding();
-          ctrl.show();
-          sendResponse({ success: true });
-        } catch (err) {
-          console.error('[QuickPanelContentScript] Show error:', err);
-          sendResponse({ success: false, error: String(err) });
-        }
+        void (async () => {
+          try {
+            await initFloatingIcon({ force: true });
+            if (!floatingIcon) throw new Error('Floating icon is disabled');
+            const ui = ensureLauncher();
+            ui.expand({ focus: true });
+            sendResponse({ success: true });
+          } catch (err) {
+            console.error('[QuickPanelContentScript] Show error:', err);
+            sendResponse({ success: false, error: String(err) });
+          }
+        })();
         return true;
       }
 
       if (msg?.action === 'hide_quick_panel') {
         try {
-          if (controller) {
-            controller.hide();
-          }
+          launcher?.collapse({ force: true });
           sendResponse({ success: true });
         } catch (err) {
           console.error('[QuickPanelContentScript] Hide error:', err);
@@ -207,8 +229,8 @@ export default defineContentScript({
       if (msg?.action === 'get_quick_panel_status') {
         sendResponse({
           success: true,
-          visible: controller?.isVisible() ?? false,
-          initialized: controller !== null,
+          visible: launcher?.isExpanded() ?? false,
+          initialized: launcher !== null,
         });
         return true;
       }
@@ -224,10 +246,10 @@ export default defineContentScript({
     window.addEventListener('pagehide', () => {
       chrome.runtime.onMessage.removeListener(handleMessage);
       chrome.storage.onChanged.removeListener(handleStorageChange);
-      if (controller) {
-        controller.dispose();
-        controller = null;
-      }
+      launcher?.dispose();
+      launcher = null;
+      agentBridge?.dispose();
+      agentBridge = null;
       if (floatingIcon) {
         floatingIcon.dispose();
         floatingIcon = null;

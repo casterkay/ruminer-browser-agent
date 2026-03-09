@@ -73,6 +73,17 @@ export {
 } from './floating-icon';
 
 // ============================================================
+// Hover Launcher (new Quick Panel UX)
+// ============================================================
+
+export {
+  createQuickPanelLauncher,
+  type QuickPanelLauncherBranding,
+  type QuickPanelLauncherManager,
+  type QuickPanelLauncherOptions,
+} from './quick-launcher';
+
+// ============================================================
 // Styles
 // ============================================================
 

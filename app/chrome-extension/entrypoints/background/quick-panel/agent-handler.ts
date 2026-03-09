@@ -13,7 +13,7 @@
  * @see https://developer.chrome.com/docs/extensions/mv3/service_workers/
  */
 
-import type { AgentActRequest, RealtimeEvent } from 'chrome-mcp-shared';
+import type { AgentActRequest, AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
 import { NativeMessageType } from 'chrome-mcp-shared';
 
 import { NATIVE_HOST, STORAGE_KEYS } from '@/common/constants';
@@ -21,6 +21,8 @@ import {
   BACKGROUND_MESSAGE_TYPES,
   TOOL_MESSAGE_TYPES,
   type QuickPanelAIEventMessage,
+  type QuickPanelActivateSessionMessage,
+  type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIMessage,
   type QuickPanelCancelAIResponse,
   type QuickPanelGetBrandingMessage,
@@ -40,6 +42,21 @@ const KEEPALIVE_TAG = 'quick-panel-ai';
 
 /** Storage key for AgentChat selected session ID (owned by sidepanel composables) */
 const STORAGE_KEY_SELECTED_SESSION = 'agent-selected-session-id';
+const STORAGE_KEY_SELECTED_PROJECT = 'agent-selected-project-id';
+
+/** Quick Panel session bookkeeping (owned by Quick Panel). */
+const STORAGE_KEY_QP_LAST_SESSION_ID = 'quick-panel-last-session-id';
+const STORAGE_KEY_QP_LAST_ACTIVE_AT = 'quick-panel-last-active-at';
+const STORAGE_KEY_QP_SESSION_COUNTER = 'quick-panel-session-counter';
+
+/** Resume previous Quick Panel session if last active within this threshold. */
+const QUICK_PANEL_SESSION_RESUME_THRESHOLD_MS = 30 * 60 * 1000;
+
+/** Number of messages to return to the launcher on expand. */
+const QUICK_PANEL_RECENT_MESSAGES_LIMIT = 12;
+
+/** Fallback engine when no session exists yet. */
+const QUICK_PANEL_DEFAULT_ENGINE_NAME = 'openclaw';
 
 /** Timeout for initial SSE connection establishment */
 const SSE_CONNECT_TIMEOUT_MS = 3000;
@@ -88,6 +105,9 @@ const activeRequests = new Map<string, ActiveRequest>();
 
 /** Initialization flag to prevent duplicate listeners */
 let initialized = false;
+
+/** Sidepanel presence tracked via a long-lived port from sidepanel UI. */
+const sidepanelPresenceByTabId = new Map<number, { connectedAt: number }>();
 
 // ============================================================
 // Utility Functions
@@ -248,6 +268,85 @@ async function validateSession(port: number, sessionId: string): Promise<boolean
   } catch {
     return false;
   }
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; data?: T }> {
+  try {
+    const response = await fetch(url, init);
+    if (!response.ok) return { ok: false };
+    const data = (await response.json().catch(() => null)) as T | null;
+    if (!data) return { ok: true, data: data as T };
+    return { ok: true, data };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function fetchSessionInfo(
+  port: number,
+  sessionId: string,
+): Promise<{ id: string; name?: string; engineName?: string } | null> {
+  const url = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}`;
+  const result = await fetchJson<any>(url);
+  if (!result.ok) return null;
+  const session = result.data?.session;
+  if (!session?.id) return null;
+  return {
+    id: String(session.id),
+    name: typeof session.name === 'string' ? session.name : undefined,
+    engineName: typeof session.engineName === 'string' ? session.engineName : undefined,
+  };
+}
+
+async function fetchRecentSessionMessages(
+  port: number,
+  sessionId: string,
+  limit: number,
+): Promise<AgentMessage[]> {
+  const safeLimit = Math.max(0, Math.min(50, Math.floor(limit)));
+  if (safeLimit <= 0) return [];
+
+  const url = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=${safeLimit}&offset=0`;
+  const result = await fetchJson<any>(url);
+  if (!result.ok) return [];
+  const messages = Array.isArray(result.data?.messages) ? result.data.messages : [];
+  return messages as AgentMessage[];
+}
+
+async function listProjects(port: number): Promise<Array<{ id: string }>> {
+  const url = `http://127.0.0.1:${port}/agent/projects`;
+  const result = await fetchJson<any>(url);
+  if (!result.ok) return [];
+  const projects = Array.isArray(result.data?.projects) ? result.data.projects : [];
+  return projects
+    .map((p: any) => ({ id: typeof p?.id === 'string' ? p.id : '' }))
+    .filter((p: { id: string }) => !!p.id);
+}
+
+async function createSessionForProject(params: {
+  port: number;
+  projectId: string;
+  engineName: string;
+  name: string;
+}): Promise<{ id: string; name?: string; engineName?: string } | null> {
+  const url = `http://127.0.0.1:${params.port}/agent/projects/${encodeURIComponent(params.projectId)}/sessions`;
+  const result = await fetchJson<any>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      engineName: params.engineName,
+      name: params.name,
+    }),
+  });
+
+  if (!result.ok) return null;
+  const session = result.data?.session;
+  if (!session?.id) return null;
+  return {
+    id: String(session.id),
+    name: typeof session.name === 'string' ? session.name : undefined,
+    engineName: typeof session.engineName === 'string' ? session.engineName : undefined,
+  };
 }
 
 // ============================================================
@@ -612,6 +711,16 @@ async function handleSendToAI(
     };
   }
 
+  // Update Quick Panel "last active" bookkeeping (used for resume threshold).
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionId,
+      [STORAGE_KEY_QP_LAST_ACTIVE_AT]: Date.now(),
+    });
+  } catch {
+    // ignore
+  }
+
   // Create request state
   const requestId = createRequestId();
   const releaseKeepalive = acquireKeepalive(KEEPALIVE_TAG);
@@ -653,6 +762,175 @@ async function handleSendToAI(
   void startRequest(request);
 
   return { success: true, requestId, sessionId };
+}
+
+/**
+ * Handle QUICK_PANEL_ACTIVATE_SESSION message.
+ * Resumes the previous Quick Panel session (within threshold) or creates a new "Quick Session N".
+ */
+async function handleActivateSession(
+  message: QuickPanelActivateSessionMessage,
+  sender: chrome.runtime.MessageSender,
+): Promise<QuickPanelActivateSessionResponse> {
+  const tabId = sender?.tab?.id;
+  const windowId = sender?.tab?.windowId;
+
+  if (typeof tabId !== 'number') {
+    return { success: false, error: 'Quick Panel request must originate from a tab.' };
+  }
+
+  const forceNew = message?.payload?.forceNew === true;
+
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEYS.NATIVE_SERVER_PORT,
+    STORAGE_KEY_SELECTED_SESSION,
+    STORAGE_KEY_SELECTED_PROJECT,
+    STORAGE_KEY_QP_LAST_SESSION_ID,
+    STORAGE_KEY_QP_LAST_ACTIVE_AT,
+    STORAGE_KEY_QP_SESSION_COUNTER,
+  ]);
+
+  const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+
+  const now = Date.now();
+  const lastSessionId = normalizeString(stored?.[STORAGE_KEY_QP_LAST_SESSION_ID]).trim();
+  const lastActiveAtRaw = stored?.[STORAGE_KEY_QP_LAST_ACTIVE_AT];
+  const lastActiveAt =
+    typeof lastActiveAtRaw === 'number'
+      ? lastActiveAtRaw
+      : typeof lastActiveAtRaw === 'string'
+        ? Number(lastActiveAtRaw)
+        : Number.NaN;
+
+  const resumeEligible =
+    !forceNew &&
+    !!lastSessionId &&
+    Number.isFinite(lastActiveAt) &&
+    now - lastActiveAt < QUICK_PANEL_SESSION_RESUME_THRESHOLD_MS;
+
+  // 1) Try resume
+  if (resumeEligible) {
+    const ok = await validateSession(port, lastSessionId);
+    if (ok) {
+      const sessionInfo = await fetchSessionInfo(port, lastSessionId);
+      if (sessionInfo?.id) {
+        try {
+          await chrome.storage.local.set({
+            [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id,
+            [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionInfo.id,
+            [STORAGE_KEY_QP_LAST_ACTIVE_AT]: now,
+          });
+        } catch {
+          // ignore
+        }
+
+        const recentMessages = await fetchRecentSessionMessages(
+          port,
+          sessionInfo.id,
+          QUICK_PANEL_RECENT_MESSAGES_LIMIT,
+        );
+
+        const engineName = normalizeString(sessionInfo.engineName).trim();
+        const brandIconUrl = engineName ? await resolveEngineIconUrl(engineName) : '';
+
+        return {
+          success: true,
+          sessionId: sessionInfo.id,
+          sessionName: sessionInfo.name || 'Quick Session',
+          reused: true,
+          engineName,
+          engineDisplayName: toEngineDisplayName(engineName),
+          brandIconUrl,
+          recentMessages,
+        };
+      }
+    }
+  }
+
+  // 2) Create new quick session
+  const selectedProjectId = normalizeString(stored?.[STORAGE_KEY_SELECTED_PROJECT]).trim();
+  let projectId = selectedProjectId;
+
+  if (!projectId) {
+    const projects = await listProjects(port);
+    projectId = projects[0]?.id || '';
+  }
+
+  if (!projectId) {
+    openAgentChatSidepanel(tabId, typeof windowId === 'number' ? windowId : undefined).catch(
+      () => {},
+    );
+    return {
+      success: false,
+      error: 'No Agent project selected. Please open AgentChat and select/create a project.',
+    };
+  }
+
+  // Pick an engine (prefer current selected session engine if available)
+  const selectedSessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+  let engineName = '';
+  if (selectedSessionId) {
+    const info = await fetchSessionInfo(port, selectedSessionId);
+    engineName = normalizeString(info?.engineName).trim();
+  }
+  if (!engineName) engineName = QUICK_PANEL_DEFAULT_ENGINE_NAME;
+
+  const counterRaw = stored?.[STORAGE_KEY_QP_SESSION_COUNTER];
+  const counter =
+    typeof counterRaw === 'number'
+      ? counterRaw
+      : typeof counterRaw === 'string'
+        ? Number(counterRaw)
+        : Number.NaN;
+  const nextN = Number.isFinite(counter) && counter > 0 ? Math.floor(counter) : 1;
+  const name = `Quick Session ${nextN}`;
+
+  let created = await createSessionForProject({ port, projectId, engineName, name });
+  if (!created && engineName !== QUICK_PANEL_DEFAULT_ENGINE_NAME) {
+    created = await createSessionForProject({
+      port,
+      projectId,
+      engineName: QUICK_PANEL_DEFAULT_ENGINE_NAME,
+      name,
+    });
+  }
+
+  if (!created?.id) {
+    return { success: false, error: 'Failed to create a Quick Session.' };
+  }
+
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_KEY_SELECTED_SESSION]: created.id,
+      [STORAGE_KEY_QP_LAST_SESSION_ID]: created.id,
+      [STORAGE_KEY_QP_LAST_ACTIVE_AT]: now,
+      [STORAGE_KEY_QP_SESSION_COUNTER]: nextN + 1,
+    });
+  } catch {
+    // ignore
+  }
+
+  const recentMessages = await fetchRecentSessionMessages(
+    port,
+    created.id,
+    QUICK_PANEL_RECENT_MESSAGES_LIMIT,
+  );
+
+  const createdEngineName = normalizeString(created.engineName).trim() || engineName;
+  const createdBrandIconUrl = createdEngineName
+    ? await resolveEngineIconUrl(createdEngineName)
+    : '';
+
+  return {
+    success: true,
+    sessionId: created.id,
+    sessionName: created.name || name,
+    reused: false,
+    engineName: createdEngineName,
+    engineDisplayName: toEngineDisplayName(createdEngineName),
+    brandIconUrl: createdBrandIconUrl,
+    recentMessages,
+  };
 }
 
 /**
@@ -731,7 +1009,7 @@ async function handleCancelAI(
 
 /**
  * Handle QUICK_PANEL_OPEN_SIDEPANEL message.
- * Opens the AgentChat sidepanel for the current tab.
+ * Toggles the AgentChat sidepanel for the current tab.
  */
 async function handleOpenSidepanel(
   sender: chrome.runtime.MessageSender,
@@ -743,25 +1021,53 @@ async function handleOpenSidepanel(
     return { success: false, error: 'Quick Panel request must originate from a tab.' };
   }
 
-  // Try synchronous open first (same as context menu handler)
   const sidePanel = chrome.sidePanel as any;
+
+  // IMPORTANT: sidePanel.open is user-gesture sensitive on some Chrome versions.
+  // Do not `await` before attempting to open; otherwise open may silently fail.
+  const isOpen = sidepanelPresenceByTabId.has(tabId);
+
+  if (isOpen) {
+    // Close by disabling for this tab (Chrome has no explicit "close" API).
+    try {
+      if (sidePanel?.setOptions) {
+        void sidePanel.setOptions({ tabId, enabled: false });
+      }
+    } catch {
+      // ignore
+    }
+    sidepanelPresenceByTabId.delete(tabId);
+    return { success: true };
+  }
+
+  // Open path: setOptions (fire-and-forget) then open synchronously.
+  // `setOptions` is async, but Chrome may apply enabling/path eagerly; do not await.
+  try {
+    if (sidePanel?.setOptions) {
+      const path = `sidepanel.html?tab=agent-chat&tabId=${encodeURIComponent(String(tabId))}`;
+      void sidePanel.setOptions({ tabId, path, enabled: true });
+    }
+  } catch {
+    // ignore
+  }
+
+  // Best-effort "sync open" (same as context menu handler).
   if (sidePanel?.open) {
     try {
       sidePanel.open({ tabId });
     } catch {
-      // Fallback to windowId if available
       if (typeof windowId === 'number') {
         try {
           sidePanel.open({ windowId });
         } catch {
-          // Both failed
+          // ignore
         }
       }
     }
   }
 
-  // Also run the async setup (setOptions)
-  await openAgentChatSidepanel(tabId, windowId);
+  // Also run the async setup (setOptions + deep-link options)
+  void openAgentChatSidepanel(tabId, windowId);
   return { success: true };
 }
 
@@ -921,6 +1227,25 @@ export function initQuickPanelAgentHandler(): void {
   if (initialized) return;
   initialized = true;
 
+  // Track sidepanel presence via a port from the sidepanel UI.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port?.name !== 'ruminer_sidepanel_presence') return;
+
+    let tabId: number | null = null;
+
+    port.onMessage.addListener((msg: any) => {
+      const nextTabId = typeof msg?.tabId === 'number' ? msg.tabId : null;
+      if (typeof nextTabId === 'number' && Number.isFinite(nextTabId)) {
+        tabId = nextTabId;
+        sidepanelPresenceByTabId.set(nextTabId, { connectedAt: Date.now() });
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (typeof tabId === 'number') sidepanelPresenceByTabId.delete(tabId);
+    });
+  });
+
   // Message listener for Quick Panel messages
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Handle QUICK_PANEL_SEND_TO_AI
@@ -948,6 +1273,17 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_OPEN_SIDEPANEL
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL) {
       handleOpenSidepanel(sender)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_ACTIVATE_SESSION
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_ACTIVATE_SESSION) {
+      handleActivateSession(message as QuickPanelActivateSessionMessage, sender)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

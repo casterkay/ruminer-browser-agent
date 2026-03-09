@@ -34,6 +34,8 @@ import {
   BACKGROUND_MESSAGE_TYPES,
   TOOL_MESSAGE_TYPES,
   type QuickPanelAIEventMessage,
+  type QuickPanelActivateSessionPayload,
+  type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIResponse,
   type QuickPanelOpenSidepanelResponse,
   type QuickPanelSendToAIPayload,
@@ -265,6 +267,32 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to open sidepanel' };
+    }
+  }
+
+  /**
+   * Activate the Quick Panel session.
+   *
+   * Background decides whether to resume the previous Quick Panel session
+   * (within a time threshold) or create a new one named "Quick Session N".
+   */
+  async activateSession(
+    payload?: QuickPanelActivateSessionPayload,
+  ): Promise<QuickPanelActivateSessionResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_ACTIVATE_SESSION,
+        payload,
+      });
+
+      return response as QuickPanelActivateSessionResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to activate session' };
     }
   }
 

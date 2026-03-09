@@ -333,6 +333,7 @@ export type {
 // UI Components
 export {
   createQuickEntries,
+  createQuickPanelLauncher,
   createQuickPanelMessageRenderer,
   // Search UI
   createSearchInput,
@@ -354,6 +355,10 @@ export type {
   QuickPanelAiChatPanelManager,
   QuickPanelAiChatPanelOptions,
   QuickPanelAiChatPanelState,
+  // Hover launcher
+  QuickPanelLauncherBranding,
+  QuickPanelLauncherManager,
+  QuickPanelLauncherOptions,
   QuickPanelMessageRenderer,
   QuickPanelMessageRendererOptions,
   // Shadow host
