@@ -237,33 +237,35 @@
         </div>
       </Transition>
 
-      <!-- Textarea -->
-      <textarea
-        ref="textareaRef"
-        :value="modelValue"
-        class="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-3 text-sm"
-        :style="{
-          height: `${textareaHeight}px`,
-          minHeight: `${MIN_HEIGHT}px`,
-          maxHeight: `${MAX_HEIGHT}px`,
-          overflowY: isOverflowing ? 'auto' : 'hidden',
-          fontFamily: 'var(--ac-font-body)',
-          color: 'var(--ac-text)',
-        }"
-        :placeholder="placeholder"
-        rows="1"
-        @input="handleInput"
-        @keydown.enter.exact.prevent="handleEnter"
-        @paste="handlePaste"
-      />
+      <!-- Textarea + Fake Caret wrapper (shared positioning context) -->
+      <div class="relative">
+        <textarea
+          ref="textareaRef"
+          :value="modelValue"
+          class="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-3 text-sm"
+          :style="{
+            height: `${textareaHeight}px`,
+            minHeight: `${MIN_HEIGHT}px`,
+            maxHeight: `${MAX_HEIGHT}px`,
+            overflowY: isOverflowing ? 'auto' : 'hidden',
+            fontFamily: 'var(--ac-font-body)',
+            color: 'var(--ac-text)',
+          }"
+          :placeholder="placeholder"
+          rows="1"
+          @input="handleInput"
+          @keydown.enter.exact.prevent="handleEnter"
+          @paste="handlePaste"
+        />
 
-      <!-- Fake caret overlay (opt-in comet effect, only mount when enabled) -->
-      <FakeCaretOverlay
-        v-if="enableFakeCaret"
-        :textarea-ref="textareaRef"
-        :enabled="true"
-        :value="modelValue"
-      />
+        <!-- Fake caret overlay (opt-in comet effect, only mount when enabled) -->
+        <FakeCaretOverlay
+          v-if="enableFakeCaret"
+          :textarea-ref="textareaRef"
+          :enabled="true"
+          :value="modelValue"
+        />
+      </div>
 
       <div class="flex items-center justify-between px-2 pb-2">
         <!-- Left Tools -->
@@ -348,6 +350,7 @@
 
 <script lang="ts" setup>
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import type { RecordedActionSequence } from '@/common/recording-context';
 import { computed, ref, toRef } from 'vue';
 import ILucideArrowUp from '~icons/lucide/arrow-up';
 import ILucideCamera from '~icons/lucide/camera';
@@ -363,7 +366,6 @@ import type { RequestState } from '../../composables/useAgentChat';
 import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
-import type { RecordedActionSequence } from '@/common/recording-context';
 
 const props = defineProps<{
   modelValue: string;
