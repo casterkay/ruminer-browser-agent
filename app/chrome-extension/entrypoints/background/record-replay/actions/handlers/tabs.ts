@@ -34,6 +34,7 @@ export const openTabHandler: ActionHandler<'openTab'> = {
 
   run: async (ctx, action) => {
     const params = action.params;
+    const active = params.active !== false;
 
     // Resolve URL if provided
     let url: string | undefined;
@@ -52,7 +53,7 @@ export const openTabHandler: ActionHandler<'openTab'> = {
         // Create new window
         const window = await chrome.windows.create({
           url: url || 'about:blank',
-          focused: true,
+          focused: active,
         });
 
         const tab = window?.tabs?.[0];
@@ -64,7 +65,7 @@ export const openTabHandler: ActionHandler<'openTab'> = {
         // Create new tab in current window
         const tab = await chrome.tabs.create({
           url: url || 'about:blank',
-          active: true,
+          active,
         });
 
         if (!tab.id) {

@@ -1,15 +1,11 @@
 import { z } from 'zod';
 
-import { emosUpsertMemory } from '@/entrypoints/background/ruminer/emos-client';
-import {
-  getLedgerEntry,
-  upsertLedgerEntry,
-} from '@/entrypoints/background/ruminer/ingestion-ledger';
-import { toFailedLedgerEntry } from '@/entrypoints/background/ruminer/ledger-policy';
-
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
+import { emosUpsertMemory } from './emos-client';
+import { getLedgerEntry, upsertLedgerEntry } from './ingestion-ledger';
+import { toFailedLedgerEntry } from './ledger-policy';
 import type { LedgerBatchItem } from './types';
 import { ensureObject, sleep, toErrorResult } from './utils';
 

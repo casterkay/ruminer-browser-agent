@@ -3,15 +3,15 @@
  * @description 实现 Flow 的 CRUD 操作
  */
 
-import type { FlowId } from '../domain/ids';
+import { normalizeToolList } from '@/common/flow-approvals';
+import { sha256Hex } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/hash';
+import { stableJson } from '@/entrypoints/shared/utils/stable-json';
+import { RR_ERROR_CODES, createRRError } from '../domain/errors';
 import type { FlowV3 } from '../domain/flow';
 import { FLOW_SCHEMA_VERSION } from '../domain/flow';
-import { RR_ERROR_CODES, createRRError } from '../domain/errors';
+import type { FlowId } from '../domain/ids';
 import type { FlowsStore } from '../engine/storage/storage-port';
 import { RR_V3_STORES, withTransaction } from './db';
-import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
-import { stableJson } from '@/entrypoints/shared/utils/stable-json';
-import { normalizeToolList } from '@/common/flow-approvals';
 
 async function computeFlowVersionHash(flow: FlowV3): Promise<string> {
   const { createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = flow;

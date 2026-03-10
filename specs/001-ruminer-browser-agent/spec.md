@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-ruminer-browser-agent`
 **Created**: 2026-02-25
-**Updated**: 2026-02-27
+**Updated**: 2026-03-10
 **Status**: Draft
 **Input**: Blueprint v0.8 — Build a sidepanel-first Chrome extension
 that connects to the native-server for chat, and the native-server connects to the OpenClaw Gateway
@@ -76,9 +76,10 @@ direct EMOS client (autonomous ingestion workflows).
   paired? → A: Auto-pair silently. Since the Gateway is localhost-only,
   no explicit pairing approval is required.
 - Q: What happens to in-flight work when the user clicks "Stop" on a
-  running workflow? → A: Abandon in-flight items immediately. The stored
-  conversation order list is NOT updated. Idempotency guarantees make
-  this safe — any items that were mid-flight are deduped on the next run.
+  running workflow? → A: Abandon in-flight items immediately. Persisted
+  scan/import state MUST NOT advance past the last successfully ingested
+  checkpoint. Idempotency guarantees make this safe — any items that
+  were mid-flight are deduped on the next run.
 - Q: What are the EMOS retry limits for failed ingestion API calls? →
   A: 3 retries with exponential backoff (1s, 2s, 4s), then fail the
   entire run and stop. EMOS unreachability is a systemic failure, not
@@ -104,42 +105,30 @@ direct EMOS client (autonomous ingestion workflows).
   It doesn't. If not authenticated, the workflow fails immediately
   with a notification to the user. No "waiting for user" state. The
   user authenticates manually and the next cron run (or manual trigger)
-  picks up where it left off via the stored conversation order list.
-- Q: How do conversation filters interact with scanning? → A: Filters
-  are workflow configuration parameters (e.g., minimum message count
-  in a conversation). They are pre-applied on the conversation list
-  before scanning logic. Filtered-out conversations are skipped (not
-  ingested). If the user updates filter parameters, the stored
-  conversation order list MUST be cleared, forcing a full re-scan.
+  picks up where it left off via persisted import state (cursor /
+  checkpoints).
+- Q: How do conversation filters interact with ingestion? → A: Filters
+  are workflow configuration parameters (e.g., minimum message count,
+  date range). They are applied at the conversation-list stage.
+  Filtered-out conversations are skipped (not ingested). If the user
+  updates filter parameters, the workflow MUST clear its persisted
+  import state to avoid incorrect skipping.
 - Q: Which host permission model should the extension use? → A:
   `<all_urls>` in manifest (granted at install, no per-site prompts).
   Standard for browser automation extensions that must work on
   arbitrary sites.
-- Q: How does the workflow know when to stop scanning the conversation
-  list (activity-sorted, lazy-loaded, no per-item timestamps in DOM)?
-  → A: Store an **ordered list** of all ingested conversation IDs (in
-  platform list order). On each run, scan from the top; if 3
-  consecutive conversations appear in the **same order** as the stored
-  list, consider it past the "new activity" zone and stop. New IDs or
-  IDs that moved out of position indicate new activity and must be
-  processed. Periodic full scans catch edge cases. On filter parameter
-  change, clear the stored list (forces full scan). On stop/failure,
-  do not update the stored list (next run rescans from previous state).
-- Q: How are ingestion workflows structured per platform? → A: Two
-  workflows per platform: (1) a **conversation ingestion workflow**
-  that takes a single conversation URL, extracts all messages, and
-  ingests them into EMOS via the ledger; and (2) a **conversation list
-  scanner workflow** that scans the platform's conversation list,
-  applies the heuristic stop and filter logic, identifies conversations
-  needing processing, and enqueues a conversation ingestion run for
-  each. The scanner is the entry point the user triggers (manually or
-  via cron); the conversation ingestion workflow is triggered by the
-  scanner (or manually by the user for a specific conversation URL).
-- Q: Can conversation ingestion workflows run in parallel? → A: Yes.
-  Multiple conversation ingestion runs (same platform, different
-  conversation URLs) MAY execute in parallel, each in its own tab,
-  bounded by a configurable max parallel tabs limit (default 3).
-  Scanner workflows remain single-instance per platform.
+- Q: How does a workflow efficiently import “all conversations” without
+  DOM scraping? → A: Use platform backend APIs with pagination. For
+  ChatGPT, use `/backend-api/conversations` (offset/limit/total) to list
+  conversations and `/backend-api/conversation/:id` to fetch details.
+  Persist an import cursor (offset) and a lightweight per-conversation
+  “last imported update_time” map so scheduled runs can skip unchanged
+  conversations efficiently while still picking up updates.
+- Q: How are ingestion workflows structured for the ChatGPT MVP? → A:
+  Ship two built-in workflows: (1) **ChatGPT – Import All**, which runs
+  in the background and does not depend on the user’s current tab; and
+  (2) **ChatGPT – Import Current Conversation**, which ingests the conversation
+  being viewed when the active URL starts with `https://chatgpt.com/c/`.
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -209,19 +198,24 @@ tools are restricted immediately.
 A user wants to collect their AI chat conversations from platforms
 (ChatGPT, Gemini, Claude, DeepSeek) into their personal knowledge base
 (EverMemOS). The user opens the sidepanel Workflows tab and clicks
-"Run" on the scanner workflow for their target platform. Ruminer runs
-the pipeline locally using RR-V3: the scanner navigates to the
-platform's conversation list, identifies conversations needing
-processing (using the heuristic stop and filter logic), and enqueues
-a conversation ingestion run for each. Each conversation ingestion run
-navigates to the conversation, extracts messages, normalizes and hashes
-them, checks the local ingestion ledger, and ingests items into EMOS
-via its direct EMOS client. The user can also trigger the conversation
-ingestion workflow directly for a specific conversation URL. OpenClaw
-is not required for ingestion runs, but can be used for agent-driven
-ingestion and workflow authoring/repair. The user can see progress and
-stop the workflow at any time. Re-running is always safe — no
-duplicates are created.
+"Run" on a built-in workflow. For the MVP, Ruminer ships two ChatGPT
+workflows:
+
+1. **ChatGPT – Import All**: imports conversation history in the
+   background using ChatGPT’s internal backend APIs (no DOM scraping),
+   processes data in bounded batches for MV3 reliability, skips
+   unchanged/previously ingested content efficiently using a persisted
+   cursor + the ingestion ledger, and can be scheduled via cron.
+2. **ChatGPT – Import Current Conversation**: imports the conversation currently
+   being viewed when the active tab URL starts with
+   `https://chatgpt.com/c/`. This workflow ingests regardless of whether
+   the conversation already exists in the ledger (message-level
+   idempotency still prevents duplicates).
+
+Both workflows normalize messages, compute idempotency keys, write to
+EMOS via the extension’s direct EMOS client, and always emit a browser
+notification summarizing the run. OpenClaw is not required for
+ingestion runs, but can be used for workflow authoring/repair.
 
 **Why this priority**: Ingestion is the foundational data pipeline.
 Without content flowing into EverMemOS, the memory-grounded chat
@@ -229,12 +223,12 @@ Without content flowing into EverMemOS, the memory-grounded chat
 core "AI chat history collector" value proposition.
 
 **Independent Test**: Verify OpenClaw Gateway connectivity (for chat)
-and EMOS connectivity (for ingestion) in Options, run the ChatGPT
-scanner workflow from the sidepanel (which enqueues conversation
-ingestion runs), verify items appear in the Memory tab, re-run the
-scanner, and confirm no duplicates are created. Also test triggering
-the conversation ingestion workflow directly with a specific
-conversation URL.
+and EMOS connectivity (for ingestion) in Options, run **ChatGPT – Import
+All** from the sidepanel and confirm it ingests into the Memory tab
+without duplicates on rerun. Then open a ChatGPT conversation in a tab
+and run **ChatGPT – Import Current Conversation** to ingest that specific
+conversation. Confirm each run produces a browser notification with a
+summary.
 
 **Acceptance Scenarios**:
 
@@ -253,33 +247,41 @@ conversation URL.
      health.
 
 2. **Given** OpenClaw and EMOS are connected, **When** the user opens
-   the sidepanel Workflows tab and clicks "Run" on a scanner workflow,
-   **Then** the scanner scans the conversation list (using heuristic
-   stop), enqueues conversation ingestion runs for conversations
-   needing processing, and the run queue dispatches them up to the
-   max parallel tabs limit (default 3). The user sees visible progress
-   (scanner: conversations found; ingestion: messages processed per
-   conversation) and can stop at any time.
+   the sidepanel Workflows tab and clicks "Run" on **ChatGPT – Import
+   All**, **Then** the workflow runs in the background (not dependent
+   on the user’s current tab), lists conversations via backend APIs,
+   ingests a bounded batch, persists its cursor/checkpoints, and can be
+   safely re-run without duplicates.
 
-3. **Given** a conversation ingestion workflow is running, **When** it
-   extracts messages from the target conversation, **Then** each
-   message is normalized into the Standard EMOS Message JSON schema
-   (`message_id`, `create_time`, `sender`, `content`, `group_id`, plus
-   optional fields) and a stable idempotency key is computed using the
-   format `platform:conversation_id:message_index`.
+3. **Given** the user is viewing a ChatGPT conversation in the browser,
+   **When** they run **ChatGPT – Import Current Conversation**, **Then** the
+   workflow validates that the current URL starts with
+   `https://chatgpt.com/c/`, fetches conversation details via backend
+   APIs, and ingests the conversation regardless of whether it already
+   exists in the ledger.
 
-4. **Given** normalized items are ready for ingestion, **When** the
+4. **Given** extracted messages are ready for ingestion, **When** the
+   workflow normalizes them, **Then** each message conforms to the
+   Standard EMOS Message JSON schema and a stable idempotency key is
+   computed using the format `platform:conversation_id:message_index`.
+
+5. **Given** normalized items are ready for ingestion, **When** the
    system checks the local ingestion ledger, **Then** new items (no
    matching item_key) are ingested into EverMemOS, items with changed
    content (same item_key, different content_hash) are updated, and
    unchanged items are skipped.
 
-5. **Given** a workflow run completes, **When** the user re-runs the
+6. **Given** a workflow run completes, **When** the user re-runs the
    same workflow, **Then** no duplicate entries are created in
    EverMemOS and the ledger accurately reflects the status of every
    item.
 
-6. **Given** the browser's service worker restarts mid-run (MV3
+7. **Given** a workflow run finishes (successfully or with partial
+   failures), **When** it ends, **Then** the extension posts a browser
+   notification containing a human-readable summary (counts, duration,
+   and key error message if any).
+
+8. **Given** the browser's service worker restarts mid-run (MV3
    lifecycle), **When** the run is recovered, **Then** it resumes from
    the last successfully ingested checkpoint without data loss or
    duplication.
@@ -361,8 +363,8 @@ and inspect the event timeline for a completed or failed run.
 
 5. **Given** a workflow is running, **When** the user clicks "Stop",
    **Then** in-flight items are abandoned immediately (within 2 seconds),
-   the stored conversation order list is NOT updated (preserving
-   previous scan state), and any mid-flight items are safely deduped
+   persisted import state (cursor/checkpoints) is NOT advanced past the
+   last successfully ingested checkpoint, and any mid-flight items are safely deduped
    on the next run via the ingestion ledger.
 
 ---
@@ -417,11 +419,11 @@ a flow, run the flow, and verify it executes the recorded actions.
 - What happens when EverMemOS is unreachable during an ingestion run?
   The system MUST retry with exponential backoff (3 attempts: 1s, 2s,
   4s delays), log the failure in the ingestion ledger with status
-  "failed" and the error details, NOT update the stored conversation
-  order list, and **fail the entire run** after exhausting retries
+  "failed" and the error details, NOT advance persisted import state,
+  and **fail the entire run** after exhausting retries
   (EMOS unreachability is systemic — continuing is wasteful). The user
   sees a "connection failed" status with a "retry" action. The next
-  run rescans from the previous conversation order state.
+  run resumes from the previous checkpoint.
 
 - What happens when the idempotency key format changes? The system
   MUST use the stable format `platform:conversation_id:message_index`
@@ -436,15 +438,15 @@ a flow, run the flow, and verify it executes the recorded actions.
   The workflow MUST fail immediately with a notification ("Not logged
   in to {platform} — please log in and re-run or wait for next
   scheduled run"). No "waiting for user" state. The stored conversation
-  order list is NOT updated, so the next run (cron or manual) rescans
-  from the previous state. The ledger ensures no duplicates.
+  import state is NOT advanced, so the next run (cron or manual)
+  resumes from the previous checkpoint. The ledger ensures no duplicates.
 
 - What happens when the service worker restarts during a long-running
   ingestion? RR-V3 crash recovery re-queues the interrupted run. The
-  stored conversation order list is NOT updated mid-run (only on
-  successful batch completion), so the recovered run rescans from the
-  previous state. The ingestion ledger ensures no items are duplicated
-  or skipped upon resumption.
+  persisted import state is NOT advanced mid-run (only after successful
+  checkpoint commits), so the recovered run resumes from the previous
+  checkpoint. The ingestion ledger ensures no items are duplicated or
+  skipped upon resumption.
 
 - What happens when OpenClaw is connected but the EMOS plugin is not
   enabled? The sidepanel chat functions as a plain chat interface with
@@ -570,61 +572,51 @@ a flow, run the flow, and verify it executes the recorded actions.
   create duplicate entries. New items are ingested, changed items are
   updated, unchanged items are skipped.
 - **FR-020a**: Concurrency rules differ by workflow type:
-  - **Scanner workflows**: At most one concurrent run per platform.
-    Triggering an already-running scanner MUST be rejected with a
-    clear "already running" message.
-  - **Conversation ingestion workflows**: Multiple runs of the same
-    workflow MAY execute in parallel (each in its own tab, targeting a
-    different conversation URL). Concurrency MUST be bounded by a
-    configurable **max parallel tabs** limit (e.g., default 3). The
-    RR-V3 run queue manages the concurrency — the scanner enqueues all
-    identified conversations, and the queue dispatches up to the max
-    in parallel, starting the next as each completes.
-  - **Cross-platform**: Different platform scanners MAY run
-    simultaneously.
+  - **Background “Import All” workflows** (e.g., ChatGPT – Import All):
+    At most one concurrent run per workflow. Triggering an already
+    running workflow MUST be rejected with a clear "already running"
+    message.
+  - **Tab-scoped workflows** (e.g., ChatGPT – Import Current Conversation):
+    At most one concurrent run per workflow. If the user triggers the
+    same workflow while it is running, the second run MUST be rejected
+    (avoid concurrent ingestion against the same tab/session).
+  - **Cross-workflow**: Different workflows MAY run simultaneously,
+    bounded by a configurable **max parallel tabs** limit when they
+    open ephemeral tabs (e.g., default 3).
 - **FR-021**: Ingestion workflows MUST process items in bounded,
   resumable batches and enqueue continuation runs when more items
   remain, rather than looping within a single service worker activation.
-- **FR-021a**: The **scanner workflow** MUST use an **ordered
-  conversation ID list** (stored as a persistent var) to determine
-  when to stop scanning. The algorithm: scan the platform's
-  conversation list from the top (newest activity); if **3 consecutive
-  conversations** appear in the **same order** as the stored list,
-  consider the scan past the "new activity" zone and stop. New IDs
-  (not in stored list) or IDs that moved out of position indicate new
-  activity — the scanner enqueues a conversation ingestion run for
-  each. The stored list MUST be updated only on successful scanner
-  batch completion; on stop or failure, the list MUST NOT be updated
-  (next run rescans from previous state).
-- **FR-021b**: The scanner workflow MUST perform a **periodic full
-  scan** (configurable interval, e.g., every N runs or every N days)
-  that ignores the heuristic stop and scans the entire conversation
-  list. This catches edge cases where conversations with new activity
-  were missed by the heuristic.
-- **FR-022**: Each platform MUST have **two workflows**:
-  - **Conversation ingestion workflow**: Takes a single conversation
-    URL as input, navigates to the conversation, extracts all messages,
-    normalizes them into Standard EMOS Message JSON, and ingests via
-    the ledger. Can be triggered independently by the user for a
-    specific conversation URL.
-  - **Conversation list scanner workflow**: Scans the platform's
-    conversation list, applies the heuristic stop (FR-021a) and filter
-    logic (FR-027), identifies conversations needing processing, and
-    enqueues a conversation ingestion run for each. The RR-V3 run
-    queue dispatches enqueued runs up to the max parallel tabs limit
-    (FR-020a). This is the entry point the user triggers (manually or
-    via cron).
-    Built-in workflows MUST ship iteratively:
-  - **MVP**: ChatGPT (scanner + conversation ingestion)
-  - **Later**: Gemini, Claude, DeepSeek (scanner + conversation
-    ingestion each)
-    All workflows are AI-authored during development.
+- **FR-021a**: Each “Import All” workflow MUST maintain persisted
+  import state (cursor/checkpoints) so scheduled runs can be robust and
+  efficient. For platforms that expose per-conversation activity
+  timestamps (e.g., ChatGPT `update_time`), the workflow SHOULD use them
+  to skip unchanged conversations while still ingesting updated ones.
+- **FR-021b**: The ChatGPT **Import All** workflow MUST use ChatGPT’s
+  internal backend APIs (no DOM scraping) with pagination. It SHOULD be
+  implemented primarily at the workflow level (bounded `script` logic),
+  not as platform-specific scan/extract node kinds:
+  `/backend-api/conversations` (offset/limit/total) and
+  `/backend-api/conversation/:id`. It MUST include a safety cap to
+  bound worst-case work per run (e.g., max pages or max conversations).
+  - **Implementation note**: These API calls MUST run in a `chatgpt.com`
+    page context so the browser attaches the user’s authenticated
+    cookies/session (e.g., open a background/ephemeral tab with
+    `openTab.active:false`, run the script, then close the tab). This
+    cannot be done reliably from the extension origin because ChatGPT’s
+    auth cookies are not accessible to the service worker fetch path.
+- **FR-022**: The MVP MUST ship two built-in ChatGPT workflows:
+  - **ChatGPT – Import All**: imports conversation history in bounded
+    batches using backend APIs; current user tab is irrelevant; can be
+    scheduled via cron/interval.
+  - **ChatGPT – Import Current Conversation**: imports the conversation being
+    viewed when the active tab URL starts with `https://chatgpt.com/c/`;
+    ingests regardless of whether the conversation already exists in the
+    ledger (message-level idempotency still applies).
 - **FR-023**: Workflows MUST detect authentication state. If the user
   is not authenticated on the target platform, the workflow MUST fail
   immediately with a notification ("Not logged in to {platform} —
-  please log in and re-run or wait for next scheduled run"). The stored
-  conversation order list is NOT updated, so the next cron run or
-  manual trigger rescans from the previous state.
+  please log in and re-run or wait for next scheduled run"). Persisted
+  import state MUST NOT advance on auth failure.
 
 - **FR-024**: Users MUST be able to configure cron schedules for each
   workflow in the Workflows tab: enable/disable cron, set cron period
@@ -632,6 +624,10 @@ a flow, run the flow, and verify it executes the recorded actions.
   and only execute while the browser is running. Users MUST also be able
   to manually trigger any workflow for immediate execution regardless of
   cron configuration.
+- **FR-024a**: Every workflow run MUST emit a browser notification on
+  completion with a human-readable summary (counts, duration, and a key
+  error message if any). Scheduled runs MUST not steal focus (use
+  background/ephemeral tabs when a page context is required).
 - **FR-025**: Workflows MUST have a fixed set of tools declared at
   authoring time. Workflow execution MUST be independent of the tool groups
   currently selected in the chat panel (no runtime elevation requests).
@@ -641,12 +637,11 @@ a flow, run the flow, and verify it executes the recorded actions.
   between page loads, **200--500ms** between interactions.
 - **FR-027**: Workflows MUST support configurable filter parameters
   (e.g., minimum message count, date range) defined in the workflow
-  configuration. Filters are pre-applied on the conversation list
-  before scanning logic; filtered-out conversations are skipped (not
-  ingested). If filter parameters are changed, the stored ordered
-  conversation ID list (FR-021a) MUST be cleared, forcing a full
-  re-scan on the next run. Already-ingested items are still
-  deduplicated via the ledger.
+  configuration. Filters are applied at the conversation-list stage;
+  filtered-out conversations are skipped (not ingested). If filter
+  parameters are changed, any persisted import state (cursor/cache)
+  MUST be cleared to avoid incorrect skipping. Already-ingested items
+  are still deduplicated via the ledger.
 
 **AI Authoring & Drift Repair**
 
@@ -720,18 +715,17 @@ Enable it in Ruminer → Tools.` Internal RR‑V3 workflow execution MUST
   last_seen_at, last_ingested_at, status (ingested/skipped/failed), last_error.
 
 - **Flow**: An RR-V3 workflow definition (DAG of nodes with explicit
-  entryNodeId). Two types per platform: **scanner** (scans conversation
-  list, enqueues ingestion runs) and **conversation ingestion** (takes
-  a conversation URL, extracts and ingests messages). Attributes: ID,
-  name, version, node graph, entry node, declared tools (fixed at
-  authoring time, independent of chat tool groups), allowed origins,
-  auth checks, max parallel runs (scanner: 1, ingestion: configurable,
-  default 3), scanning config (scanner only: heuristic stop threshold,
-  full scan interval), filter parameters, max items per run, rate limit
-  policies, extraction schema version, drift sentinels. Flows must be
-  acyclic (no graph-level loops or cycles; pagination/scrolling/
-  iteration implemented as composite nodes that loop internally but
-  still return a single node result).
+  entryNodeId). For the MVP ChatGPT pack, Ruminer ships two flows:
+  **ChatGPT – Import All** (background/scheduled, current tab
+  irrelevant) and **ChatGPT – Import Current Conversation** (requires active URL
+  `https://chatgpt.com/c/…`). Attributes: ID, name, version hash, node
+  graph, entry node, declared tools (fixed at authoring time,
+  independent of chat tool groups), allowed origins, auth checks, max
+  concurrent runs (per flow), filter parameters, max work per run,
+  rate-limit policies, extraction schema version, drift sentinels.
+  Flows must be acyclic (no graph-level loops or cycles); pagination /
+  iteration is implemented inside bounded nodes (typically a `script`
+  node) with persisted cursor/checkpoints.
 
 - **Trigger**: A schedule or event configuration attached to a flow.
   Types: interval, cron, url, dom, command, contextMenu, once, manual.
@@ -740,7 +734,7 @@ Enable it in Ruminer → Tools.` Internal RR‑V3 workflow execution MUST
 
 - **Run**: A single execution instance of a flow. Attributes: run ID,
   flow ID, flow version hash, status, start time, end time, event log,
-  scan state (conversations processed in this run).
+  and a summary output (counts, cursor/checkpoint, key errors).
 
 - **Tool Group**: A named set of browser tools grouped by
   side-effect level. Attributes: group name, side-effect description,

@@ -59,9 +59,9 @@
 
 ## Phase 4: User Story 2 — Ingest AI Chat Histories into Knowledge Base (Priority: P2)
 
-**Goal**: Ship a working **ChatGPT** platform pack (scanner + conversation ingestion flows) with MV3-safe RR‑V3 reliability: crash recovery, retries, and timeouts.
+**Goal**: Ship a working **ChatGPT** platform pack using **script nodes + backend API** (no DOM scraping, no platform-specific scan/extract nodes) with MV3-safe RR‑V3 reliability: crash recovery, retries, and timeouts.
 
-**Independent Test**: Verify EMOS connectivity in Options; run the ChatGPT scanner workflow from Workflows tab; confirm it enqueues conversation ingestion runs, ingests into EMOS, and re-running causes **no duplicates** (ledger enforces idempotency).
+**Independent Test**: Verify EMOS connectivity in Options; run **ChatGPT – Import All** from Workflows tab; confirm it runs in the background (current tab irrelevant), ingests via backend APIs, posts a browser notification with a summary, and re-running causes **no duplicates** (ledger enforces idempotency). Then open a `https://chatgpt.com/c/...` tab and run **ChatGPT – Import Current Conversation**; confirm it ingests regardless of existing ledger entries and posts a summary notification.
 
 ### RR‑V3 Reliability (Crash Recovery / Retries / Timeouts)
 
@@ -74,20 +74,22 @@
 - [x] T020 [US2] Enforce `flow.policy.runTimeoutMs` across the entire run and implement `TimeoutPolicy.scope:'node'` as total time across attempts in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/kernel/runner.ts`
 - [x] T021 [P] [US2] Extend RR‑V3 tests: paused→queued recovery in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/recovery.test.ts`, retry requeue semantics in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scheduler.test.ts`, and run-timeout terminal failure in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/runner.onError.contract.test.ts`
 
-### ChatGPT Platform Pack (Scanner + Conversation Ingestion)
+### ChatGPT Platform Pack (Workflow-Level Scripts + Backend API)
 
-- [x] T022 [US2] Implement `ruminer.scan_conversation_list` composite node (heuristic stop + full scan backfill + cursor continuation + enqueue ingestion runs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-conversation-list.ts`
-- [x] T023 [P] [US2] Extract scan heuristic into a pure helper (unit-testable) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-heuristic.ts`
-- [x] T024 [US2] Add “conversation ever ingested” existence check via `group_id` index for full-scan backfill gating in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/ingestion-ledger.ts`
-- [x] T025 [US2] Add `ruminer.page_auth_check` node (platform login check via script; notification on false; PERMISSION_DENIED) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/page-auth-check.ts`
-- [x] T026 [US2] Add `ruminer.random_delay` node (configurable ranges; used for rate limiting) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/random-delay.ts`
-- [x] T027 [US2] Register new node definitions (`scan_conversation_list`, `page_auth_check`, `random_delay`) in the ruminer-ingest plugin index in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/index.ts`
-- [x] T028 [US2] Create ChatGPT built-in flows (stable IDs) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/chatgpt.ts` and export them via `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/index.ts`
-- [x] T029 [US2] Upsert built-in flows on startup (tag `builtin`; avoid hard origin restriction) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`
-- [ ] T030 [P] [US2] Add unit tests for scan heuristic helper in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scan-heuristic.test.ts`
-- [ ] T031 [P] [US2] Add integration test for scanner behavior (initial scan enqueues; rerun stops after 3 matches; no duplicates enqueued) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/record-replay-v3/scan-conversation-list.test.ts`
+**Reference**: Auth and headers follow `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/_ref/chatgpt-exporter/src/api.ts` (access token via `/api/auth/session`, optional `Chatgpt-Account-Id` for Team, and `/backend-api/*` endpoints).
 
-**Checkpoint**: ChatGPT scanner + ingestion flows run end-to-end; RR‑V3 restarts/retries/timeouts behave as specified.
+- [x] T022 [US2] Rewrite ChatGPT built-in flows to two script-driven workflows (**Import All** + **Import Current Conversation**) using backend APIs (no DOM scraping) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/chatgpt.ts`
+- [x] T023 [US2] Implement a background RPC listener for ChatGPT workflow scripts:
+  - ledger group existence checks (skip already-ingested conversations efficiently)
+  - conversation ingestion entrypoint (normalize → ledger → EMOS ingest)
+  - browser notification on run completion
+    in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/chatgpt-workflow-rpc.ts`
+- [x] T024 [US2] Wire the ChatGPT workflow RPC listener into background init in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/index.ts`
+- [x] T025 [US2] Extend RR‑V2 `openTab` action params to support `active:false` so scheduled **Import All** runs don’t steal focus in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay/actions/handlers/tabs.ts`
+- [x] T026 [US2] Remove platform-specific scan/extract node kinds from Ruminer ingest plugin registration (at minimum `ruminer.scan_conversation_list` and `ruminer.extract_messages`) to enforce workflow-level extraction in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/index.ts`
+- [x] T027 [P] [US2] Add a minimal contract test for ChatGPT ingestion RPC (happy path + EMOS missing settings failure) in `/Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/tests/ruminer/chatgpt-ingest-rpc.test.ts`
+
+**Checkpoint**: ChatGPT **Import All** and **Import Current Conversation** run end-to-end via backend APIs, are idempotent via the ledger, are schedulable in the background without stealing focus, and each run posts a browser notification summary.
 
 ---
 
@@ -182,9 +184,9 @@
 ## Parallel Example: US2
 
 ```bash
-Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/scan-conversation-list.ts"
-Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/storage/queue.ts"
-Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/ruminer/builtin-flows/chatgpt.ts"
+Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/chatgpt.ts"
+Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/chatgpt-workflow-rpc.ts"
+Task: "Implement /Users/tcai/Projects/Ruminer/ruminer-browser-agent/app/chrome-extension/entrypoints/background/record-replay/actions/handlers/tabs.ts"
 ```
 
 ---

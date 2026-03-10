@@ -4,7 +4,7 @@ import {
   emosSearchMemories,
   type EmosGetMemoriesRequest,
   type EmosSearchRequest,
-} from '@/entrypoints/background/ruminer/emos-client';
+} from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/emos-client';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 class EmosReadMemoriesTool {

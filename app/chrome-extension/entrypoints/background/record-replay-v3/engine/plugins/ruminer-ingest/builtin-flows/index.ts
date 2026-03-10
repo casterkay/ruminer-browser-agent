@@ -1,10 +1,10 @@
 import type { StoragePort } from '@/entrypoints/background/record-replay-v3/engine/storage/storage-port';
 
+import { normalizeToolList } from '@/common/flow-approvals';
 import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import type { ISODateTimeString } from '@/entrypoints/background/record-replay-v3/domain/json';
-import { sha256Hex } from '@/entrypoints/background/ruminer/hash';
+import { sha256Hex } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/hash';
 import { stableJson } from '@/entrypoints/shared/utils/stable-json';
-import { normalizeToolList } from '@/common/flow-approvals';
 import { createChatgptBuiltinFlows } from './chatgpt';
 
 function listBuiltinFlows(nowIso: string): FlowV3[] {

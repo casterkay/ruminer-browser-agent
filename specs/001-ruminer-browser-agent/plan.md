@@ -283,118 +283,31 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 
 ---
 
-## Workstream C — ChatGPT platform pack (scanner + conversation ingestion), with cursors/checkpoints
+## Workstream C — ChatGPT platform pack (workflow-level scripts + backend APIs)
 
-### C1) Add missing orchestration node: scanner that enqueues conversation ingestion runs
+### C1) Remove platform-specific scan/extract nodes
 
-- Add a composite RR‑V3 node in `.../engine/plugins/ruminer-ingest/scan-conversation-list.ts`:
-  - Node kind: `ruminer.scan_conversation_list`
-  - Config (exact):
-    - platform: string (use `chatgpt` for MVP)
-    - listScript: string (runs in tab, returns `{ items, nextCursor, done }`)
-    - targetFlowIdVar: string (var holding ingestion flow id, default `ruminer.scan.targetFlowId`)
-    - stateKey: string (persistent var key, default `$scan.<platform>.state`)
-    - heuristicMatchStreak: number default 3
-    - maxItemsPerRun: number default 50 (20–50 allowed)
-    - maxEnqueuePerRun: number default 50
-    - fullScanEveryRuns: number default 20
-    - fullScanEveryDays: number default 7
-    - maxOrderListSize: number default 500
-    - filtersVar: string default `ruminer.scan.filters` (object; used to compute filterHash)
-  - Persistent state shape at `$scan.chatgpt.state`:
+- Remove `ruminer.scan_conversation_list` and `ruminer.extract_messages` entirely.
+- Keep platform-specific extraction in workflow-level `script` nodes that call backend APIs (no DOM scraping).
+- Persist resumable import state in `chrome.storage.local` (cursor/checkpoints) and never advance past the last
+  successfully ingested checkpoint.
 
-    ```ts
-    type ScanStateV1 = {
-      schemaVersion: 1;
-      conversationOrder: string[]; // newest→older, capped to maxOrderListSize
-      filterHash: string | null;
-      scannerRuns: number;
-      lastFullScanAt: number | null; // completion time
-      fullScanCursor: string | null; // null when not in-progress
-    };
-    ```
+### C2) Add background RPC helpers for workflow scripts
 
-  - Algorithm (exact):
-    - Load ScanStateV1 (or initialize empty).
-    - Compute `filterHash = sha256(stableJson(filters))`; if changed:
-      - clear conversationOrder, reset `fullScanCursor=null`, set `lastFullScanAt=null`
-    - Decide mode:
-      - If `fullScanCursor != null`: continue full scan.
-      - Else if conversationOrder empty: start full scan.
-      - Else if `(scannerRuns % fullScanEveryRuns === 0)` OR `(now-lastFullScanAt > fullScanEveryDays)`:
-        start full scan.
-      - Else normal scan.
-    - Run listScript once to fetch up to maxItemsPerRun items for current cursor.
-    - In normal scan: apply heuristic stop while iterating returned items at indices starting at 0:
-      - maintain streak of consecutive `item.id === conversationOrder[index]`
-      - break after heuristicMatchStreak is reached
-    - Determine shouldEnqueue for each visited item:
-      - new: id not in conversationOrder
-      - moved: conversationOrder[index] exists and differs from current id
-      - fullScanBackfill: (mode=fullScan) and conversation has never been ingested (see C2)
-    - Enqueue ingestion runs via `enqueueRun(...)`:
-      - args must include:
-        - platform:'chatgpt'
-        - conversationId
-        - conversationUrl
-      - priority: scanner=10, conversation_ingest=0
-    - Update conversationOrder only when cursor==0:
-      - `newOrder = unique(scannedTopIds + oldOrderMinusThoseIds)`; cap to maxOrderListSize
-    - Update/advance fullScanCursor:
-      - if mode=fullScan and done=false:
-        - set cursor=nextCursor and enqueue a continuation run of the scanner flow itself (flowId=ctx.flow.id)
-          with args `{ ruminerScanContinuation:true }`
-      - if done=true: set fullScanCursor=null, set lastFullScanAt=now
-    - Increment scannerRuns on successful node completion.
-    - Emit progress logs via `ctx.log('info', ..., { scanned, enqueued, mode, cursor })`.
+- Implement background `chrome.runtime.onMessage` handlers for:
+  - ledger existence checks by `group_id` (fast skip without fetching conversation details)
+  - conversation ingestion entrypoint (normalize → ledger → EMOS ingest)
+  - run completion notifications
 
-### C2) Add “conversation ever ingested” check used by full scan backfill
+### C3) Implement ChatGPT built-in flows
 
-- Extend ledger module with an index-based existence check:
-  - `app/chrome-extension/entrypoints/background/ruminer/ingestion-ledger.ts`:
-    - `hasAnyLedgerEntryForGroup(groupId: string): Promise<boolean>` using group_id index
-- Full scan mode enqueues backfill ingestion only when `hasAnyLedgerEntryForGroup(groupId)` is false.
-
-### C3) Implement ChatGPT built-in flows and register on startup
-
-- Create:
-  - `app/chrome-extension/entrypoints/background/ruminer/builtin-flows/chatgpt.ts`
-  - `app/chrome-extension/entrypoints/background/ruminer/builtin-flows/index.ts`
 - Two FlowV3 definitions with stable IDs:
-  1. `ruminer.chatgpt.scanner.v1`
-     - Nodes: navigate → ruminer.scan_conversation_list
-     - Flow variables:
-       - `ruminer.scan.targetFlowId = 'ruminer.chatgpt.conversation_ingest.v1'`
-       - filter variables (minMessages/dateRange) under `ruminer.scan.filters`
-  2. `ruminer.chatgpt.conversation_ingest.v1`
-     - Nodes: navigate → ruminer.page_auth_check → ruminer.extract_messages → ruminer.normalize_and_hash →
-       ruminer.ledger_upsert → ruminer.emos_ingest
-     - Variables: conversationUrl, conversationId
-- In `app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts`:
-  - Add `ensureBuiltinFlows(storage)` that upserts built-ins if missing.
-  - Mark built-in flows via `flow.meta.tags += ['builtin']` and `flow.meta.bindings` for recommended
-    origins (ChatGPT), but do not hard-restrict (per `<all_urls>`).
+  1. `ruminer.chatgpt.scanner.v1` (“ChatGPT – Import All”): `openTab(active:false)` → `script` (ISOLATED, backend API import) → `closeTab`
+  2. `ruminer.chatgpt.conversation_ingest.v1` (“ChatGPT – Import Current Tab”): `script` (ISOLATED, backend API import current conversation)
 
-### C4) Add missing node: platform login check (FR‑023)
+### C4) Tests
 
-- Add `ruminer.page_auth_check` node:
-  - config: `{ platformLabel, script, notifyTitle }`
-  - script returns boolean “logged in”
-  - on false: emit chrome.notifications with “Not logged in to <platform> …”, return PERMISSION_DENIED.
-
-### C5) Rate limiting/delays (FR‑026)
-
-- Add a simple node `ruminer.random_delay` (or reuse V2 delay) and put it into built-in flows:
-  - between navigation and extraction, and between major steps
-  - default ranges: page loads 1–3s, interactions 200–500ms (configurable as vars)
-
-### C6) Tests
-
-- Add unit tests for scan heuristic as a pure function (new helper module).
-- Add v3 integration test that:
-  - initializes empty scan state
-  - runs scanner once → enqueues ingestion runs + writes conversation order
-  - reruns scanner with same order → stops after 3 matches and enqueues none
+- Add a minimal contract test for the ChatGPT ingestion RPC (happy path + missing EMOS settings failure).
 
 ---
 
@@ -472,7 +385,6 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 ## Public Interfaces / Data Changes (Explicit)
 
 - New RR‑V3 node kinds:
-  - `ruminer.scan_conversation_list`
   - `ruminer.page_auth_check`
   - (optional) `ruminer.random_delay`
 - New Flow metadata:
@@ -496,7 +408,8 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 3. Run retry:
    - Force a retryable failure (e.g., EMOS unreachable) → run requeues until maxAttempts, then fails terminal.
 4. ChatGPT pack:
-   - Run scanner → enqueues conversation ingestion runs → items ingested into EMOS → rerun scanner → no duplicates.
+   - Run **ChatGPT – Import All** → items ingested into EMOS → rerun → no duplicates.
+   - Run **ChatGPT – Import Current Tab** on a `https://chatgpt.com/c/...` tab → ingests that conversation.
 5. Workflows UI:
    - Run shows live step + processed counts; Stop cancels within ~2s; timeline shows events; drift artifacts
      appear after 3 consecutive failures.
@@ -553,8 +466,8 @@ Workstream E.
 
 - **Discrepancy**: `plan.md` referenced “ChatGPT ingestion pack” but did not define scanner heuristics, cursor continuation,
   or the persistent scan state schema.
-  - **Resolution**: adopt Workstream C exactly: ScanStateV1 schema, heuristicMatchStreak=3 stop condition, periodic full scans,
-    cursor continuation via scanner self-enqueue, and backfill gating via “ever ingested” ledger check.
+  - **Resolution**: adopt Workstream C: workflow-level scripts + backend APIs, resumable state in `chrome.storage.local`,
+    and ledger-based idempotency + fast-skip via `group_id` existence checks.
 
 ### 6) Workflows UI requirements (FR‑011/012/013/024/032)
 

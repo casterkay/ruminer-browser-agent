@@ -4,7 +4,7 @@
 
 - Version: `v0.8`
 - Status: `Draft for implementation`
-- Last updated: `2026-02-26`
+- Last updated: `2026-03-10`
 
 ## 2. Executive Summary
 
@@ -265,18 +265,26 @@ RR-V3 validates that flows are **acyclic** (DAG only). This means:
 Ruminer's approach:
 
 1. Keep the graph DAG-shaped.
-2. Implement pagination/scrolling/iteration as **composite Ruminer nodes** that loop internally but still return a single node result.
+2. Implement pagination/iteration inside a **single `script` node**, so the flow remains a DAG while work remains resumable/bounded.
 
 ### 6.2 Ruminer Node Strategy
 
-RR-V3 can execute nodes via a plugin registry (Zod-validated configs). Ruminer adds nodes for **browser-side** extraction and local bookkeeping:
+RR-V3 can execute nodes via a plugin registry (Zod-validated configs) and can also run legacy RR‑V2 action handlers as V3 nodes (e.g., `openTab`, `closeTab`, `script`).
 
-- `ruminer.extract_conversations` (list conversations, paginate, return conversation IDs + metadata)
-- `ruminer.extract_messages` (open a conversation and extract messages as standard EMOS message JSON)
-- `ruminer.normalize_and_hash` (compute `item_key`, `content_hash`, validate required fields)
-- `ruminer.ledger_upsert` (idempotency ledger -- local)
+Ruminer’s strategy is **reduction over multiplication**:
 
-- `ruminer.emos_ingest` (write standard EMOS message JSON to EMOS via the extension's direct EMOS client)
+- Keep platform-specific extraction logic at the **workflow level** (usually 1–2 `script` nodes that call platform backend APIs), rather than proliferating per-platform node kinds.
+- Keep a small set of reusable **bookkeeping nodes/services** for normalization, idempotency, and EMOS ingestion.
+
+In practice Ruminer relies on:
+
+- `script` (RR‑V2 action): run page-context code for platform auth + backend API access (no DOM scraping).
+- `openTab` / `closeTab` (RR‑V2 actions): create ephemeral background tabs for scheduled ingestion when needed.
+- `ruminer.normalize_and_hash`: compute `item_key`, `content_hash`, validate required fields.
+- `ruminer.ledger_upsert`: idempotency ledger upsert and policy decision (ingest/update/skip).
+- `ruminer.auth_check`: validate EMOS settings (and optionally remote connectivity).
+- `ruminer.emos_ingest`: write standard EMOS message JSON to EMOS via the extension’s direct client (with retry/backoff).
+- `ruminer.page_auth_check` / `ruminer.random_delay`: auth gating + basic rate limit hygiene.
 
 For autonomous ingestion workflows (RR-V3 triggered), the full pipeline runs inside the extension: extract → normalize → ledger check → EMOS ingest → cursor update. OpenClaw is not involved in ingestion runs (it is used only to author/update workflows).
 
@@ -313,19 +321,36 @@ Reliably ingest a user's AI chat conversations into EMOS, one platform at a time
 - **Autonomous path**: To create or repair a workflow, the user specifies requirements via the chat interface. OpenClaw may call Ruminer’s browser tools via MCP (OpenClaw `mcp-client` → Ruminer native server → extension background) to explore pages and iterate on extraction logic. The resulting repeatable workflow is stored into RR‑V3. For existing workflows, RR‑V3 runs inside the extension and ingests to EMOS directly (extension → EMOS API) without OpenClaw involvement.
 - Runs on demand (user clicks "Run" in sidepanel Workflows tab) and optionally on a schedule for backfill.
 - Prioritizes correctness, idempotency, and stable IDs.
-- Each platform workflow follows the same pattern:
-  1. Navigate to the platform's conversation list.
-  2. Extract conversation metadata (IDs, titles, and timestamps if available).
-  3. For each conversation (or new conversations since last cursor), open and extract messages.
-  4. Normalize each message into standard EMOS message JSON.
-  5. Check ledger, ingest new/changed items to EMOS (direct API call from extension).
-  6. Update cursor after each processed item (`ingested` or `skipped`), never after `failed`.
+- Each platform workflow follows the same pattern (implementation varies by platform):
+  1. Ensure an authenticated page context exists (use an existing platform tab or open an ephemeral background tab).
+  2. Call platform backend APIs to list conversations and fetch conversation details (avoid DOM scraping).
+  3. Transform conversation data into standard extracted messages.
+  4. Normalize + hash → ledger upsert → EMOS ingest.
+  5. Persist progress checkpoints and keep work bounded per run for MV3 reliability.
+  6. Emit a browser notification summarizing the run result (success/partial/failure).
 
 ### 7.4 Platform-Specific Notes
 
 - **Authentication**: All platforms require the user to be logged in. Workflows detect auth state and **fail immediately** with a clear notification ("Not logged in …") if not authenticated; there is no "waiting for user" state.
 - **Rate limiting**: Workflows should include configurable and randomized delays between page loads to avoid triggering platform rate limits or anti-bot mechanisms.
 - **Conversation selection**: Users can optionally filter which conversations to ingest (e.g., conversation length, date range).
+
+### 7.5 ChatGPT Pack (MVP)
+
+Ruminer ships two built-in ChatGPT ingestion workflows:
+
+1. **ChatGPT – Import All (background/scheduled)**:
+   - Does not depend on the user’s current tab.
+   - Uses ChatGPT’s internal endpoints (`/api/auth/session`, `/backend-api/conversations`, `/backend-api/conversation/:id`) from a ChatGPT page context (same-origin).
+   - Implemented primarily as a bounded workflow-level `script` that fetches + transforms data, then delegates normalization/ledger/EMOS writes to extension background services.
+   - Runs in bounded batches for MV3 reliability; scheduled runs should not steal focus.
+   - Skips already-ingested conversations efficiently (ledger-aware) while still allowing updated conversations to be reprocessed when the platform indicates new activity (e.g., `update_time`).
+   - Always emits a run summary notification.
+
+2. **ChatGPT – Import Current Conversation**:
+   - Requires the current tab URL to start with `https://chatgpt.com/c/`.
+   - Ingests the current conversation regardless of whether it already exists in the ledger (message-level idempotency still prevents duplicates).
+   - Always emits a run summary notification.
 
 ## 8. UI/UX (Extension)
 

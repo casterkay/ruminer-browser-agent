@@ -1,10 +1,9 @@
 import { z } from 'zod';
 
-import { computeCanonicalHashes } from '@/entrypoints/background/ruminer/hash';
-
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject, JsonValue } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
+import { computeCanonicalHashes } from './hash';
 import type { ExtractedMessage, NormalizedIngestionMessage } from './types';
 import { ensureObject, toErrorResult, toStringList } from './utils';
 

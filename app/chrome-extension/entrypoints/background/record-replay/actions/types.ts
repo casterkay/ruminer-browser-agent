@@ -511,6 +511,11 @@ export interface LoopElementsParams {
 export interface OpenTabParams {
   url?: Resolvable<string>;
   newWindow?: boolean;
+  /**
+   * Whether to focus/activate the new tab/window. Defaults to true.
+   * Used to support background/scheduled workflows that should not steal focus.
+   */
+  active?: boolean;
 }
 
 export interface SwitchTabParams {

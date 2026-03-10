@@ -81,6 +81,7 @@
             :engine-name="selectedEngineName"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
             :markers="pageMarkers"
+            :recordings="recordingContextItems"
             @update:model-value="chat.input.value = $event"
             @submit="handleSend"
             @cancel="chat.cancelCurrentRequest()"
@@ -95,6 +96,7 @@
             @marker:open="handleOpenMarker"
             @marker:delete="handleDeleteMarker"
             @marker:highlight="handleHighlightMarker"
+            @recording:delete="handleDeleteRecordingContextItem"
             @session:reset="handleComposerReset"
           />
         </template>
@@ -262,10 +264,11 @@ import {
 } from '@/common/agent-models';
 import type { ElementMarker } from '@/common/element-marker-types';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import type { RecordedActionSequence } from '@/common/recording-context';
 import {
   emosUpsertMemory,
   type EmosSingleMessage,
-} from '@/entrypoints/background/ruminer/emos-client';
+} from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/emos-client';
 import {
   getEffectiveDisabledToolIds,
   getIndividualToolState,
@@ -1701,6 +1704,62 @@ function injectMarkerContext(instruction: string, markers: ElementMarker[]): str
   return `${lines.join('\n')}\n\n${instruction}`;
 }
 
+function formatRecordedStepForPrompt(step: {
+  type: string;
+  selector?: string;
+  url?: string;
+  value?: string;
+  key?: string;
+  note?: string;
+}): string {
+  const t = String(step.type || '').toLowerCase();
+  if (t === 'navigate') return step.url ? `navigate ${step.url}` : 'navigate';
+  if (t === 'click' || t === 'dblclick') {
+    const verb = t === 'dblclick' ? 'dblclick' : 'click';
+    return step.selector ? `${verb} ${step.selector}` : verb;
+  }
+  if (t === 'fill') {
+    const sel = step.selector || '(target)';
+    if (typeof step.value === 'string' && step.value.length) {
+      return `fill ${sel} = ${step.value}`;
+    }
+    return `fill ${sel}`;
+  }
+  if (t === 'key' || t === 'keyboard') return step.key ? `key ${step.key}` : 'key';
+  if (t === 'scroll') return step.selector ? `scroll ${step.selector}` : 'scroll';
+  if (t === 'wait') return step.note ? `wait ${step.note}` : 'wait';
+  return step.selector ? `${step.type} ${step.selector}` : String(step.type || 'step');
+}
+
+function injectRecordingContext(instruction: string, recordings: RecordedActionSequence[]): string {
+  const list = Array.isArray(recordings) ? recordings : [];
+  if (list.length === 0) return instruction;
+
+  const maxSequences = 3;
+  const maxStepsPerSeq = 30;
+  const seqs = list.slice(0, maxSequences);
+
+  const lines: string[] = ['[RecordedBrowserActions]'];
+  for (const rec of seqs) {
+    const metaParts = [`flowId=${rec.id}`, `steps=${rec.stepCount}`];
+    if (rec.domain) metaParts.push(`domain=${rec.domain}`);
+    if (rec.originUrl) metaParts.push(`originUrl=${rec.originUrl}`);
+    if (rec.warning) metaParts.push(`warning=${rec.warning}`);
+    lines.push(`- ${rec.name} (${metaParts.join(', ')}):`);
+
+    const steps = Array.isArray(rec.steps) ? rec.steps : [];
+    const shown = steps.slice(0, maxStepsPerSeq);
+    for (let i = 0; i < shown.length; i++) {
+      lines.push(`  ${i + 1}. ${formatRecordedStepForPrompt(shown[i] as any)}`);
+    }
+    if (steps.length > maxStepsPerSeq) {
+      lines.push(`  … (${steps.length - maxStepsPerSeq} more)`);
+    }
+  }
+
+  return `${lines.join('\n')}\n\n${instruction}`;
+}
+
 // Reactive page markers (refreshed on mount, tab switch, and visibility change)
 const pageMarkers = ref<ElementMarker[]>([]);
 
@@ -1722,6 +1781,37 @@ function handleMarkerSavedMessage(message: any): void {
   if (message?.type === BACKGROUND_MESSAGE_TYPES.ELEMENT_MARKER_SAVE) {
     void fetchPageMarkers();
   }
+}
+
+// =============================================================================
+// Recorded Action Sequences Context (RR-V2)
+// =============================================================================
+
+const recordingContextItems = ref<RecordedActionSequence[]>([]);
+
+function upsertRecordingContextItem(item: RecordedActionSequence): void {
+  const id = String((item as any)?.id || '').trim();
+  if (!id) return;
+  const next = Array.isArray(recordingContextItems.value) ? [...recordingContextItems.value] : [];
+  const idx = next.findIndex((x) => String((x as any)?.id || '') === id);
+  if (idx >= 0) next.splice(idx, 1);
+  next.unshift(item);
+  recordingContextItems.value = next.slice(0, 8);
+}
+
+function handleDeleteRecordingContextItem(id: string): void {
+  const rid = String(id || '').trim();
+  if (!rid) return;
+  recordingContextItems.value = (recordingContextItems.value || []).filter(
+    (x) => String((x as any)?.id || '') !== rid,
+  );
+}
+
+function handleRecordingCompletedMessage(message: any): void {
+  if (message?.type !== BACKGROUND_MESSAGE_TYPES.RR_RECORDING_COMPLETED) return;
+  const payload = message?.payload as RecordedActionSequence | undefined;
+  if (!payload || typeof payload !== 'object') return;
+  upsertRecordingContextItem(payload);
 }
 
 // Attachment handlers
@@ -1894,9 +1984,13 @@ async function handleSend(): Promise<void> {
     fetchMarkersForCurrentTab(),
   ]);
   const instructionWithMarkers = injectMarkerContext(instructionWithContext, currentPageMarkers);
+  const instructionWithRecordings = injectRecordingContext(
+    instructionWithMarkers,
+    recordingContextItems.value,
+  );
   const instructionWithRuminate = ruminateEnabled.value
-    ? injectRuminateRagGuidance(instructionWithMarkers)
-    : instructionWithMarkers;
+    ? injectRuminateRagGuidance(instructionWithRecordings)
+    : instructionWithRecordings;
   const finalInstruction = injectToolRestrictions(
     instructionWithRuminate,
     toolGroups,
@@ -2140,6 +2234,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', handlePageVisibilityChange);
   chrome.tabs.onActivated.addListener(handleTabActivated);
   chrome.runtime.onMessage.addListener(handleMarkerSavedMessage);
+  chrome.runtime.onMessage.addListener(handleRecordingCompletedMessage);
   void fetchPageMarkers();
 });
 
@@ -2148,6 +2243,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handlePageVisibilityChange);
   chrome.tabs.onActivated.removeListener(handleTabActivated);
   chrome.runtime.onMessage.removeListener(handleMarkerSavedMessage);
+  chrome.runtime.onMessage.removeListener(handleRecordingCompletedMessage);
   emosSuggestions.clear();
   if (toastTimer) {
     clearTimeout(toastTimer);

@@ -1,14 +1,10 @@
 import { z } from 'zod';
 
-import {
-  getLedgerEntry,
-  upsertLedgerEntry,
-} from '@/entrypoints/background/ruminer/ingestion-ledger';
-import { applyLedgerPolicy } from '@/entrypoints/background/ruminer/ledger-policy';
-
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject, JsonValue } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
+import { getLedgerEntry, upsertLedgerEntry } from './ingestion-ledger';
+import { applyLedgerPolicy } from './ledger-policy';
 import type { LedgerBatchItem, NormalizedIngestionMessage } from './types';
 import { ensureObject, toErrorResult } from './utils';
 

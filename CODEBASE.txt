@@ -47,6 +47,7 @@ app/
 │   │   ├── flow-approvals.ts
 │   │   ├── message-types.ts
 │   │   ├── node-types.ts
+│   │   ├── recording-context.ts
 │   │   ├── rr-v3-keepalive-protocol.ts
 │   │   ├── step-types.ts
 │   │   ├── tool-handler.ts
@@ -84,12 +85,6 @@ app/
 │   │   │   │   ├── engine
 │   │   │   │   ├── index.ts
 │   │   │   │   └── storage
-│   │   │   ├── ruminer
-│   │   │   │   ├── builtin-flows
-│   │   │   │   ├── emos-client.ts
-│   │   │   │   ├── hash.ts
-│   │   │   │   ├── ingestion-ledger.ts
-│   │   │   │   └── ledger-policy.ts
 │   │   │   ├── semantic-similarity.ts
 │   │   │   ├── storage-manager.ts
 │   │   │   ├── tool-selection
@@ -143,6 +138,7 @@ app/
 │   │   │   │   ├── index.ts
 │   │   │   │   └── useRRV3Rpc.ts
 │   │   │   └── utils
+│   │   │       ├── anthropic-settings.ts
 │   │   │       ├── emos-settings.ts
 │   │   │       ├── gateway-settings.ts
 │   │   │       ├── index.ts
@@ -163,6 +159,7 @@ app/
 │   │   │   │   ├── SidepanelNavigator.vue
 │   │   │   │   └── workflows
 │   │   │   ├── composables
+│   │   │   │   ├── emos-citations.ts
 │   │   │   │   ├── index.ts
 │   │   │   │   ├── useAgentChat.ts
 │   │   │   │   ├── useAgentChatViewRoute.ts
@@ -353,6 +350,8 @@ app/
 │   ├── README.md
 │   ├── src
 │   │   ├── agent
+│   │   │   ├── anthropic
+│   │   │   │   └── settings-service.ts
 │   │   │   ├── attachment-service.ts
 │   │   │   ├── ccr-detector.ts
 │   │   │   ├── chat-service.ts
@@ -382,7 +381,9 @@ app/
 │   │   │   ├── storage.ts
 │   │   │   ├── stream-manager.ts
 │   │   │   ├── tool-bridge.ts
-│   │   │   └── types.ts
+│   │   │   ├── types.ts
+│   │   │   └── ui
+│   │   │       └── settings-service.ts
 │   │   ├── cli.ts
 │   │   ├── constant
 │   │   │   └── index.ts
@@ -434,4 +435,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 311 files
+99 directories, 312 files

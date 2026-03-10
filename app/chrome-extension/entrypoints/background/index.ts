@@ -5,6 +5,7 @@ import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
 import { initQuickPanelCommands } from './quick-panel/commands';
 import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
 import { initRecordReplayListeners } from './record-replay';
+import { initChatgptWorkflowRpc } from './record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/chatgpt-workflow-rpc';
 import {
   initSemanticSimilarityListener,
   initializeSemanticEngineIfCached,
@@ -48,6 +49,7 @@ export default defineBackground(() => {
   initNativeHostListener();
   initSemanticSimilarityListener();
   initStorageManagerListener();
+  initChatgptWorkflowRpc();
   // Record & Replay V1/V2 listeners
   initRecordReplayListeners();
 

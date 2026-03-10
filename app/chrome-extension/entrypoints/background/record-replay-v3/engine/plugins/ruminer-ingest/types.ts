@@ -1,4 +1,4 @@
-import type { EmosSingleMessage } from '@/entrypoints/background/ruminer/emos-client';
+import type { EmosSingleMessage } from './emos-client';
 
 export interface ExtractListPayload {
   items: unknown[];

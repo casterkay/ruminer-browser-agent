@@ -1,4 +1,4 @@
-import { emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
+import { emosSearchMemories } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/emos-client';
 import { computed, onUnmounted, ref, type Ref } from 'vue';
 
 export interface MemorySuggestion {

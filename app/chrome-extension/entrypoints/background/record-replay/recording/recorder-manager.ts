@@ -5,6 +5,8 @@ import { recordingSession as session } from './session-manager';
 import { createInitialFlow, addNavigationStep } from './flow-builder';
 import { initBrowserEventListeners } from './browser-event-listener';
 import { initContentMessageHandler } from './content-message-handler';
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { buildRecordedActionSequenceFromFlow } from '@/common/recording-context';
 
 /** Timeout for waiting for the top-frame content script to acknowledge stop. */
 const STOP_BARRIER_TOP_TIMEOUT_MS = 5000;
@@ -244,6 +246,28 @@ class RecorderManagerImpl {
       } catch {}
 
       await saveFlow(flow);
+    }
+
+    // Broadcast to UI (sidepanel) so AgentChat can attach this recording as prompt context.
+    // This is best-effort; recording is already saved even if the broadcast fails.
+    try {
+      if (flow) {
+        const failedTabs = results.filter((r) => !r.ok && !r.skipped).map((r) => r.tabId);
+        const warning = barrierOk
+          ? undefined
+          : failedTabs.length
+            ? `Stop barrier incomplete; missing ACK from tabs: ${failedTabs.join(', ')}`
+            : 'Stop barrier incomplete; some frames may be missing.';
+        const payload = buildRecordedActionSequenceFromFlow(flow, {
+          warning: warning || undefined,
+        });
+        void chrome.runtime.sendMessage({
+          type: BACKGROUND_MESSAGE_TYPES.RR_RECORDING_COMPLETED,
+          payload,
+        });
+      }
+    } catch {
+      // ignore
     }
 
     // Return with barrier status

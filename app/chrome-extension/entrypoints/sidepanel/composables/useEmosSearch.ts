@@ -1,4 +1,7 @@
-import { emosDeleteMemory, emosSearchMemories } from '@/entrypoints/background/ruminer/emos-client';
+import {
+  emosDeleteMemory,
+  emosSearchMemories,
+} from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/emos-client';
 import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 import { computed, ref, type Ref } from 'vue';
 

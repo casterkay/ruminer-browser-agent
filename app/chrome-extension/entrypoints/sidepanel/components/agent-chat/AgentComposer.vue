@@ -143,6 +143,100 @@
         </div>
       </Transition>
 
+      <!-- Recorded actions context strip -->
+      <Transition name="recording-strip">
+        <div
+          v-if="recordings && recordings.length > 0"
+          class="recording-strip flex flex-col px-1 py-1 gap-1 max-h-[160px] overflow-y-auto"
+          :style="{ borderBottom: 'var(--ac-border-width) solid var(--ac-border)' }"
+        >
+          <div
+            v-for="rec in recordings"
+            :key="rec.id"
+            class="group flex items-stretch gap-1.5 w-full min-w-0 rounded px-1 py-0.5"
+            :style="{ transition: 'background 0.3s' }"
+          >
+            <div
+              class="flex items-center gap-2 flex-1 min-w-0 cursor-default px-1.5 py-1.5 rounded"
+              :style="{ transition: 'background 0.3s' }"
+              @mouseover="
+                ($event.currentTarget as HTMLElement).style.backgroundColor =
+                  'var(--ac-surface-muted)'
+              "
+              @mouseleave="($event.currentTarget as HTMLElement).style.backgroundColor = ''"
+            >
+              <ILucideRoute class="w-3.5 h-3.5 shrink-0" :style="{ color: 'var(--ac-accent)' }" />
+
+              <div class="flex flex-col min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span
+                    class="text-[10px] font-semibold leading-none max-w-[220px] truncate"
+                    :style="{ color: 'var(--ac-text)' }"
+                    :title="rec.name"
+                    >{{ rec.name }}</span
+                  >
+                  <span
+                    class="text-[9px] leading-none shrink-0 px-1 py-0.5 rounded"
+                    :style="{
+                      backgroundColor: 'var(--ac-surface-muted)',
+                      color: 'var(--ac-text-subtle)',
+                      border: 'var(--ac-border-width) solid var(--ac-border)',
+                    }"
+                    >{{ rec.stepCount }} steps</span
+                  >
+                  <span
+                    v-if="rec.domain"
+                    class="text-[9px] leading-none shrink-0 px-1 py-0.5 rounded max-w-[120px] truncate"
+                    :style="{
+                      backgroundColor: 'var(--ac-surface-muted)',
+                      color: 'var(--ac-text-subtle)',
+                      border: 'var(--ac-border-width) solid var(--ac-border)',
+                    }"
+                    :title="rec.domain"
+                    >{{ rec.domain }}</span
+                  >
+                </div>
+
+                <div class="flex items-center gap-1 min-w-0">
+                  <span
+                    class="text-[9px] leading-tight truncate min-w-0"
+                    :style="{ color: 'var(--ac-text-subtle)' }"
+                    :title="rec.summary"
+                    >{{ rec.summary }}</span
+                  >
+                  <span
+                    v-if="rec.warning"
+                    class="text-[9px] leading-none shrink-0 px-1 py-0.5 rounded"
+                    :style="{
+                      backgroundColor: 'var(--ac-diff-mod-bg)',
+                      color: 'var(--ac-diff-mod-text)',
+                      border: 'var(--ac-border-width) solid var(--ac-diff-mod-border)',
+                    }"
+                    :title="rec.warning"
+                    >warning</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="p-0.5 ac-btn shrink-0 opacity-40 group-hover:opacity-100"
+              :style="{
+                color: 'var(--ac-text-subtle)',
+                borderRadius: '999px',
+                transition: 'opacity 0.1s',
+              }"
+              title="Remove"
+              aria-label="Remove recording"
+              @click.stop="handleDeleteRecording(rec.id)"
+            >
+              <ILucideX class="w-2.5 h-2.5" />
+            </button>
+          </div>
+        </div>
+      </Transition>
+
       <!-- Textarea -->
       <textarea
         ref="textareaRef"
@@ -261,6 +355,7 @@ import ILucideCirclePlay from '~icons/lucide/circle-play';
 import ILucideCrosshair from '~icons/lucide/crosshair';
 import ILucideImage from '~icons/lucide/image';
 import ILucidePaperclip from '~icons/lucide/paperclip';
+import ILucideRoute from '~icons/lucide/route';
 import ILucideSquare from '~icons/lucide/square';
 import ILucideWrench from '~icons/lucide/wrench';
 import ILucideX from '~icons/lucide/x';
@@ -268,6 +363,7 @@ import type { RequestState } from '../../composables/useAgentChat';
 import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
+import type { RecordedActionSequence } from '@/common/recording-context';
 
 const props = defineProps<{
   modelValue: string;
@@ -294,6 +390,8 @@ const props = defineProps<{
     selectorType?: string;
     listMode?: boolean;
   }>;
+  /** Recorded browser action sequences (RR-v2). Shown as a taller strip under markers. */
+  recordings?: RecordedActionSequence[];
 }>();
 
 /**
@@ -433,6 +531,7 @@ const emit = defineEmits<{
       listMode?: boolean;
     },
   ];
+  'recording:delete': [id: string];
   'session:reset': [];
 }>();
 
@@ -517,6 +616,10 @@ function handleHighlightMarker(marker: {
   emit('marker:highlight', marker);
 }
 
+function handleDeleteRecording(id: string): void {
+  emit('recording:delete', id);
+}
+
 // Drag and drop handlers - delegate to parent
 // Always preventDefault to avoid browser default behavior (opening files)
 function handleDragOver(event: DragEvent): void {
@@ -585,6 +688,28 @@ defineExpose({
 }
 .marker-strip-enter-from,
 .marker-strip-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+/* Recording context strip */
+.recording-strip {
+  scrollbar-width: none;
+}
+.recording-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.recording-strip-enter-active,
+.recording-strip-leave-active {
+  transition:
+    opacity 0.15s ease,
+    max-height 0.15s ease;
+  max-height: 130px;
+  overflow: hidden;
+}
+.recording-strip-enter-from,
+.recording-strip-leave-to {
   opacity: 0;
   max-height: 0;
 }

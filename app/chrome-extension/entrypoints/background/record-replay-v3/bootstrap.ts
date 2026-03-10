@@ -9,55 +9,55 @@
  * - RunExecutor 使用 RunRunner 执行实际的 Flow
  */
 
-import type { UnixMillis } from './domain/json';
-import type { RunId } from './domain/ids';
-import { RR_ERROR_CODES, createRRError, type RRError } from './domain/errors';
 import {
   diffAddedTools,
   isToolListSuperset,
   loadFlowApprovals,
   normalizeToolList,
 } from '@/common/flow-approvals';
+import { RR_ERROR_CODES, createRRError, type RRError } from './domain/errors';
+import type { RunId } from './domain/ids';
+import type { UnixMillis } from './domain/json';
 
 import type { StoragePort } from './engine/storage/storage-port';
 import { StorageBackedEventsBus, type EventsBus } from './engine/transport/events-bus';
 
-import { DEFAULT_QUEUE_CONFIG, type RunQueueItem } from './engine/queue/queue';
 import { createLeaseManager, generateOwnerId, type LeaseManager } from './engine/queue/leasing';
+import { DEFAULT_QUEUE_CONFIG, type RunQueueItem } from './engine/queue/queue';
 import { createRunScheduler, type RunExecutor, type RunScheduler } from './engine/queue/scheduler';
 import { recoverFromCrash } from './engine/recovery/recovery-coordinator';
 
 import { RpcServer } from './engine/transport/rpc-server';
 
-import { createTriggerManager, type TriggerManager } from './engine/triggers/trigger-manager';
-import { createUrlTriggerHandlerFactory } from './engine/triggers/url-trigger';
 import { createCommandTriggerHandlerFactory } from './engine/triggers/command-trigger';
 import { createContextMenuTriggerHandlerFactory } from './engine/triggers/context-menu-trigger';
-import { createDomTriggerHandlerFactory } from './engine/triggers/dom-trigger';
 import { createCronTriggerHandlerFactory } from './engine/triggers/cron-trigger';
+import { createDomTriggerHandlerFactory } from './engine/triggers/dom-trigger';
 import { createIntervalTriggerHandlerFactory } from './engine/triggers/interval-trigger';
-import { createOnceTriggerHandlerFactory } from './engine/triggers/once-trigger';
 import { createManualTriggerHandlerFactory } from './engine/triggers/manual-trigger';
+import { createOnceTriggerHandlerFactory } from './engine/triggers/once-trigger';
+import { createTriggerManager, type TriggerManager } from './engine/triggers/trigger-manager';
+import { createUrlTriggerHandlerFactory } from './engine/triggers/url-trigger';
 
 import { createCdpArtifactService } from './engine/kernel/artifacts';
-import { createRunRunnerFactory, type RunRunnerFactory } from './engine/kernel/runner';
 import {
   createDebugController,
   createRunnerRegistry,
   type DebugController,
   type RunnerRegistry,
 } from './engine/kernel/debug-controller';
+import { createRunRunnerFactory, type RunRunnerFactory } from './engine/kernel/runner';
 
-import { PluginRegistry } from './engine/plugins/registry';
 import {
-  registerV2ReplayNodesAsV3Nodes,
   DEFAULT_V2_EXCLUDE_LIST,
+  registerV2ReplayNodesAsV3Nodes,
 } from './engine/plugins/register-v2-replay-nodes';
+import { PluginRegistry } from './engine/plugins/registry';
 import { registerRuminerIngestNodes } from './engine/plugins/ruminer-ingest';
 
+import { ensureBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows';
 import { acquireKeepalive } from '../keepalive-manager';
 import { createStoragePort } from './index';
-import { ensureBuiltinFlows } from '@/entrypoints/background/ruminer/builtin-flows';
 
 // ==================== Types ====================
 
