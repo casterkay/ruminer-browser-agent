@@ -177,7 +177,7 @@
   // 2) UI CLASS (injected via constructor)
   // ================================================================
   const UI_ICONS = {
-    pause: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    pause: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
       <rect x="6" y="4" width="4" height="16" rx="1"></rect>
       <rect x="14" y="4" width="4" height="16" rx="1"></rect>
     </svg>`,
@@ -254,7 +254,7 @@
           #__rr_timeline_toggle[data-collapsed="1"] .rr-chevron { transform: rotate(0deg); }
           #__rr_timeline_toggle[data-collapsed="0"] .rr-chevron { transform: rotate(180deg); }
         </style>
-        <div id="__rr_rec_panel" style="background: rgba(220,38,38,0.92); color: #fff; padding:8px 10px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; box-shadow:0 10px 28px rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.16); backdrop-filter: blur(10px);">
+        <div id="__rr_rec_panel" style="background: rgb(217, 66, 36); color: #fff; padding:8px 10px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; box-shadow:0 10px 28px rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.16); backdrop-filter: blur(10px);">
           <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             <span id="__rr_badge" style="font-weight:700; letter-spacing:0.2px;">录制中</span>
             <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; opacity:0.92;">
@@ -595,6 +595,16 @@
       this._lastKeyTs = 0;
       // Map to avoid duplicate switchFrame per iframe source (keyed by frame selector)
       this._frameSwitchMap = new Set();
+    }
+
+    _isInRecorderOverlay(el) {
+      try {
+        const overlay = document.getElementById('__rr_rec_overlay');
+        if (!overlay || !(el instanceof Element)) return false;
+        return el === overlay || (el.closest && !!el.closest('#__rr_rec_overlay'));
+      } catch {
+        return false;
+      }
     }
 
     // Lifecycle
@@ -1305,8 +1315,7 @@
           const tt = String(t).toLowerCase();
           if (tt === 'checkbox' || tt === 'radio') return; // avoid duplicate with change
         }
-        const overlay = document.getElementById('__rr_rec_overlay');
-        if (overlay && (el === overlay || (el.closest && el.closest('#__rr_rec_overlay')))) return;
+        if (this._isInRecorderOverlay(el)) return;
         const a = el.closest && el.closest('a[href]');
         const href = a && a.getAttribute && a.getAttribute('href');
         const tgt = a && a.getAttribute && a.getAttribute('target');
@@ -1548,6 +1557,7 @@
     _onChange(e) {
       if (!this.isRecording || this.isPaused) return;
       const el = e.target;
+      if (this._isInRecorderOverlay(el)) return;
       if (el instanceof HTMLSelectElement) {
         const val = el.value;
         const nowTs = Date.now();
@@ -1622,6 +1632,7 @@
     _onFocusIn(e) {
       if (!this.isRecording || this.isPaused) return;
       const el = e.target;
+      if (this._isInRecorderOverlay(el)) return;
       const isEditable =
         el instanceof HTMLInputElement ||
         el instanceof HTMLTextAreaElement ||
@@ -1650,6 +1661,7 @@
       if (this.hoverRAF) return;
       const el = e.target instanceof Element ? e.target : null;
       if (!el) return;
+      if (this._isInRecorderOverlay(el)) return;
       this.hoverRAF = requestAnimationFrame(() => {
         try {
           const r = el.getBoundingClientRect();
@@ -1757,6 +1769,7 @@
     _onKeyDown(e) {
       if (!this.isRecording || this.isPaused) return;
       try {
+        if (this._isInRecorderOverlay(e.target)) return;
         // Ignore autorepeat to prevent spam
         if (e.repeat) return;
         const key = String(e.key || '').toLowerCase();

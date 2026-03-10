@@ -143,52 +143,33 @@
         </div>
       </Transition>
 
-      <!-- Textarea wrapper with expand button -->
-      <div class="relative">
-        <textarea
-          ref="textareaRef"
-          :value="modelValue"
-          :class="[
-            'w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-3 text-sm',
-            showExpandButton ? 'pr-10' : '',
-          ]"
-          :style="{
-            height: `${textareaHeight}px`,
-            minHeight: `${MIN_HEIGHT}px`,
-            maxHeight: `${MAX_HEIGHT}px`,
-            overflowY: isOverflowing ? 'auto' : 'hidden',
-            fontFamily: 'var(--ac-font-body)',
-            color: 'var(--ac-text)',
-          }"
-          :placeholder="placeholder"
-          rows="1"
-          @input="handleInput"
-          @keydown.enter.exact.prevent="handleEnter"
-          @paste="handlePaste"
-        />
+      <!-- Textarea -->
+      <textarea
+        ref="textareaRef"
+        :value="modelValue"
+        class="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-3 text-sm"
+        :style="{
+          height: `${textareaHeight}px`,
+          minHeight: `${MIN_HEIGHT}px`,
+          maxHeight: `${MAX_HEIGHT}px`,
+          overflowY: isOverflowing ? 'auto' : 'hidden',
+          fontFamily: 'var(--ac-font-body)',
+          color: 'var(--ac-text)',
+        }"
+        :placeholder="placeholder"
+        rows="1"
+        @input="handleInput"
+        @keydown.enter.exact.prevent="handleEnter"
+        @paste="handlePaste"
+      />
 
-        <!-- Fake caret overlay (opt-in comet effect, only mount when enabled) -->
-        <FakeCaretOverlay
-          v-if="enableFakeCaret"
-          :textarea-ref="textareaRef"
-          :enabled="true"
-          :value="modelValue"
-        />
-
-        <!-- Expand button (visible when content exceeds max height) -->
-        <Transition name="expand-btn">
-          <button
-            v-if="showExpandButton"
-            type="button"
-            class="absolute top-2 right-2 p-1.5 transition-all hover:scale-105 cursor-pointer"
-            :style="expandButtonStyle"
-            title="Expand editor"
-            @click="openDrawer"
-          >
-            <ILucideMaximize2 class="w-3.5 h-3.5" />
-          </button>
-        </Transition>
-      </div>
+      <!-- Fake caret overlay (opt-in comet effect, only mount when enabled) -->
+      <FakeCaretOverlay
+        v-if="enableFakeCaret"
+        :textarea-ref="textareaRef"
+        :enabled="true"
+        :value="modelValue"
+      />
 
       <div class="flex items-center justify-between px-2 pb-2">
         <!-- Left Tools -->
@@ -268,97 +249,17 @@
         </div>
       </div>
     </div>
-
-    <!-- Expanded editor drawer -->
-    <ComposerDrawer
-      :open="isDrawerOpen"
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      :attachments="attachments"
-      :attachment-error="attachmentError"
-      :request-state="requestState"
-      :sending="sending"
-      :cancelling="cancelling"
-      :can-cancel="canCancel"
-      :can-send="canSend"
-      :enable-fake-caret="enableFakeCaret"
-      @close="closeDrawer"
-      @update:model-value="handleDrawerInput"
-      @submit="handleSubmit"
-      @cancel="$emit('cancel')"
-      @attachment:remove="$emit('attachment:remove', $event)"
-      @paste="handlePaste"
-    >
-      <template #left-actions>
-        <div class="flex items-center gap-1">
-          <!-- Screenshot Button -->
-          <button
-            v-if="supportsImages"
-            class="p-1.5 ac-btn"
-            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Take screenshot"
-            @click="$emit('attachment:screenshot')"
-          >
-            <ILucideCamera class="w-4 h-4" />
-          </button>
-
-          <!-- Attach Button -->
-          <button
-            v-if="supportsImages"
-            class="p-1.5 ac-btn"
-            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Attach file"
-            @click="$emit('attachment:add')"
-          >
-            <ILucidePaperclip class="w-4 h-4" />
-          </button>
-
-          <!-- Element Marker Button -->
-          <button
-            class="p-1.5 ac-btn"
-            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Mark element"
-            @click="handleOpenMarker"
-          >
-            <ILucideCrosshair class="w-4 h-4" />
-          </button>
-
-          <!-- Record Browser Actions -->
-          <button
-            type="button"
-            class="p-1.5 ac-btn"
-            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Record browser actions"
-            :disabled="recordBusy"
-            @click="handleRecordButton"
-          >
-            <ILucideCirclePlay class="w-4 h-4" />
-          </button>
-
-          <!-- Status Text -->
-          <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
-            <span
-              v-if="sending || isRequestActive"
-              class="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-              :style="{ backgroundColor: 'var(--ac-accent)' }"
-            />
-            {{ statusText }}
-          </div>
-        </div>
-      </template>
-    </ComposerDrawer>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import { computed, nextTick, ref, toRef } from 'vue';
+import { computed, ref, toRef } from 'vue';
 import ILucideArrowUp from '~icons/lucide/arrow-up';
 import ILucideCamera from '~icons/lucide/camera';
 import ILucideCirclePlay from '~icons/lucide/circle-play';
 import ILucideCrosshair from '~icons/lucide/crosshair';
 import ILucideImage from '~icons/lucide/image';
-import ILucideMaximize2 from '~icons/lucide/maximize-2';
 import ILucidePaperclip from '~icons/lucide/paperclip';
 import ILucideSquare from '~icons/lucide/square';
 import ILucideWrench from '~icons/lucide/wrench';
@@ -366,7 +267,6 @@ import ILucideX from '~icons/lucide/x';
 import type { RequestState } from '../../composables/useAgentChat';
 import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
-import ComposerDrawer from './ComposerDrawer.vue';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
 
 const props = defineProps<{
@@ -408,35 +308,10 @@ const isRequestActive = computed(() => {
   );
 });
 
-const isCodexEngine = computed(() => props.engineName === 'codex');
-
 // Image upload is supported for Claude, Codex, and OpenClaw engines
 const supportsImages = computed(() => {
   const engine = props.engineName;
   return engine === 'claude' || engine === 'codex' || engine === 'openclaw';
-});
-
-// Model selector auto-width
-
-const statusText = computed(() => {
-  if (props.sending) return 'Sending...';
-  if (props.cancelling) return 'Stopping...';
-  // Use requestState for more accurate status display
-  switch (props.requestState) {
-    case 'starting':
-      return 'Starting...';
-    case 'ready':
-      return 'Preparing...';
-    case 'running':
-      return 'Working...';
-    default:
-      return 'Ready';
-  }
-});
-
-const statusColor = computed(() => {
-  if (props.sending || isRequestActive.value) return 'var(--ac-accent)';
-  return 'var(--ac-text-subtle)';
 });
 
 // =============================================================================
@@ -577,39 +452,6 @@ const { height: textareaHeight, isOverflowing } = useTextareaAutoResize({
   maxHeight: MAX_HEIGHT,
 });
 
-// Show expand button when content exceeds max height
-const showExpandButton = computed(() => isOverflowing.value);
-
-// Expand button style
-const expandButtonStyle = computed(() => ({
-  backgroundColor: 'var(--ac-surface-muted)',
-  color: 'var(--ac-text)',
-  border: 'var(--ac-border-width) solid var(--ac-border)',
-  borderRadius: 'var(--ac-radius-button)',
-}));
-
-// =============================================================================
-// Expanded Editor Drawer
-// =============================================================================
-
-const isDrawerOpen = ref(false);
-
-function openDrawer(): void {
-  isDrawerOpen.value = true;
-}
-
-function closeDrawer(): void {
-  isDrawerOpen.value = false;
-  // Focus back to main textarea
-  nextTick(() => {
-    textareaRef.value?.focus();
-  });
-}
-
-function handleDrawerInput(value: string): void {
-  emit('update:modelValue', value);
-}
-
 // =============================================================================
 // Input Handlers
 // =============================================================================
@@ -725,20 +567,6 @@ defineExpose({
 </script>
 
 <style scoped>
-/* Expand button transition */
-.expand-btn-enter-active,
-.expand-btn-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-
-.expand-btn-enter-from,
-.expand-btn-leave-to {
-  opacity: 0;
-  transform: scale(0.9);
-}
-
 /* Marker context strip */
 .marker-strip {
   scrollbar-width: none;
