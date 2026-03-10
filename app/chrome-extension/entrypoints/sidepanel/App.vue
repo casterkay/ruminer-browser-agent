@@ -15,9 +15,14 @@
           :flows="displayFlows"
           :runs="workflows.runs.value"
           :triggers="workflows.triggers.value"
+          :progress-by-run-id="workflows.progressByRunId.value"
           :only-bound="onlyBound"
           :open-run-id="openRunId"
+          :refreshing="workflowRefreshing"
+          :running-flow-ids="runningFlowIds"
+          :active-hostname="activeHostname"
           :get-run-events="workflows.getRunEvents"
+          :on-run-event="workflows.onRunEvent"
           @refresh="handleWorkflowRefresh"
           @create="createFlow"
           @run="runFlow"
@@ -56,17 +61,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import AgentChat from './components/AgentChat.vue';
-import MemoryView from './components/memory/MemoryView.vue';
-import SidepanelNavigator from './components/SidepanelNavigator.vue';
-import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
-import WorkflowsView from './components/workflows/WorkflowsView.vue';
-import FlowApprovalModal from './components/workflows/FlowApprovalModal.vue';
-import FlowArgsModal, { type FlowArgVar } from './components/workflows/FlowArgsModal.vue';
-import { useAgentTheme } from './composables/useAgentTheme';
-import { useChatBackendPreference } from './composables/useChatBackendPreference';
-import { useWorkflowsV3 } from './composables/useWorkflowsV3';
 import {
   computeToolListHash,
   diffAddedTools,
@@ -76,6 +70,17 @@ import {
   saveFlowApprovals,
   type FlowApprovalsStore,
 } from '@/common/flow-approvals';
+import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
+import { computed, onMounted, ref } from 'vue';
+import AgentChat from './components/AgentChat.vue';
+import MemoryView from './components/memory/MemoryView.vue';
+import SidepanelNavigator from './components/SidepanelNavigator.vue';
+import FlowApprovalModal from './components/workflows/FlowApprovalModal.vue';
+import FlowArgsModal, { type FlowArgVar } from './components/workflows/FlowArgsModal.vue';
+import WorkflowsView from './components/workflows/WorkflowsView.vue';
+import { useAgentTheme } from './composables/useAgentTheme';
+import { useChatBackendPreference } from './composables/useChatBackendPreference';
+import { useWorkflowsV3 } from './composables/useWorkflowsV3';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
 
@@ -113,6 +118,9 @@ const workflows = useWorkflowsV3({
   autoRefreshMs: 10_000,
 });
 
+const workflowRefreshing = ref(false);
+const runningFlowIds = ref<Set<string>>(new Set());
+
 const displayFlows = computed(() => {
   if (!onlyBound.value || !activeHostname.value) {
     return workflows.flows.value;
@@ -137,7 +145,14 @@ function setActiveTab(tab: TabId): void {
 }
 
 async function handleWorkflowRefresh(): Promise<void> {
-  await workflows.refresh();
+  if (workflowRefreshing.value) return;
+  workflowRefreshing.value = true;
+  try {
+    const minVisible = new Promise((r) => setTimeout(r, 500));
+    await Promise.all([workflows.refresh(), minVisible]);
+  } finally {
+    workflowRefreshing.value = false;
+  }
 }
 
 const flowApprovalModal = ref<{
@@ -199,96 +214,107 @@ function requestFlowArgs(input: {
 }
 
 async function runFlow(flowId: string): Promise<void> {
-  const flow = await workflows.getFlowById(flowId);
+  if (runningFlowIds.value.has(flowId)) return;
+  runningFlowIds.value = new Set([...runningFlowIds.value, flowId]);
 
-  const requiredVars = (flow?.variables || []).filter((v) => v.required && v.default === undefined);
+  try {
+    const flow = await workflows.getFlowById(flowId);
 
-  let args: Record<string, string> | undefined;
-  if (requiredVars.length > 0) {
-    const initialValues: Record<string, string | undefined> = {};
+    const requiredVars = (flow?.variables || []).filter(
+      (v) => v.required && v.default === undefined,
+    );
 
-    const activeUrl = await getActiveTabUrl();
-    if (activeUrl) {
-      try {
-        const host = new URL(activeUrl).hostname.toLowerCase();
-        if (host === 'chatgpt.com' || host === 'chat.openai.com') {
-          if (requiredVars.some((v) => v.name === 'conversationUrl')) {
-            initialValues.conversationUrl = activeUrl;
-          }
-          if (requiredVars.some((v) => v.name === 'conversationId')) {
-            const seedUrl = initialValues.conversationUrl || activeUrl;
-            const parsed = parseChatConversationId(seedUrl);
-            if (parsed) {
-              initialValues.conversationId = parsed;
+    let args: Record<string, string> | undefined;
+    if (requiredVars.length > 0) {
+      const initialValues: Record<string, string | undefined> = {};
+
+      const activeUrl = await getActiveTabUrl();
+      if (activeUrl) {
+        try {
+          const host = new URL(activeUrl).hostname.toLowerCase();
+          if (host === 'chatgpt.com' || host === 'chat.openai.com') {
+            if (requiredVars.some((v) => v.name === 'conversationUrl')) {
+              initialValues.conversationUrl = activeUrl;
+            }
+            if (requiredVars.some((v) => v.name === 'conversationId')) {
+              const seedUrl = initialValues.conversationUrl || activeUrl;
+              const parsed = parseChatConversationId(seedUrl);
+              if (parsed) {
+                initialValues.conversationId = parsed;
+              }
             }
           }
-        }
-      } catch {}
+        } catch {}
+      }
+
+      const provided = await requestFlowArgs({
+        flowId,
+        flowName: flow?.name ?? flowId,
+        variables: requiredVars.map((v) => ({
+          name: v.name,
+          label: v.label,
+          description: v.description,
+          sensitive: v.sensitive,
+        })),
+        initialValues,
+      });
+
+      if (!provided) {
+        return;
+      }
+      args = provided;
     }
 
-    const provided = await requestFlowArgs({
-      flowId,
-      flowName: flow?.name ?? flowId,
-      variables: requiredVars.map((v) => ({
-        name: v.name,
-        label: v.label,
-        description: v.description,
-        sensitive: v.sensitive,
-      })),
-      initialValues,
-    });
-
-    if (!provided) {
+    const requiredTools = normalizeToolList(flow?.meta?.requiredTools);
+    if (requiredTools.length === 0) {
+      await workflows.runFlow(flowId, args);
       return;
     }
-    args = provided;
-  }
 
-  const requiredTools = normalizeToolList(flow?.meta?.requiredTools);
-  if (requiredTools.length === 0) {
+    const requiredToolsHash = await computeToolListHash(requiredTools);
+    const approvals = await loadFlowApprovals();
+    const existing = approvals[flowId];
+
+    if (existing?.approvedToolsHash === requiredToolsHash) {
+      await workflows.runFlow(flowId, args);
+      return;
+    }
+
+    const prevTools = normalizeToolList(existing?.approvedTools);
+    if (existing && isToolListSuperset(prevTools, requiredTools)) {
+      await workflows.runFlow(flowId, args);
+      return;
+    }
+
+    const addedTools = diffAddedTools(prevTools, requiredTools);
+
+    const approved = await requestFlowApproval({
+      flowId,
+      flowName: flow?.name ?? flowId,
+      requiredToolsHash,
+      requiredTools,
+      addedTools,
+    });
+
+    if (!approved) {
+      return;
+    }
+
+    await saveFlowApprovals({
+      ...approvals,
+      [flowId]: {
+        approvedToolsHash: requiredToolsHash,
+        approvedTools: requiredTools,
+        approvedAt: new Date().toISOString(),
+      },
+    });
+
     await workflows.runFlow(flowId, args);
-    return;
+  } finally {
+    const next = new Set(runningFlowIds.value);
+    next.delete(flowId);
+    runningFlowIds.value = next;
   }
-
-  const requiredToolsHash = await computeToolListHash(requiredTools);
-  const approvals = await loadFlowApprovals();
-  const existing = approvals[flowId];
-
-  if (existing?.approvedToolsHash === requiredToolsHash) {
-    await workflows.runFlow(flowId, args);
-    return;
-  }
-
-  const prevTools = normalizeToolList(existing?.approvedTools);
-  if (existing && isToolListSuperset(prevTools, requiredTools)) {
-    await workflows.runFlow(flowId, args);
-    return;
-  }
-
-  const addedTools = diffAddedTools(prevTools, requiredTools);
-
-  const approved = await requestFlowApproval({
-    flowId,
-    flowName: flow?.name ?? flowId,
-    requiredToolsHash,
-    requiredTools,
-    addedTools,
-  });
-
-  if (!approved) {
-    return;
-  }
-
-  await saveFlowApprovals({
-    ...approvals,
-    [flowId]: {
-      approvedToolsHash: requiredToolsHash,
-      approvedTools: requiredTools,
-      approvedAt: new Date().toISOString(),
-    },
-  });
-
-  await workflows.runFlow(flowId, args);
 }
 
 async function stopRun(payload: { runId: string; status: string }): Promise<void> {

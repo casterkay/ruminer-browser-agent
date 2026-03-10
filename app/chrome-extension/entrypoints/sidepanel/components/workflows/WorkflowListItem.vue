@@ -10,20 +10,35 @@
       <div class="workflow-info">
         <div class="flex items-center gap-2">
           <div class="workflow-name" :style="nameStyle">{{ flow.name || 'Untitled' }}</div>
+          <span v-if="props.isLaunching" class="workflow-status-badge workflow-status-launching">
+            <span
+              class="workflow-status-dot workflow-status-dot-pulse"
+              style="background-color: var(--ac-warning, #d97706)"
+            ></span>
+            Starting
+          </span>
           <span
-            v-if="activeRun?.isInProgress"
-            class="text-[10px] px-1.5 py-0.5 rounded"
-            :style="{
-              backgroundColor: 'var(--ac-primary-light, #dbeafe)',
-              color: 'var(--ac-primary, #3b82f6)',
-            }"
+            v-else-if="activeRun?.isInProgress"
+            class="workflow-status-badge workflow-status-running"
           >
+            <span
+              class="workflow-status-dot workflow-status-dot-pulse"
+              style="background-color: var(--ac-primary, #3b82f6)"
+            ></span>
             Running
           </span>
         </div>
-        <div class="workflow-desc" :style="descStyle">{{
+        <div class="workflow-desc" :style="descStyle" :title="flow.description || ''">{{
           flow.description || 'No description'
         }}</div>
+        <div
+          v-if="activeRun?.isInProgress && props.activeRunProgress"
+          class="mt-1 text-[11px] truncate"
+          :style="{ color: 'var(--ac-text-subtle)' }"
+          :title="props.activeRunProgress"
+        >
+          {{ props.activeRunProgress }}
+        </div>
         <!-- Tags -->
         <div v-if="hasTags" class="workflow-tags">
           <span v-if="flow.meta?.domain" class="workflow-tag" :style="tagDomainStyle">
@@ -69,7 +84,10 @@
       </div>
 
       <!-- Actions -->
-      <div class="workflow-actions" :class="{ 'workflow-actions-visible': showActions }">
+      <div
+        class="workflow-actions"
+        :class="{ 'workflow-actions-visible': showActions || props.isLaunching }"
+      >
         <button
           v-if="activeRun?.isInProgress"
           class="workflow-action workflow-action-danger"
@@ -85,10 +103,23 @@
           v-else
           class="workflow-action workflow-action-primary"
           :style="actionPrimaryStyle"
+          :disabled="props.isLaunching"
           @click.stop="$emit('run', flow.id)"
-          title="Run workflow"
+          :title="props.isLaunching ? 'Starting...' : 'Run workflow'"
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <svg
+            v-if="props.isLaunching"
+            class="animate-spin"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>
@@ -175,7 +206,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 interface FlowLite {
   id: string;
@@ -191,7 +222,9 @@ interface FlowLite {
 const props = defineProps<{
   flow: FlowLite;
   activeRun?: { id: string; status: string; isInProgress?: boolean } | null;
+  activeRunProgress?: string | null;
   scheduleTrigger?: { id: string; enabled?: boolean; cron?: string } | null;
+  isLaunching?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -428,6 +461,11 @@ const menuItemDangerStyle = computed(() => ({
   line-height: 1.4;
   margin-bottom: 8px;
   word-break: break-word;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .workflow-tags {
@@ -523,5 +561,67 @@ const menuItemDangerStyle = computed(() => ({
 .menu-fade-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* Loading spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 0.75s linear infinite;
+}
+
+.workflow-action:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Status badge */
+.workflow-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px 1px 6px;
+  border-radius: 10px;
+  line-height: 1.6;
+}
+
+.workflow-status-launching {
+  background-color: var(--ac-warning-light, #fef3c7);
+  color: var(--ac-warning, #d97706);
+}
+
+.workflow-status-running {
+  background-color: var(--ac-primary-light, #dbeafe);
+  color: var(--ac-primary, #3b82f6);
+}
+
+.workflow-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.workflow-status-dot-pulse {
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 </style>

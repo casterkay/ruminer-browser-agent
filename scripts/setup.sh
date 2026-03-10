@@ -6,10 +6,6 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 RUMINER_MCP_URL="${RUMINER_MCP_URL:-http://127.0.0.1:12306/mcp}"
 RUMINER_BROWSER_LIST="${RUMINER_BROWSER_LIST:-}"
 
-# Optional: used to configure OpenClaw evermemos plugin automatically.
-EVERMEMOS_BASE_URL="${EVERMEMOS_BASE_URL:-${EVMEMOS_BASE_URL:-}}"
-EVERMEMOS_API_KEY="${EVERMEMOS_API_KEY:-}"
-
 # Optional: if unset, setup.sh will generate CHROME_EXTENSION_KEY in
 # app/chrome-extension/.env.local and derive a stable extension ID from it.
 CHROME_EXTENSION_KEY="${CHROME_EXTENSION_KEY:-}"
@@ -31,8 +27,6 @@ Usage:
 Environment:
   RUMINER_MCP_URL            MCP endpoint (default: http://127.0.0.1:12306/mcp)
   RUMINER_BROWSER_LIST       Optional comma list for doctor (e.g. chrome,chromium,brave)
-  EVERMEMOS_BASE_URL         EverMemOS base URL (optional)
-  EVERMEMOS_API_KEY          EverMemOS API key (optional)
   CHROME_EXTENSION_KEY       Base64 public key for stable extension ID (optional; auto-generated)
   RUMINER_EXTENSION_ID       Extension ID for native messaging allowlist (optional; derived)
   SKIP_NATIVE_HOST           Set to 1 to skip building/registering native host
@@ -43,7 +37,6 @@ Notes:
   - Native host registration MUST whitelist your actual extension ID(s).
   - OpenClaw plugin config is auto-written when openclaw CLI is present:
     - mcp-client: mcpUrl (from RUMINER_MCP_URL)
-    - evermemos: evermemosBaseUrl/apiKey (from EVERMEMOS_BASE_URL/EVERMEMOS_API_KEY)
   - Chrome extension build output:
     - app/chrome-extension/.output/chrome-mv3
 USAGE
@@ -184,13 +177,9 @@ install_openclaw_plugins() {
     return 0
   fi
 
-  local evermemos_path="${ROOT_DIR}/app/openclaw-extensions/evermemos"
   local mcp_client_path="${ROOT_DIR}/app/openclaw-extensions/mcp-client"
 
   log "Installing/enabling OpenClaw plugins..."
-  openclaw plugins install "${evermemos_path}" || true
-  openclaw plugins enable evermemos || true
-
   openclaw plugins install "${mcp_client_path}" || true
   openclaw plugins enable mcp-client || true
 
@@ -200,23 +189,11 @@ install_openclaw_plugins() {
   # Ensure plugins and their tools are enabled in config (best-effort).
   openclaw config set plugins.allow '["mcp-client", "evermemos"]' --strict-json || true
   openclaw config set plugins.entries.mcp-client.enabled true || true
-  openclaw config set plugins.entries.evermemos.enabled true || true
-  openclaw config set tools.allow '["mcp-client", "evermemos"]' --strict-json || true
+  openclaw config set tools.alsoAllow '["mcp-client"]' --strict-json || true
 
   openclaw gateway restart || true
 
-  if [[ -n "${EVERMEMOS_BASE_URL}" ]]; then
-    openclaw config set plugins.entries.evermemos.config.evermemosBaseUrl "${EVERMEMOS_BASE_URL}" || true
-  fi
-  if [[ -n "${EVERMEMOS_API_KEY}" ]]; then
-    openclaw config set plugins.entries.evermemos.config.apiKey "${EVERMEMOS_API_KEY}" || true
-  fi
-
   log "OpenClaw plugins installed/enabled + configured (best-effort)."
-  if [[ -z "${EVERMEMOS_BASE_URL}" || -z "${EVERMEMOS_API_KEY}" ]]; then
-    log ""
-    log "EverMemOS not fully configured (set EVERMEMOS_BASE_URL and EVERMEMOS_API_KEY to auto-configure)."
-  fi
 }
 
 build_extension() {

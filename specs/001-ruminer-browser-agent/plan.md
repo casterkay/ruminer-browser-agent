@@ -287,7 +287,7 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 
 ### C1) Remove platform-specific scan/extract nodes
 
-- Remove `ruminer.scan_conversation_list` and `ruminer.extract_messages` entirely.
+- Remove platform-specific scan/extract nodes entirely.
 - Keep platform-specific extraction in workflow-level `script` nodes that call backend APIs (no DOM scraping).
 - Persist resumable import state in `chrome.storage.local` (cursor/checkpoints) and never advance past the last
   successfully ingested checkpoint.

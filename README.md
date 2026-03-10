@@ -38,14 +38,6 @@ Run the setup script from the repo root:
 bash scripts/setup.sh
 ```
 
-Optional: auto-configure the OpenClaw EverMemOS plugin during setup:
-
-```bash
-EVERMEMOS_BASE_URL="https://api.evermind.ai" \
-EVERMEMOS_API_KEY="your_api_key" \
-bash scripts/setup.sh
-```
-
 What this does:
 
 - Installs dependencies with pnpm
@@ -81,7 +73,6 @@ Setup writes the plugin config for you, but you can verify:
 
 ```bash
 openclaw plugins info mcp-client --json
-openclaw plugins info evermemos --json
 ```
 
 ### Codex CLI
@@ -96,29 +87,7 @@ Run terminal command:
 
 `claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp`
 
-## EverMemOS (EMOS) integration
-
-Ruminer has two EMOS integration paths (they are intentionally separate):
-
-1. OpenClaw EverMemOS plugin (used when OpenClaw agent wants memory tools)
-2. Extension direct EMOS client (used by ingestion workflows and the Memory UI)
-
-### 1) OpenClaw EverMemOS plugin config
-
-If you didn’t pass env vars to setup, configure via OpenClaw:
-
-```bash
-openclaw config set plugins.entries.evermemos.config.evermemosBaseUrl "https://your-emos.example"
-openclaw config set plugins.entries.evermemos.config.apiKey "your_api_key"
-```
-
-Then validate:
-
-```bash
-openclaw plugins info evermemos --json
-```
-
-### 2) Extension EMOS settings
+## EverMemOS settings
 
 Open the extension Options/Settings UI and set:
 

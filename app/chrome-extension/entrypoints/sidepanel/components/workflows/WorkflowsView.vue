@@ -32,11 +32,13 @@
         <button
           class="flex-shrink-0 p-2"
           :style="refreshButtonStyle"
+          :disabled="props.refreshing"
           @click="$emit('refresh')"
           title="Refresh"
         >
           <svg
-            class="w-4 h-4"
+            class="w-4 h-4 transition-transform"
+            :class="{ 'animate-spin-slow': props.refreshing }"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -75,6 +77,11 @@
         <label
           class="flex items-center gap-2 text-sm cursor-pointer"
           :style="{ color: 'var(--ac-text-muted)' }"
+          :title="
+            props.activeHostname
+              ? 'Only show workflows bound to ' + props.activeHostname
+              : 'Filter workflows by active tab domain'
+          "
         >
           <input
             type="checkbox"
@@ -82,7 +89,9 @@
             @change="$emit('update:onlyBound', ($event.target as HTMLInputElement).checked)"
             class="workflow-checkbox"
           />
-          <span>Current page only</span>
+          <span>{{
+            props.activeHostname ? 'Match ' + props.activeHostname : 'Match active tab'
+          }}</span>
         </label>
         <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">
           {{ filteredFlows.length }} workflow{{ filteredFlows.length !== 1 ? 's' : '' }}
@@ -141,7 +150,9 @@
           :key="flow.id"
           :flow="flow"
           :active-run="activeRunByFlowId.get(flow.id) ?? null"
+          :active-run-progress="activeRunProgressByFlowId.get(flow.id) ?? null"
           :schedule-trigger="scheduleTriggerByFlowId.get(flow.id) ?? null"
+          :is-launching="props.runningFlowIds?.has(flow.id) ?? false"
           @run="$emit('run', $event)"
           @stop-run="$emit('stopRun', $event)"
           @edit="$emit('edit', $event)"
@@ -288,6 +299,66 @@
                       }"
                     >
                       {{ run.error.message }}
+                    </div>
+
+                    <div
+                      v-if="openRunProcessedCounts"
+                      class="mt-2 text-xs px-2 py-1 rounded"
+                      :style="{
+                        backgroundColor: 'var(--ac-surface-muted)',
+                        color: 'var(--ac-text-muted)',
+                        border: '1px solid var(--ac-border)',
+                      }"
+                    >
+                      <div class="flex flex-wrap gap-x-2 gap-y-1">
+                        <span v-if="openRunProcessedCounts.mode"
+                          >Mode: {{ openRunProcessedCounts.mode }}</span
+                        >
+                        <span v-if="openRunProcessedCounts.scanned !== undefined"
+                          >Scanned: {{ openRunProcessedCounts.scanned }}</span
+                        >
+                        <span v-if="openRunProcessedCounts.fetched !== undefined"
+                          >Fetched: {{ openRunProcessedCounts.fetched }}</span
+                        >
+                      </div>
+                      <div class="mt-1">
+                        <span class="font-medium" :style="{ color: 'var(--ac-text)' }"
+                          >Conversations</span
+                        >:
+                        <span v-if="openRunProcessedCounts.convIngested !== undefined"
+                          >{{ openRunProcessedCounts.convIngested }} ingested</span
+                        >
+                        <span v-if="openRunProcessedCounts.convSkipped !== undefined"
+                          >, {{ openRunProcessedCounts.convSkipped }} skipped</span
+                        >
+                        <span v-if="openRunProcessedCounts.convFailed !== undefined"
+                          >, {{ openRunProcessedCounts.convFailed }} failed</span
+                        >
+                      </div>
+                      <div class="mt-0.5">
+                        <span class="font-medium" :style="{ color: 'var(--ac-text)' }"
+                          >Messages</span
+                        >:
+                        <span v-if="openRunProcessedCounts.messagesPlus !== undefined"
+                          >+{{ openRunProcessedCounts.messagesPlus }}</span
+                        >
+                        <span v-if="openRunProcessedCounts.msgSkipped !== undefined"
+                          >, {{ openRunProcessedCounts.msgSkipped }} skipped</span
+                        >
+                        <span v-if="openRunProcessedCounts.msgFailed !== undefined"
+                          >, {{ openRunProcessedCounts.msgFailed }} failed</span
+                        >
+                        <span
+                          v-if="
+                            openRunProcessedCounts.msgIngested !== undefined ||
+                            openRunProcessedCounts.msgUpdated !== undefined
+                          "
+                          :style="{ color: 'var(--ac-text-subtle)' }"
+                        >
+                          ({{ openRunProcessedCounts.msgIngested ?? 0 }} ingested,
+                          {{ openRunProcessedCounts.msgUpdated ?? 0 }} updated)
+                        </span>
+                      </div>
                     </div>
 
                     <div class="mt-2">
@@ -438,9 +509,14 @@ const props = defineProps<{
   flows: FlowLite[];
   runs: RunLite[];
   triggers: Trigger[];
+  progressByRunId?: Record<string, string>;
   onlyBound: boolean;
   openRunId: string | null;
+  refreshing?: boolean;
+  runningFlowIds?: Set<string>;
+  activeHostname?: string;
   getRunEvents: (runId: string) => Promise<unknown[]>;
+  onRunEvent?: (listener: (event: any) => void) => () => void;
 }>();
 
 const emit = defineEmits<{
@@ -479,6 +555,18 @@ const activeRunByFlowId = computed(() => {
   return map;
 });
 
+const activeRunProgressByFlowId = computed(() => {
+  const progress = props.progressByRunId ?? {};
+  const out = new Map<string, string>();
+  for (const [flowId, run] of activeRunByFlowId.value.entries()) {
+    const msg = progress[run.id];
+    if (typeof msg === 'string' && msg.trim()) {
+      out.set(flowId, msg.trim());
+    }
+  }
+  return out;
+});
+
 const scheduleTriggerByFlowId = computed(() => {
   const map = new Map<string, Trigger>();
   for (const trigger of props.triggers) {
@@ -496,16 +584,161 @@ const openRunEvents = ref<any[]>([]);
 const openRunEventsLoading = ref(false);
 let openRunEventsPoll: ReturnType<typeof setInterval> | null = null;
 let openRunEventsToken = 0;
+let openRunEventsUnsubscribe: (() => void) | null = null;
+let openRunMaxSeq = 0;
+
+type ProcessedCounts = {
+  mode?: string;
+  scanned?: number;
+  fetched?: number;
+  convIngested?: number;
+  convSkipped?: number;
+  convFailed?: number;
+  msgIngested?: number;
+  msgUpdated?: number;
+  msgSkipped?: number;
+  msgFailed?: number;
+  messagesPlus?: number;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function asFiniteInt(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.floor(value));
+}
+
+function maxDefined(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.max(a, b);
+}
+
+function parseChatgptImportAllCountsFromMessage(message: string): Partial<ProcessedCounts> {
+  const out: Partial<ProcessedCounts> = {};
+  const src = String(message || '');
+
+  const scanned = src.match(/\bscanned=(\d+)\b/);
+  const fetched = src.match(/\bfetched=(\d+)\b/);
+  const conv = src.match(/\bconv=(\d+)\b/);
+  const convFailed = src.match(/\bfailed=(\d+)\b/);
+  const msgsPlus = src.match(/\bmsgs\+(\d+)\b/);
+  const msgSkipped = src.match(/\bskipped=(\d+)\b/);
+  const msgFailed = src.match(/\bfailed_msgs=(\d+)\b/);
+
+  if (scanned) out.scanned = Number(scanned[1]);
+  if (fetched) out.fetched = Number(fetched[1]);
+  if (conv) out.convIngested = Number(conv[1]);
+  if (convFailed) out.convFailed = Number(convFailed[1]);
+  if (msgsPlus) out.messagesPlus = Number(msgsPlus[1]);
+  if (msgSkipped) out.msgSkipped = Number(msgSkipped[1]);
+  if (msgFailed) out.msgFailed = Number(msgFailed[1]);
+
+  return out;
+}
+
+function deriveProcessedCounts(events: any[]): ProcessedCounts | null {
+  const counts: ProcessedCounts = {};
+
+  // Progress/log events are typically appended near the end of the run.
+  // Bound scanning to keep UI responsive on very long runs.
+  const tail = events.length > 500 ? events.slice(events.length - 500) : events;
+
+  for (const event of tail) {
+    if (event?.type !== 'log') continue;
+
+    const data = event?.data;
+    if (isPlainRecord(data)) {
+      const mode = typeof data.mode === 'string' && data.mode.trim() ? data.mode.trim() : undefined;
+      if (mode) counts.mode = mode;
+
+      counts.scanned = maxDefined(counts.scanned, asFiniteInt(data.scanned));
+      counts.fetched = maxDefined(counts.fetched, asFiniteInt(data.fetched));
+
+      counts.convIngested = maxDefined(
+        counts.convIngested,
+        asFiniteInt(data.convIngested ?? data.conversationsIngested),
+      );
+      counts.convSkipped = maxDefined(
+        counts.convSkipped,
+        asFiniteInt(data.convSkipped ?? data.conversationsSkipped),
+      );
+      counts.convFailed = maxDefined(
+        counts.convFailed,
+        asFiniteInt(data.convFailed ?? data.conversationsFailed),
+      );
+
+      counts.msgIngested = maxDefined(
+        counts.msgIngested,
+        asFiniteInt(data.msgIngested ?? data.messagesIngested),
+      );
+      counts.msgUpdated = maxDefined(
+        counts.msgUpdated,
+        asFiniteInt(data.msgUpdated ?? data.messagesUpdated),
+      );
+      counts.msgSkipped = maxDefined(
+        counts.msgSkipped,
+        asFiniteInt(data.msgSkipped ?? data.messagesSkipped),
+      );
+      counts.msgFailed = maxDefined(
+        counts.msgFailed,
+        asFiniteInt(data.msgFailed ?? data.messagesFailed),
+      );
+    } else if (
+      typeof event?.message === 'string' &&
+      event.message.includes('ChatGPT Import All:')
+    ) {
+      const parsed = parseChatgptImportAllCountsFromMessage(event.message);
+      counts.scanned = maxDefined(counts.scanned, asFiniteInt(parsed.scanned));
+      counts.fetched = maxDefined(counts.fetched, asFiniteInt(parsed.fetched));
+      counts.convIngested = maxDefined(counts.convIngested, asFiniteInt(parsed.convIngested));
+      counts.convFailed = maxDefined(counts.convFailed, asFiniteInt(parsed.convFailed));
+      counts.msgSkipped = maxDefined(counts.msgSkipped, asFiniteInt(parsed.msgSkipped));
+      counts.msgFailed = maxDefined(counts.msgFailed, asFiniteInt(parsed.msgFailed));
+      counts.messagesPlus = maxDefined(counts.messagesPlus, asFiniteInt(parsed.messagesPlus));
+    }
+  }
+
+  const hasAny =
+    counts.scanned !== undefined ||
+    counts.fetched !== undefined ||
+    counts.convIngested !== undefined ||
+    counts.convSkipped !== undefined ||
+    counts.convFailed !== undefined ||
+    counts.msgIngested !== undefined ||
+    counts.msgUpdated !== undefined ||
+    counts.msgSkipped !== undefined ||
+    counts.msgFailed !== undefined ||
+    counts.messagesPlus !== undefined;
+
+  if (!hasAny) return null;
+
+  if (counts.messagesPlus === undefined) {
+    const plus = (counts.msgIngested ?? 0) + (counts.msgUpdated ?? 0);
+    if (plus > 0) counts.messagesPlus = plus;
+  }
+
+  return counts;
+}
+
+const openRunProcessedCounts = computed(() => deriveProcessedCounts(openRunEvents.value));
 
 async function loadOpenRunEvents(runId: string): Promise<void> {
   const token = (openRunEventsToken += 1);
   openRunEventsLoading.value = true;
   openRunEvents.value = [];
+  openRunMaxSeq = 0;
 
   try {
     const events = await props.getRunEvents(runId);
     if (token !== openRunEventsToken) return;
     openRunEvents.value = Array.isArray(events) ? (events as any[]) : [];
+    openRunMaxSeq = openRunEvents.value.reduce((max, e) => {
+      const seq = typeof e?.seq === 'number' ? e.seq : 0;
+      return Math.max(max, seq);
+    }, 0);
   } finally {
     if (token === openRunEventsToken) {
       openRunEventsLoading.value = false;
@@ -520,21 +753,51 @@ function clearOpenRunEventsPoll(): void {
   }
 }
 
+function clearOpenRunEventsStream(): void {
+  if (openRunEventsUnsubscribe) {
+    openRunEventsUnsubscribe();
+    openRunEventsUnsubscribe = null;
+  }
+}
+
+function appendOpenRunEvent(event: any): void {
+  const seq = typeof event?.seq === 'number' ? event.seq : null;
+  if (typeof seq === 'number') {
+    if (seq <= openRunMaxSeq) return;
+    openRunMaxSeq = seq;
+  }
+  const next = [...openRunEvents.value, event];
+  openRunEvents.value = next.length > 200 ? next.slice(next.length - 200) : next;
+}
+
 watch(
   () => props.openRunId,
   async (runId) => {
     clearOpenRunEventsPoll();
+    clearOpenRunEventsStream();
     openRunEventsToken += 1;
     openRunEvents.value = [];
+    openRunMaxSeq = 0;
 
     if (!runId) return;
     await loadOpenRunEvents(runId);
 
     const run = props.runs.find((r) => r.id === runId);
     if (run?.isInProgress) {
-      openRunEventsPoll = setInterval(() => {
-        void loadOpenRunEvents(runId);
-      }, 2_000);
+      if (props.onRunEvent) {
+        openRunEventsUnsubscribe = props.onRunEvent((event) => {
+          if (event?.runId !== runId) return;
+          appendOpenRunEvent(event);
+        });
+        // Reconcile periodically in case the port reconnects and events are missed.
+        openRunEventsPoll = setInterval(() => {
+          void loadOpenRunEvents(runId);
+        }, 10_000);
+      } else {
+        openRunEventsPoll = setInterval(() => {
+          void loadOpenRunEvents(runId);
+        }, 2_000);
+      }
     }
   },
   { immediate: true },
@@ -542,6 +805,7 @@ watch(
 
 onUnmounted(() => {
   clearOpenRunEventsPoll();
+  clearOpenRunEventsStream();
 });
 
 // Filtered flows based on search
@@ -862,5 +1126,19 @@ const triggerActionDangerStyle = computed(() => ({
 .section-expand-leave-from {
   opacity: 1;
   max-height: 500px;
+}
+
+/* Refresh spin animation */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 0.8s linear infinite;
 }
 </style>

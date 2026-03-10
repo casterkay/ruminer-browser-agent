@@ -275,7 +275,7 @@
             v-if="supportsImages"
             class="p-1.5 ac-btn"
             :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-            data-tooltip="Take screenshot"
+            data-tooltip="Screenshot"
             @click="$emit('attachment:screenshot')"
           >
             <ILucideCamera class="w-4 h-4" />

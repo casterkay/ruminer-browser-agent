@@ -7,19 +7,12 @@ import '../sidepanel/styles/agent-chat.css';
 const COMMANDS = {
   oneShotSetup: 'bash scripts/setup.sh',
   startGateway: 'openclaw gateway run --port 18789 --force',
-
-  installEvermemos:
-    'openclaw plugins install --link "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"',
-  enableEvermemos: 'openclaw plugins enable evermemos',
   installMcpClient:
     'openclaw plugins install --link "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/mcp-client"',
   enableMcpClient: 'openclaw plugins enable mcp-client',
 
   configMcpUrl:
     'openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp"',
-  configEmosBaseUrl:
-    'openclaw config set plugins.entries.evermemos.config.evermemosBaseUrl "https://your-emos.example"',
-  configEmosApiKey: 'openclaw config set plugins.entries.evermemos.config.apiKey "YOUR_API_KEY"',
 } as const;
 
 type CommandKey = keyof typeof COMMANDS;
@@ -201,87 +194,15 @@ async function openDocs(): Promise<void> {
             <div>
               <h2 class="text-lg font-semibold text-slate-50">EverMemOS (memory)</h2>
               <p class="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-                Configure EverMemOS if you want memory search/add in OpenClaw, and ingestion
-                workflows (RR‑V3) to write to EMOS.
+                Configure EverMemOS if you want memory search and ingestion workflows (RR‑V3) to
+                write to EMOS.
               </p>
             </div>
             <div class="text-xs text-slate-400">Optional</div>
           </div>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-2">
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.installEvermemos
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('installEvermemos')"
-              >
-                {{ copyLabel('installEvermemos') }}
-              </button>
-            </div>
-
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.enableEvermemos
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('enableEvermemos')"
-              >
-                {{ copyLabel('enableEvermemos') }}
-              </button>
-            </div>
-          </div>
-
-          <div class="mt-4 grid gap-3 md:grid-cols-3">
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.configMcpUrl
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('configMcpUrl')"
-              >
-                {{ copyLabel('configMcpUrl') }}
-              </button>
-            </div>
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.configEmosBaseUrl
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('configEmosBaseUrl')"
-              >
-                {{ copyLabel('configEmosBaseUrl') }}
-              </button>
-            </div>
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.configEmosApiKey
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('configEmosApiKey')"
-              >
-                {{ copyLabel('configEmosApiKey') }}
-              </button>
-            </div>
-          </div>
-
           <div class="mt-3 text-xs leading-6 text-slate-400">
-            You also need to configure EMOS inside the extension Settings for the Memory tab and
+            Configure EMOS inside the extension Settings (EverMemOS section) for the Memory tab and
             ingestion workflows.
           </div>
         </section>
@@ -291,9 +212,7 @@ async function openDocs(): Promise<void> {
         >
           <div>
             Plugin paths in this repo:
-            <span class="ml-2 font-mono text-slate-300">app/openclaw-extensions/evermemos</span>
-            <span class="mx-2 text-slate-600">•</span>
-            <span class="font-mono text-slate-300">app/openclaw-extensions/mcp-client</span>
+            <span class="ml-2 font-mono text-slate-300">app/openclaw-extensions/mcp-client</span>
           </div>
           <button
             class="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-700"

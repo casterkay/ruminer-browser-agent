@@ -124,7 +124,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         limit: { type: 'number', description: 'Max number of items to return (optional).' },
         retrieve_method: {
           type: 'string',
-          description: 'Optional retrieval strategy hint (server-specific).',
+          description:
+            'Optional retrieval strategy: "keyword", "vector", "rrf", "agentic". Default: "rrf".',
         },
       },
       required: ['query'],
