@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getChromeMcpUrl } from '../../constant';
+import { getAnthropicSettings } from '../anthropic/settings-service';
 import { detectCcr, validateCcrConfig } from '../ccr-detector';
 import { getProject } from '../project-service';
 import type { AgentMessage } from '../types';
@@ -1288,6 +1289,20 @@ export class ClaudeEngine implements AgentEngine {
       console.error(
         '[ClaudeEngine] claude binary not found in common paths — SDK may report auth error',
       );
+    }
+
+    // Apply persisted Anthropic settings (API key / base URL).
+    // Do NOT override explicit process env.
+    try {
+      const settings = await getAnthropicSettings();
+      if (!env.ANTHROPIC_BASE_URL && settings.baseUrl.trim().length > 0) {
+        env.ANTHROPIC_BASE_URL = settings.baseUrl.trim();
+      }
+      if (!env.ANTHROPIC_AUTH_TOKEN && settings.authToken.trim().length > 0) {
+        env.ANTHROPIC_AUTH_TOKEN = settings.authToken.trim();
+      }
+    } catch {
+      // ignore
     }
 
     // Only detect CCR if explicitly enabled for this project

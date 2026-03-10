@@ -509,6 +509,10 @@
     "message": "快捷面板设置已保存",
     "description": "快捷面板设置保存时的提示"
   },
+  "settingsAnthropicSavedNotification": {
+    "message": "Anthropic 设置已保存",
+    "description": "Claude Code 设置保存时的提示"
+  },
   "refreshStatusButtonAria": {
     "message": "刷新状态",
     "description": "刷新按钮无障碍标签"

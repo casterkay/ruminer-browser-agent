@@ -8,13 +8,17 @@
 
 import { NATIVE_HOST } from '@/common/constants';
 import {
+  getAnthropicSettings,
+  setAnthropicSettings,
+} from '@/entrypoints/shared/utils/anthropic-settings';
+import {
   getEmosSettings,
   getGatewaySettings,
   setEmosSettings,
   setGatewaySettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
-  STORAGE_KEY_FLOATING_ICON,
+  loadFloatingIcon as doLoadFloatingIcon,
   refreshServerStatus as doRefreshServerStatus,
   saveFloatingIcon as doSaveFloatingIcon,
   testEmos as doTestEmos,
@@ -295,6 +299,8 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     gatewayAuthToken: '',
     baseUrl: 'https://api.evermind.ai',
     apiKey: '',
+    anthropicBaseUrl: '',
+    anthropicAuthToken: '',
     testingGateway: false,
     testingEmos: false,
     gatewayOk: true,
@@ -304,6 +310,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     lastSavedGateway: { wsUrl: '', authToken: '' },
     lastSavedEmos: { baseUrl: '', apiKey: '' },
     lastSavedFloatingIcon: true,
+    lastSavedAnthropic: { baseUrl: '', authToken: '' },
   };
 
   function getEl(id: string): HTMLInputElement | HTMLButtonElement | HTMLDivElement | null {
@@ -358,12 +365,15 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   async function loadSettings(): Promise<void> {
     const gw = await getGatewaySettings();
     const em = await getEmosSettings();
-    const fi = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON);
+    const an = await getAnthropicSettings();
+    const floatingIconEnabled = await doLoadFloatingIcon();
     state.gatewayWsUrl = gw.gatewayWsUrl;
     state.gatewayAuthToken = gw.gatewayAuthToken;
     state.baseUrl = em.baseUrl;
     state.apiKey = em.apiKey;
-    state.floatingIconEnabled = fi[STORAGE_KEY_FLOATING_ICON] ?? true;
+    state.anthropicBaseUrl = an.baseUrl;
+    state.anthropicAuthToken = an.authToken;
+    state.floatingIconEnabled = floatingIconEnabled;
     state.lastSavedGateway = {
       wsUrl: gw.gatewayWsUrl.trim(),
       authToken: gw.gatewayAuthToken.trim(),
@@ -373,6 +383,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       apiKey: em.apiKey.trim(),
     };
     state.lastSavedFloatingIcon = state.floatingIconEnabled;
+    state.lastSavedAnthropic = {
+      baseUrl: an.baseUrl.trim(),
+      authToken: an.authToken.trim(),
+    };
     updateInputs();
     updateStatus('gateway', state.gatewayOk, state.gatewayMessage);
     updateStatus('emos', state.emosOk, state.emosMessage);
@@ -384,11 +398,15 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const gwToken = getEl('gatewayAuthToken') as HTMLInputElement | null;
     const baseInput = getEl('baseUrl') as HTMLInputElement | null;
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
+    const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
+    const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
     const floatingCb = getEl('floatingIconCb') as HTMLInputElement | null;
     if (gwInput) gwInput.value = state.gatewayWsUrl;
     if (gwToken) gwToken.value = state.gatewayAuthToken;
     if (baseInput) baseInput.value = state.baseUrl;
     if (apiInput) apiInput.value = state.apiKey;
+    if (anBaseInput) anBaseInput.value = state.anthropicBaseUrl;
+    if (anTokenInput) anTokenInput.value = state.anthropicAuthToken;
     if (floatingCb) floatingCb.checked = state.floatingIconEnabled;
   }
 
@@ -410,10 +428,14 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const gwToken = getEl('gatewayAuthToken') as HTMLInputElement | null;
     const baseInput = getEl('baseUrl') as HTMLInputElement | null;
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
+    const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
+    const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
     if (gwInput) state.gatewayWsUrl = gwInput.value;
     if (gwToken) state.gatewayAuthToken = gwToken.value;
     if (baseInput) state.baseUrl = baseInput.value;
     if (apiInput) state.apiKey = apiInput.value;
+    if (anBaseInput) state.anthropicBaseUrl = anBaseInput.value;
+    if (anTokenInput) state.anthropicAuthToken = anTokenInput.value;
   }
 
   function showToast(message: string): void {
@@ -455,6 +477,21 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     state.emosMessage = '';
     updateStatus('emos', true, '');
     showToast(getMessage('settingsEmosSavedNotification'));
+  }
+
+  async function saveAnthropic(): Promise<void> {
+    syncFromInputs();
+    const baseUrl = state.anthropicBaseUrl.trim();
+    const authToken = state.anthropicAuthToken.trim();
+    if (
+      baseUrl === state.lastSavedAnthropic.baseUrl &&
+      authToken === state.lastSavedAnthropic.authToken
+    ) {
+      return;
+    }
+    await setAnthropicSettings({ baseUrl, authToken });
+    state.lastSavedAnthropic = { baseUrl, authToken };
+    showToast(getMessage('settingsAnthropicSavedNotification'));
   }
 
   async function testGateway(): Promise<void> {
@@ -596,7 +633,22 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       <div data-id="emosStatus" class="qp-settings-status" hidden></div>
     `;
 
-    body.append(mcpCard, qpCard, gwCard, emCard);
+    // Anthropic card
+    const anCard = document.createElement('section');
+    anCard.className = 'qp-settings-card';
+    anCard.innerHTML = `
+      <h2 class="qp-settings-card-title">Anthropic (Claude Code)</h2>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">Base URL</span>
+        <input data-id="anthropicBaseUrl" class="qp-settings-field-input" type="text" placeholder="(optional)"/>
+      </label>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">Auth Token</span>
+        <input data-id="anthropicAuthToken" class="qp-settings-field-input" type="password" placeholder="(optional)"/>
+      </label>
+    `;
+
+    body.append(mcpCard, qpCard, gwCard, emCard, anCard);
     modal.append(header, body);
     back.append(style, modal, toast);
 
@@ -630,6 +682,12 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     for (const id of ['baseUrl', 'apiKey']) {
       const input = emCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
       if (input) disposer.listen(input, 'blur', () => void saveEmos());
+    }
+
+    // Auto-save on blur for Anthropic inputs
+    for (const id of ['anthropicBaseUrl', 'anthropicAuthToken']) {
+      const input = anCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
+      if (input) disposer.listen(input, 'blur', () => void saveAnthropic());
     }
 
     return back;

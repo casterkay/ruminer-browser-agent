@@ -54,24 +54,37 @@
               :style="{ backgroundColor: 'var(--ac-surface)' }"
             />
             <span>{{ brandLabel || 'Agent' }}</span>
+            <!-- Connection Indicator (left, after engine name) -->
+            <div class="flex items-center" :data-tooltip="connectionText">
+              <span
+                class="w-2 h-2 m-1 rounded-full"
+                :style="{
+                  backgroundColor: connectionColor,
+                  boxShadow: connectionState === 'ready' ? `0 0 8px ${connectionColor}` : 'none',
+                }"
+              />
+            </div>
           </span>
         </h1>
-
-        <!-- Connection Indicator (left, after engine name) -->
-        <div class="flex items-center" :data-tooltip="connectionText">
-          <span
-            class="w-2 h-2 rounded-full"
-            :style="{
-              backgroundColor: connectionColor,
-              boxShadow: connectionState === 'ready' ? `0 0 8px ${connectionColor}` : 'none',
-            }"
-          />
-        </div>
       </div>
     </div>
 
     <!-- Settings -->
     <div class="flex items-center gap-3">
+      <!-- Ruminate Toggle -->
+      <button
+        type="button"
+        class="px-2 py-1 text-xs font-medium ac-btn ac-focus-ring transition-colors"
+        :style="ruminateButtonStyle"
+        :data-tooltip="ruminateEnabled ? 'Ruminate: On' : 'Ruminate: Off'"
+        @click="$emit('toggle:ruminate')"
+      >
+        <span class="inline-flex items-center gap-1.5">
+          <ILucideInfinity class="w-3.5 h-3.5" />
+          <span>Ruminate</span>
+        </span>
+      </button>
+
       <!-- Session Settings Button -->
       <button
         class="p-1 ac-btn ac-hover-text"
@@ -81,26 +94,16 @@
       >
         <ILucideSlidersHorizontal class="w-5 h-5" />
       </button>
-
-      <!-- Open Project Button -->
-      <button
-        class="p-1 ac-btn ac-hover-text"
-        :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
-        data-tooltip="Open project workspace"
-        @click="$emit('toggle:openProjectMenu')"
-      >
-        <ILucideFolderOpen class="w-5 h-5" />
-      </button>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { computed } from 'vue';
-import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
-import ILucideChevronLeft from '~icons/lucide/chevron-left';
 import ILucideChevronDown from '~icons/lucide/chevron-down';
-import ILucideFolderOpen from '~icons/lucide/folder-open';
+import ILucideChevronLeft from '~icons/lucide/chevron-left';
+import ILucideInfinity from '~icons/lucide/infinity';
+import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
 
@@ -116,14 +119,16 @@ const props = defineProps<{
   brandEngineName?: string;
   /** Whether current chat is empty; enables engine switching affordance */
   isEmptyChat?: boolean;
+  /** Whether Ruminate (RAG) mode is enabled for this session */
+  ruminateEnabled: boolean;
 }>();
 
 defineEmits<{
   'toggle:projectMenu': [];
   'toggle:sessionMenu': [];
   'toggle:engineMenu': [];
-  'toggle:openProjectMenu': [];
   'session:settings': [];
+  'toggle:ruminate': [];
   /** Emitted when back button is clicked */
   back: [];
 }>();
@@ -176,5 +181,20 @@ const brandIconUrl = computed(() => {
 
   // Dev/preview fallback
   return `/${path}`;
+});
+
+const ruminateButtonStyle = computed(() => {
+  const enabled = props.ruminateEnabled === true;
+  return {
+    borderRadius: '9999px',
+    fontFamily: 'var(--ac-font-body)',
+    border: enabled
+      ? 'var(--ac-border-width, 1px) solid color-mix(in srgb, var(--ac-accent) 60%, transparent)'
+      : 'var(--ac-border-width, 1px) solid var(--ac-border)',
+    backgroundColor: enabled
+      ? 'color-mix(in srgb, var(--ac-accent) 18%, transparent)'
+      : 'transparent',
+    color: enabled ? 'var(--ac-accent)' : 'var(--ac-text-subtle)',
+  };
 });
 </script>

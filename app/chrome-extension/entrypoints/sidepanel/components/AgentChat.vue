@@ -37,11 +37,12 @@
             :brand-label="engineDisplayName"
             :brand-engine-name="selectedEngineName"
             :is-empty-chat="canPickEngine"
+            :ruminate-enabled="ruminateEnabled"
             @session:settings="handleTopBarOpenSettings"
             @toggle:project-menu="toggleProjectMenu"
             @toggle:session-menu="toggleSessionMenu"
             @toggle:engine-menu="toggleEngineMenu"
-            @toggle:open-project-menu="toggleOpenProjectMenu"
+            @toggle:ruminate="handleToggleRuminate"
             @back="handleBackToSessions"
           />
         </template>
@@ -102,7 +103,7 @@
 
     <!-- Click-outside handler for menus (z-40) -->
     <div
-      v-if="projectMenuOpen || sessionMenuOpen || engineMenuOpen || openProjectMenuOpen"
+      v-if="projectMenuOpen || sessionMenuOpen || engineMenuOpen"
       class="fixed inset-0 z-40"
       @click="closeMenus"
     />
@@ -151,24 +152,23 @@
       @engine:select="handleEmptyChatEngineChange"
     />
 
-    <AgentOpenProjectMenu
-      :open="openProjectMenuOpen"
-      :default-target="openProjectPreference.defaultTarget.value"
-      @select="handleOpenProjectSelect"
-      @close="closeOpenProjectMenu"
-    />
-
     <!-- Session Settings Panel -->
     <AgentSessionSettingsPanel
       :open="sessionSettingsOpen"
       :session="sessionForPanels"
       :management-info="currentManagementInfo"
+      :project-root-path="currentProjectRootPath"
+      :open-project-default-target="openProjectPreference.defaultTarget.value"
+      :open-project-loading="openProjectPreference.loading.value"
+      :workspace-picking="isPickingDirectory"
       :openclaw-agents="openclawAgents"
       :selected-openclaw-agent-id="currentOpenClawAgentId"
       :is-loading="sessionSettingsLoading"
       :is-saving="sessionSettingsSaving"
       @close="handleCloseSessionSettings"
       @save="handleSaveSessionSettings"
+      @workspace:pick="handleWorkspacePick"
+      @open-project="handleOpenProjectFromSettings"
     />
 
     <AgentToolSelectionPanel
@@ -243,7 +243,6 @@ import {
   AgentComposer,
   AgentConversation,
   AgentEngineMenu,
-  AgentOpenProjectMenu,
   AgentProjectMenu,
   AgentSessionMenu,
   AgentSessionSettingsPanel,
@@ -332,10 +331,6 @@ const isPickingDirectory = ref(false);
 const projectMenuOpen = ref(false);
 const sessionMenuOpen = ref(false);
 const engineMenuOpen = ref(false);
-const openProjectMenuOpen = ref(false);
-
-// Open project context: which session/project to open when menu selects
-const openProjectContext = ref<{ type: 'session' | 'project'; id: string } | null>(null);
 
 // Session settings panel state
 const sessionSettingsOpen = ref(false);
@@ -348,6 +343,13 @@ const currentManagementInfo = ref<AgentManagementInfo | null>(null);
 
 // Draft session settings (used in new-chat state before a session is created on first send)
 const draftSessionSettings = ref<SessionSettings | null>(null);
+
+const ruminateEnabled = computed(() => {
+  if (hasSession.value) {
+    return sessions.selectedSession.value?.optionsConfig?.enableRuminate === true;
+  }
+  return draftSessionSettings.value?.optionsConfig?.enableRuminate === true;
+});
 
 // Attachment cache panel state
 const attachmentCacheOpen = ref(false);
@@ -762,6 +764,16 @@ const sessionForPanels = computed<AgentSession | null>(() => {
   };
 });
 
+const currentProjectRootPath = computed(() => {
+  const projectId = sessionForPanels.value?.projectId || projects.selectedProjectId.value || '';
+  if (!projectId) return '';
+  return (
+    projects.projects.value.find((p) => p.id === projectId)?.rootPath ||
+    projects.selectedProject.value?.rootPath ||
+    ''
+  );
+});
+
 // ============================================================
 // OpenClaw Agents (per-session sessionKey)
 // ============================================================
@@ -935,7 +947,6 @@ function toggleProjectMenu(): void {
   if (projectMenuOpen.value) {
     sessionMenuOpen.value = false;
     engineMenuOpen.value = false;
-    openProjectMenuOpen.value = false;
   }
 }
 
@@ -944,7 +955,6 @@ function toggleSessionMenu(): void {
   if (sessionMenuOpen.value) {
     projectMenuOpen.value = false;
     engineMenuOpen.value = false;
-    openProjectMenuOpen.value = false;
   }
 }
 
@@ -954,29 +964,7 @@ function toggleEngineMenu(): void {
   if (engineMenuOpen.value) {
     projectMenuOpen.value = false;
     sessionMenuOpen.value = false;
-    openProjectMenuOpen.value = false;
   }
-}
-
-function toggleOpenProjectMenu(): void {
-  openProjectMenuOpen.value = !openProjectMenuOpen.value;
-  if (openProjectMenuOpen.value) {
-    projectMenuOpen.value = false;
-    sessionMenuOpen.value = false;
-    engineMenuOpen.value = false;
-    // Set context to current session from chat view
-    const sessionId = sessions.selectedSessionId.value;
-    if (sessionId) {
-      openProjectContext.value = { type: 'session', id: sessionId };
-    }
-  } else {
-    openProjectContext.value = null;
-  }
-}
-
-function closeOpenProjectMenu(): void {
-  openProjectMenuOpen.value = false;
-  openProjectContext.value = null;
 }
 
 /**
@@ -992,42 +980,9 @@ async function handleSessionOpenProject(sessionId: string): Promise<void> {
       showToast(`Failed to open project: ${result.error}`);
     }
   } else {
-    // No default, show menu
-    openProjectContext.value = { type: 'session', id: sessionId };
-    openProjectMenuOpen.value = true;
-    projectMenuOpen.value = false;
-    sessionMenuOpen.value = false;
-    engineMenuOpen.value = false;
-  }
-}
-
-/**
- * Handle open project menu selection.
- * Saves preference and opens the project.
- */
-async function handleOpenProjectSelect(target: OpenProjectTarget): Promise<void> {
-  // Snapshot context before any await to prevent race condition
-  // (close event may clear context while we're awaiting)
-  const ctx = openProjectContext.value;
-
-  // Close menu immediately for better UX
-  closeOpenProjectMenu();
-
-  if (!ctx) return;
-
-  // Save as default preference (non-blocking for UX)
-  void openProjectPreference.saveDefaultTarget(target);
-
-  // Execute open action based on context
-  let result;
-  if (ctx.type === 'session') {
-    result = await openProjectPreference.openBySession(ctx.id, target);
-  } else {
-    result = await openProjectPreference.openByProject(ctx.id, target);
-  }
-
-  if (!result.success) {
-    showToast(`Failed to open project: ${result.error}`);
+    // No default: open Session Settings so user can select VS Code / Terminal.
+    await handleOpenSessionSettings(sessionId);
+    showToast('Select VS Code or Terminal in Session Settings → Workspace & Project.');
   }
 }
 
@@ -1035,8 +990,6 @@ function closeMenus(): void {
   projectMenuOpen.value = false;
   sessionMenuOpen.value = false;
   engineMenuOpen.value = false;
-  openProjectMenuOpen.value = false;
-  openProjectContext.value = null;
 }
 
 // Attachment cache handlers
@@ -1158,6 +1111,85 @@ function handleComposerOpenSettings(): void {
 
 function handleTopBarOpenSettings(): void {
   handleComposerOpenSettings();
+}
+
+async function handleToggleRuminate(): Promise<void> {
+  const next = !ruminateEnabled.value;
+
+  if (hasSession.value) {
+    const sessionId = sessions.selectedSessionId.value;
+    const session = sessions.selectedSession.value;
+    if (!sessionId || !session) return;
+    const existingOptions = session.optionsConfig ?? {};
+    await sessions.updateSession(sessionId, {
+      optionsConfig: { ...existingOptions, enableRuminate: next },
+    });
+    return;
+  }
+
+  const draft = draftSessionSettings.value;
+  const existingOptions = draft?.optionsConfig ?? {};
+  draftSessionSettings.value = {
+    model: draft?.model ?? '',
+    permissionMode: draft?.permissionMode ?? '',
+    systemPromptConfig: draft?.systemPromptConfig ?? null,
+    optionsConfig: { ...existingOptions, enableRuminate: next },
+  };
+}
+
+async function handleWorkspacePick(): Promise<void> {
+  // Workspace can only be configured for sessionless new chat.
+  if (hasSession.value) return;
+
+  isPickingDirectory.value = true;
+  try {
+    const path = await projects.pickDirectory();
+    if (!path) return;
+
+    const segments = path.split(/[/\\]/).filter((s) => s.length > 0);
+    const dirName = segments.pop() || 'New Project';
+
+    const project = await projects.createProjectFromPath(path, dirName);
+    if (!project) return;
+
+    selectedCli.value = project.preferredCli ?? '';
+    model.value = project.selectedModel ?? '';
+    useCcr.value = project.useCcr ?? false;
+    enableChromeMcp.value = project.enableChromeMcp !== false;
+
+    // Ensure we stay in sessionless new chat so engine/workspace is "locked" only after first send.
+    clearRequestState();
+    await sessions.clearSelectedSession();
+    chat.setMessages([]);
+    viewRoute.setSessionId(null);
+    viewRoute.goToNewChat();
+
+    // Load sessions list for the selected project, but clear selection afterward.
+    await sessions.fetchSessions(project.id);
+    await sessions.clearSelectedSession();
+  } finally {
+    isPickingDirectory.value = false;
+  }
+}
+
+async function handleOpenProjectFromSettings(target: OpenProjectTarget): Promise<void> {
+  const sessionId = sessions.selectedSessionId.value;
+  const projectId = projects.selectedProjectId.value || sessions.selectedSession.value?.projectId;
+  if (!projectId) {
+    showToast('No project selected.');
+    return;
+  }
+
+  // Save default preference (non-blocking).
+  void openProjectPreference.saveDefaultTarget(target);
+
+  const result = sessionId
+    ? await openProjectPreference.openBySession(sessionId, target)
+    : await openProjectPreference.openByProject(projectId, target);
+
+  if (!result.success) {
+    showToast(`Failed to open project: ${result.error}`);
+  }
 }
 
 function handleComposerOpenTools(): void {
@@ -1617,6 +1649,25 @@ function injectToolRestrictions(
   return `${restrictionText}\n\n${instruction}`;
 }
 
+function injectRuminateRagGuidance(instruction: string): string {
+  const guidance = [
+    'Ruminate mode (RAG):',
+    '- Before replying, make the best use of the `emos_search_memories` tool to search the user’s own past messages.',
+    '- Always set `user_id: "me"` (user messages only).',
+    '- Use the retrieved memories to ground your response when relevant.',
+    '',
+    'When you use any memory in your answer, provide citations by message IDs in exactly this format:',
+    'some text [^1]. some text [^1,2]...',
+    '',
+    '[^1]: message-id-1',
+    '[^2]: message-id-2',
+    '[^...]: message-id-...',
+    '**(MESSAGE ENDS HERE!)**',
+  ].join('\n');
+
+  return `${guidance}\n\n${instruction}`;
+}
+
 /**
  * Fetch element markers for the active tab's URL from the background store.
  * Returns an empty array on any failure.
@@ -1843,8 +1894,11 @@ async function handleSend(): Promise<void> {
     fetchMarkersForCurrentTab(),
   ]);
   const instructionWithMarkers = injectMarkerContext(instructionWithContext, currentPageMarkers);
+  const instructionWithRuminate = ruminateEnabled.value
+    ? injectRuminateRagGuidance(instructionWithMarkers)
+    : instructionWithMarkers;
   const finalInstruction = injectToolRestrictions(
-    instructionWithMarkers,
+    instructionWithRuminate,
     toolGroups,
     individualToolState,
   );
@@ -2063,9 +2117,9 @@ watch(
 );
 
 watch(
-  [() => chat.input.value, isSearchMode],
-  ([input, searchMode]) => {
-    if (!searchMode) {
+  [() => chat.input.value, isSearchMode, ruminateEnabled],
+  ([input, searchMode, ruminateOn]) => {
+    if (!searchMode || !ruminateOn) {
       emosSuggestions.clear();
       return;
     }

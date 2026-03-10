@@ -11,6 +11,7 @@
  */
 import { setCustomComponents } from 'markstream-vue';
 import ThinkingNode from './ThinkingNode.vue';
+import EmosCitationNode from './EmosCitationNode.vue';
 
 /** Scope ID for AgentChat markdown rendering */
 export const AGENTCHAT_MD_SCOPE = 'agentchat';
@@ -18,4 +19,5 @@ export const AGENTCHAT_MD_SCOPE = 'agentchat';
 // Register the thinking node component
 setCustomComponents(AGENTCHAT_MD_SCOPE, {
   thinking: ThinkingNode,
+  'emos-cite': EmosCitationNode,
 });

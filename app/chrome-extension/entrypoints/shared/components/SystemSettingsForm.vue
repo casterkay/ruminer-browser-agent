@@ -33,7 +33,7 @@
       </div>
       <div v-else class="settings-row">
         <span class="settings-label">Port</span>
-        <span class="settings-value settings-muted">Default: {{ defaultPort }}</span>
+        <span class="settings-value settings-muted">{{ defaultPort }}</span>
       </div>
     </section>
 
@@ -123,11 +123,40 @@
         {{ emosMessage }}
       </div>
     </section>
+
+    <!-- Claude Code card -->
+    <section class="settings-card">
+      <h2 class="settings-card-title">Claude Code</h2>
+      <label class="settings-field">
+        <span class="settings-field-label">Base URL</span>
+        <input
+          v-model="anthropicBaseUrl"
+          class="settings-field-input"
+          type="text"
+          placeholder="https://api.anthropic.com"
+          @blur="saveAnthropic"
+        />
+      </label>
+      <label class="settings-field">
+        <span class="settings-field-label">API Key</span>
+        <input
+          v-model="anthropicAuthToken"
+          class="settings-field-input"
+          type="password"
+          placeholder="your Anthropic API key"
+          @blur="saveAnthropic"
+        />
+      </label>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { NATIVE_HOST } from '@/common/constants';
+import {
+  getAnthropicSettings,
+  setAnthropicSettings,
+} from '@/entrypoints/shared/utils/anthropic-settings';
 import {
   getEmosSettings,
   getGatewaySettings,
@@ -181,6 +210,10 @@ const testingEmos = ref(false);
 const emosOk = ref(true);
 const emosMessage = ref('');
 
+// Anthropic state
+const anthropicBaseUrl = ref('https://api.anthropic.com');
+const anthropicAuthToken = ref('');
+
 // Quick Panel state
 const floatingIconEnabled = ref(true);
 
@@ -188,6 +221,7 @@ const floatingIconEnabled = ref(true);
 const lastSavedGateway = ref({ wsUrl: '', authToken: '' });
 const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
+const lastSavedAnthropic = ref({ baseUrl: '', authToken: '' });
 
 async function refreshServerStatus(): Promise<void> {
   refreshing.value = true;
@@ -201,22 +235,26 @@ async function refreshServerStatus(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  const [gw, em, fi] = await Promise.all([
+  const [gw, em, fi, an] = await Promise.all([
     getGatewaySettings(),
     getEmosSettings(),
     loadFloatingIcon(),
+    getAnthropicSettings(),
   ]);
   gatewayWsUrl.value = gw.gatewayWsUrl;
   gatewayAuthToken.value = gw.gatewayAuthToken;
   baseUrl.value = em.baseUrl;
   apiKey.value = em.apiKey;
   floatingIconEnabled.value = fi;
+  anthropicBaseUrl.value = an.baseUrl;
+  anthropicAuthToken.value = an.authToken;
   lastSavedGateway.value = { wsUrl: gw.gatewayWsUrl.trim(), authToken: gw.gatewayAuthToken.trim() };
   lastSavedEmos.value = {
     baseUrl: em.baseUrl.trim(),
     apiKey: em.apiKey.trim(),
   };
   lastSavedFloatingIcon.value = fi;
+  lastSavedAnthropic.value = { baseUrl: an.baseUrl.trim(), authToken: an.authToken.trim() };
 }
 
 async function saveGateway(): Promise<void> {
@@ -232,7 +270,6 @@ async function saveGateway(): Promise<void> {
   showToast(t('settingsGatewaySavedNotification'));
 }
 
-// TODO: persist values in SQLite DB
 async function saveEmos(): Promise<void> {
   const base = baseUrl.value.trim();
   const key = apiKey.value.trim();
@@ -252,6 +289,17 @@ async function saveFloatingIcon(): Promise<void> {
   await doSaveFloatingIcon(enabled);
   lastSavedFloatingIcon.value = enabled;
   showToast(t('settingsQuickPanelSavedNotification'));
+}
+
+async function saveAnthropic(): Promise<void> {
+  const base = anthropicBaseUrl.value.trim();
+  const token = anthropicAuthToken.value.trim();
+  if (base === lastSavedAnthropic.value.baseUrl && token === lastSavedAnthropic.value.authToken) {
+    return;
+  }
+  await setAnthropicSettings({ baseUrl: base, authToken: token });
+  lastSavedAnthropic.value = { baseUrl: base, authToken: token };
+  showToast(t('settingsAnthropicSavedNotification'));
 }
 
 async function testGateway(): Promise<void> {

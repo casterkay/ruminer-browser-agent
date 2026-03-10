@@ -225,6 +225,18 @@
             <ILucideCrosshair class="w-4 h-4" />
           </button>
 
+          <!-- Record Browser Actions -->
+          <button
+            type="button"
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Record browser actions"
+            :disabled="recordBusy"
+            @click="handleRecordButton"
+          >
+            <ILucideCirclePlay class="w-4 h-4" />
+          </button>
+
           <!-- Tools Button -->
           <button
             class="p-1 ac-btn"
@@ -311,6 +323,18 @@
             <ILucideCrosshair class="w-4 h-4" />
           </button>
 
+          <!-- Record Browser Actions -->
+          <button
+            type="button"
+            class="p-1.5 ac-btn"
+            :style="{ color: 'var(--ac-text-subtle)', borderRadius: 'var(--ac-radius-button)' }"
+            data-tooltip="Record browser actions"
+            :disabled="recordBusy"
+            @click="handleRecordButton"
+          >
+            <ILucideCirclePlay class="w-4 h-4" />
+          </button>
+
           <!-- Status Text -->
           <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
             <span
@@ -327,9 +351,11 @@
 </template>
 
 <script lang="ts" setup>
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { computed, nextTick, ref, toRef } from 'vue';
 import ILucideArrowUp from '~icons/lucide/arrow-up';
 import ILucideCamera from '~icons/lucide/camera';
+import ILucideCirclePlay from '~icons/lucide/circle-play';
 import ILucideCrosshair from '~icons/lucide/crosshair';
 import ILucideImage from '~icons/lucide/image';
 import ILucideMaximize2 from '~icons/lucide/maximize-2';
@@ -337,6 +363,8 @@ import ILucidePaperclip from '~icons/lucide/paperclip';
 import ILucideSquare from '~icons/lucide/square';
 import ILucideWrench from '~icons/lucide/wrench';
 import ILucideX from '~icons/lucide/x';
+import type { RequestState } from '../../composables/useAgentChat';
+import type { AttachmentWithPreview } from '../../composables/useAttachments';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import ComposerDrawer from './ComposerDrawer.vue';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
@@ -410,6 +438,53 @@ const statusColor = computed(() => {
   if (props.sending || isRequestActive.value) return 'var(--ac-accent)';
   return 'var(--ac-text-subtle)';
 });
+
+// =============================================================================
+// Recording Controls (RR-V2 recorder)
+// Composer button only starts recording; in-page overlay provides pause/stop/continue.
+// =============================================================================
+
+const recordBusy = ref(false);
+
+function buildDefaultRecordingMeta(): { name: string; description: string } {
+  const ts = new Date();
+  const yyyy = String(ts.getFullYear());
+  const mm = String(ts.getMonth() + 1).padStart(2, '0');
+  const dd = String(ts.getDate()).padStart(2, '0');
+  const hh = String(ts.getHours()).padStart(2, '0');
+  const mi = String(ts.getMinutes()).padStart(2, '0');
+  return {
+    name: `recording_${yyyy}${mm}${dd}_${hh}${mi}`,
+    description: 'Recorded from sidepanel composer',
+  };
+}
+
+async function startRecording(): Promise<void> {
+  recordBusy.value = true;
+  try {
+    const meta = buildDefaultRecordingMeta();
+    const res = (await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING,
+      meta,
+    })) as { success: boolean; error?: string } | undefined;
+
+    if (!res?.success) {
+      const msg = res?.error || 'Failed to start recording';
+      // Button is intentionally stateless; ignore repeat clicks while recording.
+      if (/already active/i.test(msg)) return;
+      throw new Error(msg);
+    }
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  } finally {
+    recordBusy.value = false;
+  }
+}
+
+async function handleRecordButton(): Promise<void> {
+  if (recordBusy.value) return;
+  await startRecording();
+}
 
 // =============================================================================
 // Primary Action Button (Send / Stop)

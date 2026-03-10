@@ -106,7 +106,24 @@ CREATE TABLE IF NOT EXISTS openclaw_device_identity (
 -- Store secrets (API keys) here so they can survive extension reinstall.
 CREATE TABLE IF NOT EXISTS emos_settings (
   id TEXT PRIMARY KEY,
+  base_url TEXT NOT NULL,
   api_key TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Anthropic settings for Claude Code (native-server owned)
+-- Used to set env vars when spawning the claude CLI.
+CREATE TABLE IF NOT EXISTS anthropic_settings (
+  id TEXT PRIMARY KEY,
+  base_url TEXT NOT NULL,
+  auth_token TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- UI/system settings (native-server owned)
+CREATE TABLE IF NOT EXISTS ui_settings (
+  id TEXT PRIMARY KEY,
+  floating_icon_enabled TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 `;
@@ -141,6 +158,13 @@ function runMigrations(sqlite: DatabaseSync): void {
   // Migration 3: Add enable_chrome_mcp column to projects table (default enabled)
   if (!columnExists(sqlite, 'projects', 'enable_chrome_mcp')) {
     sqlite.exec("ALTER TABLE projects ADD COLUMN enable_chrome_mcp TEXT NOT NULL DEFAULT '1'");
+  }
+
+  if (!columnExists(sqlite, 'emos_settings', 'base_url')) {
+    // Default to the public EverMemOS API.
+    sqlite.exec(
+      "ALTER TABLE emos_settings ADD COLUMN base_url TEXT NOT NULL DEFAULT 'https://api.evermind.ai'",
+    );
   }
 }
 

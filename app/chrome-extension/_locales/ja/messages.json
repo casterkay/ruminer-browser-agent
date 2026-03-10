@@ -355,6 +355,10 @@
     "message": "クイックパネル設定を保存しました",
     "description": "クイックパネル設定保存時のトースト"
   },
+  "settingsAnthropicSavedNotification": {
+    "message": "Anthropic の設定を保存しました",
+    "description": "Claude Code の設定が保存されたときに表示されるトースト"
+  },
   "refreshStatusButtonAria": {
     "message": "ステータスを更新",
     "description": "更新ボタンのaria-label"

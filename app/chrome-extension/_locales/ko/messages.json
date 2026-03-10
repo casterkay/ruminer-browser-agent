@@ -463,6 +463,10 @@
     "message": "퀵 패널 설정이 저장되었습니다",
     "description": "퀵 패널 설정 저장 시 토스트"
   },
+  "settingsAnthropicSavedNotification": {
+    "message": "Anthropic 설정이 저장되었습니다",
+    "description": "Claude Code 설정 저장 시 토스트"
+  },
   "refreshStatusButtonAria": {
     "message": "상태 새로고침",
     "description": "새로고침 버튼 aria-label"

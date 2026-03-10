@@ -78,12 +78,13 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref } from 'vue';
+import { computed, provide, ref } from 'vue';
 import type { AgentThread } from '../../composables/useAgentThreads';
 import type { MemoryItem } from '../../composables/useEmosSearch';
 import type { MemorySuggestion } from '../../composables/useEmosSuggestions';
 import MemoryItemDetails from '../memory/MemoryItemDetails.vue';
 import AgentRequestThread from './AgentRequestThread.vue';
+import { EMOS_CITATION_OPEN_DETAILS_KEY } from '../../composables/emos-citations';
 
 const props = withDefaults(
   defineProps<{
@@ -105,6 +106,10 @@ const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 
 const trimmedQuery = computed(() => props.searchQuery.trim());
 const selectedMemoryItem = ref<MemoryItem | null>(null);
 const detailsVisible = computed(() => !!selectedMemoryItem.value);
+
+provide(EMOS_CITATION_OPEN_DETAILS_KEY, (item: MemoryItem) => {
+  selectedMemoryItem.value = item;
+});
 
 const appIconUrl = computed(() => {
   const path = 'icon/icon.svg';

@@ -103,6 +103,97 @@
             </div>
           </div>
 
+          <!-- Workspace & Project -->
+          <div class="space-y-2">
+            <label
+              class="text-[10px] font-bold uppercase tracking-wider"
+              :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
+            >
+              Workspace &amp; Project
+            </label>
+
+            <!-- Workspace path -->
+            <div class="space-y-2 p-2" :style="sectionCardStyle">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                    Project folder
+                  </div>
+                  <div
+                    class="text-[10px] mt-0.5"
+                    :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
+                  >
+                    {{
+                      isWorkspaceConfigurable
+                        ? 'Choose before starting the session.'
+                        : 'Locked after the first message.'
+                    }}
+                  </div>
+                </div>
+
+                <button
+                  v-if="isWorkspaceConfigurable"
+                  type="button"
+                  class="px-2 py-1 text-[10px] font-semibold ac-btn ac-focus-ring cursor-pointer"
+                  :style="secondaryButtonStyle"
+                  :disabled="workspacePicking || isSaving"
+                  @click="$emit('workspace:pick')"
+                >
+                  {{ workspacePicking ? 'Choosing...' : 'Choose folder…' }}
+                </button>
+              </div>
+
+              <div
+                class="text-[10px] font-mono break-words whitespace-pre-wrap"
+                :style="pathBoxStyle"
+                :title="projectRootPath || ''"
+              >
+                {{ projectRootPath || 'No project selected.' }}
+              </div>
+            </div>
+
+            <!-- Open Project -->
+            <div class="space-y-2 p-2" :style="sectionCardStyle">
+              <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
+                Open project workspace
+              </div>
+              <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
+                Click to open and set as default.
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 px-2 py-1.5 text-xs font-medium ac-btn ac-focus-ring cursor-pointer"
+                  :style="openTargetStyle('vscode')"
+                  :disabled="openProjectLoading || isSaving"
+                  @click="$emit('open-project', 'vscode')"
+                >
+                  <span class="inline-flex items-center justify-between w-full gap-2">
+                    <span>VS Code</span>
+                    <span v-if="openProjectDefaultTarget === 'vscode'" class="text-[10px]"
+                      >Default</span
+                    >
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="flex-1 px-2 py-1.5 text-xs font-medium ac-btn ac-focus-ring cursor-pointer"
+                  :style="openTargetStyle('terminal')"
+                  :disabled="openProjectLoading || isSaving"
+                  @click="$emit('open-project', 'terminal')"
+                >
+                  <span class="inline-flex items-center justify-between w-full gap-2">
+                    <span>Terminal</span>
+                    <span v-if="openProjectDefaultTarget === 'terminal'" class="text-[10px]"
+                      >Default</span
+                    >
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- EverMemOS -->
           <div class="space-y-2">
             <label
@@ -456,6 +547,7 @@ import type {
   AgentSessionOptionsConfig,
   AgentSystemPromptConfig,
   CodexReasoningEffort,
+  OpenProjectTarget,
   OpenClawAgentDto,
 } from 'chrome-mcp-shared';
 import { computed, ref, watch } from 'vue';
@@ -464,6 +556,10 @@ const props = defineProps<{
   open: boolean;
   session: AgentSession | null;
   managementInfo: AgentManagementInfo | null;
+  projectRootPath: string;
+  openProjectDefaultTarget: OpenProjectTarget | null;
+  openProjectLoading: boolean;
+  workspacePicking: boolean;
   openclawAgents?: OpenClawAgentDto[];
   selectedOpenclawAgentId?: string;
   isLoading: boolean;
@@ -473,6 +569,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   save: [settings: SessionSettings];
+  'workspace:pick': [];
+  'open-project': [target: OpenProjectTarget];
 }>();
 
 export interface SessionSettings {
@@ -508,6 +606,41 @@ function toggleStyle(enabled: boolean) {
 const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
 const isCodexEngine = computed(() => props.session?.engineName === 'codex');
 const isOpenClawEngine = computed(() => props.session?.engineName === 'openclaw');
+const isWorkspaceConfigurable = computed(() => props.session?.id === '__new__');
+
+const sectionCardStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
+  borderRadius: 'var(--ac-radius-inner, 8px)',
+}));
+
+const pathBoxStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface, #ffffff)',
+  border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+  borderRadius: 'var(--ac-radius-inner, 8px)',
+  color: 'var(--ac-text, #1a1a1a)',
+  padding: '8px 10px',
+}));
+
+const secondaryButtonStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface, #ffffff)',
+  border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+  borderRadius: 'var(--ac-radius-button, 8px)',
+  color: 'var(--ac-text, #1a1a1a)',
+}));
+
+function openTargetStyle(target: OpenProjectTarget) {
+  const isDefault = props.openProjectDefaultTarget === target;
+  return {
+    backgroundColor: isDefault
+      ? 'color-mix(in srgb, var(--ac-accent) 14%, transparent)'
+      : 'var(--ac-surface, #ffffff)',
+    border: isDefault
+      ? 'var(--ac-border-width, 1px) solid color-mix(in srgb, var(--ac-accent) 55%, transparent)'
+      : 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+    borderRadius: 'var(--ac-radius-button, 8px)',
+    color: isDefault ? 'var(--ac-accent, #c87941)' : 'var(--ac-text, #1a1a1a)',
+  } as const;
+}
 
 // Get available reasoning efforts based on selected model
 const availableReasoningEfforts = computed<readonly CodexReasoningEffort[]>(() => {

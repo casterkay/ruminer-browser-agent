@@ -119,16 +119,6 @@
         </span>
         <!-- Action buttons -->
         <div class="flex items-center gap-1">
-          <!-- Open Project Button -->
-          <button
-            v-if="!isEditing"
-            class="p-1.5 rounded-md transition-colors cursor-pointer"
-            :style="actionButtonStyle"
-            title="Open project"
-            @click.stop="handleOpenProject"
-          >
-            <ILucideFolderOpen class="w-3.5 h-3.5" />
-          </button>
           <!-- Rename Button -->
           <button
             v-if="!isEditing"
@@ -158,14 +148,13 @@
 <script lang="ts" setup>
 import type { AgentSession } from 'chrome-mcp-shared';
 import { computed, nextTick, ref, watch } from 'vue';
-import ILucidePaintbrush from '~icons/lucide/paintbrush';
-import ILucideFolderOpen from '~icons/lucide/folder-open';
-import ILucidePencil from '~icons/lucide/pencil';
-import ILucideTrash2 from '~icons/lucide/trash-2';
-import ILucidePointer from '~icons/lucide/mouse-pointer-2';
-import ILucideSparkles from '~icons/lucide/sparkles';
 import ILucideBrain from '~icons/lucide/brain';
 import ILucideCpu from '~icons/lucide/cpu';
+import ILucidePointer from '~icons/lucide/mouse-pointer-2';
+import ILucidePaintbrush from '~icons/lucide/paintbrush';
+import ILucidePencil from '~icons/lucide/pencil';
+import ILucideSparkles from '~icons/lucide/sparkles';
+import ILucideTrash2 from '~icons/lucide/trash-2';
 
 // =============================================================================
 // Props & Emits

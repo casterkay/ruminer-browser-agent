@@ -163,6 +163,7 @@ export interface TestOpenClawGatewayResponse {
 // ============================================================
 
 export interface EmosSettingsDto {
+  baseUrl: string;
   apiKey: string;
   updatedAt: string;
 }
@@ -172,11 +173,62 @@ export interface GetEmosSettingsResponse {
 }
 
 export interface UpdateEmosSettingsRequest {
+  baseUrl?: string;
   apiKey?: string;
 }
 
 export interface UpdateEmosSettingsResponse {
   settings: EmosSettingsDto;
+}
+
+// ============================================================
+// Anthropic Settings API (native-server owned)
+// ============================================================
+
+export interface AnthropicSettingsDto {
+  /**
+   * ANTHROPIC_BASE_URL
+   */
+  baseUrl: string;
+  /**
+   * ANTHROPIC_AUTH_TOKEN
+   */
+  authToken: string;
+  updatedAt: string;
+}
+
+export interface GetAnthropicSettingsResponse {
+  settings: AnthropicSettingsDto;
+}
+
+export interface UpdateAnthropicSettingsRequest {
+  baseUrl?: string;
+  authToken?: string;
+}
+
+export interface UpdateAnthropicSettingsResponse {
+  settings: AnthropicSettingsDto;
+}
+
+// ============================================================
+// UI Settings API (native-server owned)
+// ============================================================
+
+export interface UiSettingsDto {
+  floatingIconEnabled: boolean;
+  updatedAt: string;
+}
+
+export interface GetUiSettingsResponse {
+  settings: UiSettingsDto;
+}
+
+export interface UpdateUiSettingsRequest {
+  floatingIconEnabled?: boolean;
+}
+
+export interface UpdateUiSettingsResponse {
+  settings: UiSettingsDto;
 }
 
 // ============================================================
@@ -244,6 +296,13 @@ export interface AgentSessionOptionsConfig {
    * from this session into EverMemOS.
    */
   saveConversationToEverMemOS?: boolean;
+  /**
+   * When true, instructs the agent to use EverMemOS as retrieval-augmented context.
+   * Stored per-session; UI label: "Ruminate".
+   *
+   * Default: false when unset.
+   */
+  enableRuminate?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
   tools?: AgentToolsConfig;

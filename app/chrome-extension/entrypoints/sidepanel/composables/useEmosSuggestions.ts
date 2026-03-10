@@ -129,7 +129,7 @@ export function useEmosSuggestions(): UseEmosSuggestions {
 
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const DEFAULT_SPEAKER_IDS = ['me', 'bot'] as const;
+  const DEFAULT_SPEAKER_IDS = ['me'] as const;
 
   function getSearchUserIds(): string[] {
     return [...DEFAULT_SPEAKER_IDS];

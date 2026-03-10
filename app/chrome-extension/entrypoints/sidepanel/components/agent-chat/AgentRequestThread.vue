@@ -148,15 +148,48 @@
 
 <script lang="ts" setup>
 import type { AttachmentMetadata } from 'chrome-mcp-shared';
-import { computed, inject, onMounted, ref, watch } from 'vue';
+import { computed, inject, onMounted, provide, ref, watch } from 'vue';
 import { AGENT_SERVER_PORT_KEY } from '../../composables';
 import type { AgentThread } from '../../composables/useAgentThreads';
+import type { MemoryItem } from '../../composables/useEmosSearch';
+import {
+  EMOS_CITATION_MEMORIES_BY_ID_KEY,
+  extractEmosCitationMemoriesFromToolResultText,
+} from '../../composables/emos-citations';
 import AgentTimeline from './AgentTimeline.vue';
 import ApplyMessageChip from './ApplyMessageChip.vue';
 
 const props = defineProps<{
   thread: AgentThread;
 }>();
+
+function getToolName(meta: Record<string, unknown> | undefined): string {
+  const raw =
+    (meta?.toolName as string | undefined) ??
+    (meta?.tool_name as string | undefined) ??
+    (meta?.name as string | undefined) ??
+    '';
+  return String(raw || '')
+    .trim()
+    .toLowerCase();
+}
+
+const citationMemoriesById = computed(() => {
+  const map = new Map<string, MemoryItem>();
+  for (const item of props.thread.items) {
+    if (item.kind !== 'tool_result') continue;
+    const toolName = getToolName(item.tool.raw.metadata);
+    if (toolName !== 'emos_search_memories') continue;
+
+    const extracted = extractEmosCitationMemoriesFromToolResultText(item.tool.raw.content);
+    for (const memory of extracted) {
+      map.set(memory.message_id, memory);
+    }
+  }
+  return map;
+});
+
+provide(EMOS_CITATION_MEMORIES_BY_ID_KEY, citationMemoriesById);
 
 // Inject server port from parent
 const serverPort = inject(AGENT_SERVER_PORT_KEY, ref<number | null>(null));

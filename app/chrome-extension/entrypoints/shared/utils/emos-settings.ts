@@ -20,7 +20,10 @@ const DEFAULT_EMOS_SETTINGS: EmosConnectionSettings = {
   lastTestError: null,
 };
 
-async function getEmosApiKeyFromNativeServer(): Promise<string | null> {
+async function getEmosSettingsFromNativeServer(): Promise<{
+  baseUrl: string;
+  apiKey: string;
+} | null> {
   try {
     const port = await getNativeServerPort();
     const response = await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
@@ -30,8 +33,10 @@ async function getEmosApiKeyFromNativeServer(): Promise<string | null> {
       return null;
     }
     const data = await readJson<{ settings?: any }>(response);
-    const apiKey = normalizeString(data?.settings?.apiKey, '');
-    return apiKey;
+    return {
+      baseUrl: normalizeString(data?.settings?.baseUrl, ''),
+      apiKey: normalizeString(data?.settings?.apiKey, ''),
+    };
   } catch {
     return null;
   }
@@ -41,12 +46,16 @@ export async function getEmosSettings(): Promise<EmosConnectionSettings> {
   const raw =
     (await chrome.storage.local.get(STORAGE_KEYS.EMOS_SETTINGS))[STORAGE_KEYS.EMOS_SETTINGS] || {};
 
-  const nativeApiKey = await getEmosApiKeyFromNativeServer();
+  const native = await getEmosSettingsFromNativeServer();
+
+  const storedBaseUrl = normalizeString(raw.baseUrl, DEFAULT_EMOS_SETTINGS.baseUrl);
   const storedApiKey = normalizeString(raw.apiKey, '');
-  const apiKey = nativeApiKey && nativeApiKey.trim().length > 0 ? nativeApiKey : storedApiKey;
+  const baseUrl =
+    native?.baseUrl && native.baseUrl.trim().length > 0 ? native.baseUrl : storedBaseUrl;
+  const apiKey = native?.apiKey && native.apiKey.trim().length > 0 ? native.apiKey : storedApiKey;
 
   return {
-    baseUrl: normalizeString(raw.baseUrl, DEFAULT_EMOS_SETTINGS.baseUrl),
+    baseUrl,
     apiKey,
     lastTestOkAt: normalizeNullableString(raw.lastTestOkAt),
     lastTestError: normalizeNullableString(raw.lastTestError),
@@ -65,7 +74,7 @@ export async function setEmosSettings(
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.EMOS_SETTINGS]: next });
 
-  // Best-effort: persist API key into native-server for durability across extension reinstalls.
+  // Best-effort: persist settings into native-server for durability across extension reinstalls.
   // Intentionally non-blocking so the UI can still save local settings even when native-server
   // isn't available.
   try {
@@ -73,7 +82,7 @@ export async function setEmosSettings(
     await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: next.apiKey }),
+      body: JSON.stringify({ baseUrl: next.baseUrl, apiKey: next.apiKey }),
     });
   } catch {
     // ignore

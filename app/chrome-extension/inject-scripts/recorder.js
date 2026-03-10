@@ -176,6 +176,22 @@
   // ================================================================
   // 2) UI CLASS (injected via constructor)
   // ================================================================
+  const UI_ICONS = {
+    pause: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+      <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+    </svg>`,
+    play: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M8 5v14l11-7z"></path>
+    </svg>`,
+    stop: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+    </svg>`,
+    chevron: `<svg class="rr-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6"></path>
+    </svg>`,
+  };
+
   class UI {
     constructor(recorder) {
       this.recorder = recorder;
@@ -201,17 +217,59 @@
         fontFamily: 'system-ui,-apple-system,Segoe UI,Roboto,Arial',
       });
       root.innerHTML = `
-        <div id="__rr_rec_panel" style="background: rgba(220,38,38,0.95); color: #fff; padding:8px 10px; border-radius:8px; display:flex; align-items:center; gap:8px; box-shadow:0 4px 16px rgba(0,0,0,0.2);">
-          <span id="__rr_badge" style="font-weight:600;">录制中</span>
-          <label style="display:inline-flex; align-items:center; gap:4px; font-size:12px;">
-            <input id="__rr_hide_values" type="checkbox" style="vertical-align:middle;" />隐藏输入值
-          </label>
-          <label style="display:inline-flex; align-items:center; gap:4px; font-size:12px;">
-            <input id="__rr_enable_highlight" type="checkbox" style="vertical-align:middle;" />高亮
-          </label>
-          <button id="__rr_toggle_timeline" style="background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.5); border-radius:6px; padding:2px 6px; cursor:pointer; font-size:12px;">折叠</button>
-          <button id="__rr_pause" style="background:#fff; color:#111; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;">暂停</button>
-          <button id="__rr_stop" style="background:#111; color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;">停止</button>
+        <style>
+          #__rr_rec_overlay * { box-sizing: border-box; }
+          #__rr_rec_panel .rr-icon-btn { 
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.16);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 120ms ease, transform 120ms ease, border-color 120ms ease;
+          }
+          #__rr_rec_panel .rr-icon-btn:hover { background: rgba(255,255,255,0.22); }
+          #__rr_rec_panel .rr-icon-btn:active { transform: translateY(0.5px); }
+          #__rr_rec_panel label { user-select: none; }
+          #__rr_rec_panel input[type="checkbox"] { accent-color: #fff; }
+          #__rr_timeline_toggle.rr-icon-btn { 
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: rgba(249,250,251,0.9);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 120ms ease, border-color 120ms ease;
+          }
+          #__rr_timeline_toggle.rr-icon-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.22); }
+          #__rr_timeline_toggle .rr-chevron { transition: transform 140ms ease; }
+          #__rr_timeline_toggle[data-collapsed="1"] .rr-chevron { transform: rotate(0deg); }
+          #__rr_timeline_toggle[data-collapsed="0"] .rr-chevron { transform: rotate(180deg); }
+        </style>
+        <div id="__rr_rec_panel" style="background: rgba(220,38,38,0.92); color: #fff; padding:8px 10px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; box-shadow:0 10px 28px rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.16); backdrop-filter: blur(10px);">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <span id="__rr_badge" style="font-weight:700; letter-spacing:0.2px;">录制中</span>
+            <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; opacity:0.92;">
+              <input id="__rr_hide_values" type="checkbox" style="vertical-align:middle;" />
+              <span>隐藏输入值</span>
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; opacity:0.92;">
+              <input id="__rr_enable_highlight" type="checkbox" style="vertical-align:middle;" />
+              <span>元素高亮</span>
+            </label>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex: 0 0 auto;">
+            <button id="__rr_pause" class="rr-icon-btn" title="暂停" aria-label="暂停"></button>
+            <button id="__rr_stop" class="rr-icon-btn" title="停止" aria-label="停止">${UI_ICONS.stop}</button>
+          </div>
         </div>`;
       document.documentElement.appendChild(root);
       // Build timeline container just below the panel
@@ -220,21 +278,46 @@
       Object.assign(timeline.style, {
         marginTop: '8px',
         width: '360px',
-        maxHeight: '220px',
-        overflow: 'auto',
-        background: 'rgba(17,24,39,0.85)',
+        overflow: 'hidden',
+        background: 'rgba(15,23,42,0.86)',
         color: '#F9FAFB',
-        border: '1px solid rgba(255,255,255,0.2)',
-        borderRadius: '8px',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-        padding: '8px 10px',
+        border: '1px solid rgba(255,255,255,0.16)',
+        borderRadius: '10px',
+        boxShadow: '0 10px 28px rgba(0,0,0,0.20)',
         fontSize: '12px',
         lineHeight: '1.4',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        flexDirection: 'column',
       });
       const header = document.createElement('div');
-      header.textContent = '已录制步骤';
-      header.style.opacity = '0.8';
-      header.style.marginBottom = '4px';
+      Object.assign(header.style, {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 10px',
+        borderBottom: '1px solid rgba(255,255,255,0.12)',
+      });
+      const title = document.createElement('div');
+      title.textContent = '已录制步骤';
+      Object.assign(title.style, { fontWeight: '600', opacity: '0.9' });
+      const toggle = document.createElement('button');
+      toggle.id = '__rr_timeline_toggle';
+      toggle.className = 'rr-icon-btn';
+      toggle.setAttribute('data-collapsed', '0');
+      toggle.title = '折叠';
+      toggle.setAttribute('aria-label', '折叠');
+      toggle.innerHTML = UI_ICONS.chevron;
+      header.appendChild(title);
+      header.appendChild(toggle);
+
+      const body = document.createElement('div');
+      body.id = '__rr_rec_timeline_body';
+      Object.assign(body.style, {
+        padding: '8px 10px',
+        maxHeight: '220px',
+        overflow: 'auto',
+      });
       const list = document.createElement('ol');
       list.id = '__rr_rec_timeline_list';
       list.style.listStyle = 'none';
@@ -244,15 +327,15 @@
       list.style.flexDirection = 'column';
       list.style.gap = '4px';
       timeline.appendChild(header);
-      timeline.appendChild(list);
+      body.appendChild(list);
+      timeline.appendChild(body);
       root.appendChild(timeline);
       this._timeline = list;
-      this._timelineBox = timeline;
+      this._timelineBox = body;
       const btnPause = root.querySelector('#__rr_pause');
       const btnStop = root.querySelector('#__rr_stop');
       const hideChk = root.querySelector('#__rr_hide_values');
       const highlightChk = root.querySelector('#__rr_enable_highlight');
-      const btnToggle = root.querySelector('#__rr_toggle_timeline');
       hideChk.checked = !!rec.hideInputValues;
       hideChk.addEventListener('change', () => (rec.hideInputValues = hideChk.checked));
       highlightChk.checked = !!rec.highlightEnabled;
@@ -260,14 +343,13 @@
         rec.highlightEnabled = !!highlightChk.checked;
         rec._updateHoverListener();
       });
-      if (btnToggle) {
-        btnToggle.addEventListener('click', () => {
-          this._collapsed = !this._collapsed;
-          if (this._timelineBox)
-            this._timelineBox.style.display = this._collapsed ? 'none' : 'block';
-          btnToggle.textContent = this._collapsed ? '展开' : '折叠';
-        });
-      }
+      toggle.addEventListener('click', () => {
+        this._collapsed = !this._collapsed;
+        if (this._timelineBox) this._timelineBox.style.display = this._collapsed ? 'none' : 'block';
+        toggle.setAttribute('data-collapsed', this._collapsed ? '1' : '0');
+        toggle.title = this._collapsed ? '展开' : '折叠';
+        toggle.setAttribute('aria-label', this._collapsed ? '展开' : '折叠');
+      });
       btnPause.addEventListener('click', () => {
         if (!rec.isPaused) rec.pause();
         else rec.resume();
@@ -302,7 +384,12 @@
       const badge = document.getElementById('__rr_badge');
       const pauseBtn = document.getElementById('__rr_pause');
       if (badge) badge.textContent = this.recorder.isPaused ? '已暂停' : '录制中';
-      if (pauseBtn) pauseBtn.textContent = this.recorder.isPaused ? '继续' : '暂停';
+      if (pauseBtn) {
+        const paused = !!this.recorder.isPaused;
+        pauseBtn.innerHTML = paused ? UI_ICONS.play : UI_ICONS.pause;
+        pauseBtn.title = paused ? '继续' : '暂停';
+        pauseBtn.setAttribute('aria-label', paused ? '继续' : '暂停');
+      }
     }
 
     // Reset the timeline list content

@@ -12,23 +12,34 @@ import type {
   AttachmentCleanupRequest,
   AttachmentCleanupResponse,
   AttachmentStatsResponse,
+  GetAnthropicSettingsResponse,
   GetEmosSettingsResponse,
   GetOpenClawGatewaySettingsResponse,
+  GetUiSettingsResponse,
   ListOpenClawAgentsResponse,
   OpenClawAgentDto,
   OpenProjectRequest,
   OpenProjectTarget,
   TestOpenClawGatewayResponse,
+  UpdateAnthropicSettingsRequest,
+  UpdateAnthropicSettingsResponse,
   UpdateEmosSettingsRequest,
   UpdateEmosSettingsResponse,
   UpdateOpenClawGatewaySettingsRequest,
   UpdateOpenClawGatewaySettingsResponse,
+  UpdateUiSettingsRequest,
+  UpdateUiSettingsResponse,
 } from 'chrome-mcp-shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { spawn } from 'node:child_process';
+import {
+  getAnthropicSettings,
+  updateAnthropicSettings,
+} from '../../agent/anthropic/settings-service';
 import { attachmentService } from '../../agent/attachment-service';
 import { AgentChatService } from '../../agent/chat-service';
 import { openDirectoryPicker } from '../../agent/directory-picker';
+import { getEmosSettings, updateEmosSettings } from '../../agent/emos/settings-service';
 import type { EngineName } from '../../agent/engines/types';
 import {
   createMessage as createStoredMessage,
@@ -47,7 +58,6 @@ import {
   recordOpenClawGatewayTestResult,
   updateOpenClawGatewaySettings,
 } from '../../agent/openclaw/settings-service';
-import { getEmosSettings, updateEmosSettings } from '../../agent/emos/settings-service';
 import {
   createProjectDirectory,
   deleteProject,
@@ -71,6 +81,7 @@ import {
 import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/storage';
 import { AgentStreamManager } from '../../agent/stream-manager';
 import type { AgentActRequest, AgentActResponse, RealtimeEvent } from '../../agent/types';
+import { getUiSettings, updateUiSettings } from '../../agent/ui/settings-service';
 import { ERROR_MESSAGES, HTTP_STATUS } from '../../constant';
 
 type EvermemosOpenClawConfigPatch = {
@@ -214,6 +225,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       const settings = await getEmosSettings();
       const body: GetEmosSettingsResponse = {
         settings: {
+          baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
           updatedAt: settings.updatedAt,
         },
@@ -232,7 +244,10 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       try {
         const body = request.body || {};
 
-        const patch: { apiKey?: string } = {};
+        const patch: { baseUrl?: string; apiKey?: string } = {};
+        if (typeof body.baseUrl === 'string') {
+          patch.baseUrl = body.baseUrl;
+        }
         if (typeof body.apiKey === 'string') {
           patch.apiKey = body.apiKey;
         }
@@ -240,6 +255,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         const settings = await updateEmosSettings(patch);
         const resBody: UpdateEmosSettingsResponse = {
           settings: {
+            baseUrl: settings.baseUrl,
             apiKey: settings.apiKey,
             updatedAt: settings.updatedAt,
           },
@@ -247,6 +263,111 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         reply.status(HTTP_STATUS.OK).send(resBody);
       } catch (error) {
         fastify.log.error({ err: error }, 'Failed to update EMOS settings');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  // ============================================================
+  // Anthropic Settings (native-server owned)
+  // Used to set ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN for Claude Code.
+  // ============================================================
+
+  fastify.get('/agent/anthropic/settings', async (_request, reply) => {
+    try {
+      const settings = await getAnthropicSettings();
+      const body: GetAnthropicSettingsResponse = {
+        settings: {
+          baseUrl: settings.baseUrl,
+          authToken: settings.authToken,
+          updatedAt: settings.updatedAt,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/anthropic/settings',
+    async (
+      request: FastifyRequest<{ Body: UpdateAnthropicSettingsRequest }>,
+      reply: FastifyReply,
+    ) => {
+      // Avoid logging secrets; do not log request body.
+      try {
+        const body = request.body || {};
+
+        const patch: { baseUrl?: string; authToken?: string } = {};
+        if (typeof body.baseUrl === 'string') {
+          patch.baseUrl = body.baseUrl;
+        }
+        if (typeof body.authToken === 'string') {
+          patch.authToken = body.authToken;
+        }
+
+        const settings = await updateAnthropicSettings(patch);
+        const resBody: UpdateAnthropicSettingsResponse = {
+          settings: {
+            baseUrl: settings.baseUrl,
+            authToken: settings.authToken,
+            updatedAt: settings.updatedAt,
+          },
+        };
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update Anthropic settings');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  // ============================================================
+  // UI Settings (native-server owned)
+  // ============================================================
+
+  fastify.get('/agent/ui/settings', async (_request, reply) => {
+    try {
+      const settings = await getUiSettings();
+      const body: GetUiSettingsResponse = {
+        settings: {
+          floatingIconEnabled: settings.floatingIconEnabled,
+          updatedAt: settings.updatedAt,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/ui/settings',
+    async (request: FastifyRequest<{ Body: UpdateUiSettingsRequest }>, reply: FastifyReply) => {
+      // Avoid logging request body; it can grow over time.
+      try {
+        const body = request.body || {};
+
+        const patch: { floatingIconEnabled?: boolean } = {};
+        if (typeof body.floatingIconEnabled === 'boolean') {
+          patch.floatingIconEnabled = body.floatingIconEnabled;
+        }
+
+        const settings = await updateUiSettings(patch);
+        const resBody: UpdateUiSettingsResponse = {
+          settings: {
+            floatingIconEnabled: settings.floatingIconEnabled,
+            updatedAt: settings.updatedAt,
+          },
+        };
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update UI settings');
         const message = error instanceof Error ? error.message : String(error);
         reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
       }

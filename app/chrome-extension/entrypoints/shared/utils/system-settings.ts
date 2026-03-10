@@ -7,6 +7,7 @@
 
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { setGatewaySettings } from '@/entrypoints/shared/utils/gateway-settings';
+import { getNativeServerPort, readJson } from '@/entrypoints/shared/utils/settings-internals';
 
 export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
 
@@ -37,13 +38,42 @@ export async function refreshServerStatus(): Promise<ServerStatus> {
 }
 
 export async function loadFloatingIcon(): Promise<boolean> {
+  try {
+    const port = await getNativeServerPort();
+    const response = await fetch(`http://127.0.0.1:${port}/agent/ui/settings`, { method: 'GET' });
+    if (response.ok) {
+      const data = await readJson<{ settings?: any }>(response);
+      const enabled = data?.settings?.floatingIconEnabled;
+      if (typeof enabled === 'boolean') {
+        // Keep a local mirror for content scripts.
+        await chrome.storage.local.set({ [STORAGE_KEY_FLOATING_ICON]: enabled });
+        return enabled;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
   const result = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON);
   const stored = result[STORAGE_KEY_FLOATING_ICON];
   return typeof stored === 'boolean' ? stored : true;
 }
 
 export async function saveFloatingIcon(enabled: boolean): Promise<void> {
+  // Always write local mirror first so the UI + content script respond immediately.
   await chrome.storage.local.set({ [STORAGE_KEY_FLOATING_ICON]: enabled });
+
+  // Best-effort: persist to native-server for durability.
+  try {
+    const port = await getNativeServerPort();
+    await fetch(`http://127.0.0.1:${port}/agent/ui/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ floatingIconEnabled: enabled }),
+    });
+  } catch {
+    // ignore
+  }
 }
 
 export async function testGateway(

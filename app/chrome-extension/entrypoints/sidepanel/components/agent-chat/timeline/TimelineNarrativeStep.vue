@@ -8,7 +8,7 @@
       }"
     >
       <MarkdownRender
-        :content="item.text ?? ''"
+        :content="processedContent"
         :custom-id="AGENTCHAT_MD_SCOPE"
         :custom-html-tags="CUSTOM_HTML_TAGS"
         :max-live-nodes="0"
@@ -27,16 +27,22 @@
 <script lang="ts" setup>
 import MarkdownRender from 'markstream-vue';
 import 'markstream-vue/index.css';
+import { computed } from 'vue';
 import type { TimelineItem } from '../../../composables/useAgentThreads';
 // Import to register custom components (side-effect)
 import { AGENTCHAT_MD_SCOPE } from './markstream-thinking';
+import { formatAssistantMarkdownWithEmosCitations } from '../../../composables/emos-citations';
 
 /** Custom HTML tags to be rendered by registered custom components */
-const CUSTOM_HTML_TAGS = ['thinking'] as const;
+const CUSTOM_HTML_TAGS = ['thinking', 'emos-cite'] as const;
 
-defineProps<{
+const props = defineProps<{
   item: Extract<TimelineItem, { kind: 'assistant_text' }>;
 }>();
+
+const processedContent = computed(() => {
+  return formatAssistantMarkdownWithEmosCitations(props.item.text ?? '');
+});
 </script>
 
 <style scoped>

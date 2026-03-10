@@ -521,6 +521,10 @@
     "message": "Quick Panel settings saved",
     "description": "Toast when Quick Panel settings are saved"
   },
+  "settingsAnthropicSavedNotification": {
+    "message": "Anthropic settings saved",
+    "description": "Toast when Claude Code settings are saved"
+  },
   "refreshStatusButtonAria": {
     "message": "Refresh status",
     "description": "Refresh button aria-label"
