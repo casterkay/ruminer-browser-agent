@@ -173,7 +173,9 @@ export function useAgentChat(options: UseAgentChatOptions) {
     const msgRequestId = msg.requestId?.trim() || undefined;
     const isStaleForState = isDifferentActiveRequest(msgRequestId);
 
-    const existingIndex = messages.value.findIndex((m) => m.id === msg.id);
+    const existingIndex = messages.value.findIndex(
+      (m) => m.id === msg.id && m.messageType === msg.messageType,
+    );
 
     if (existingIndex >= 0) {
       // Update existing message (streaming update)

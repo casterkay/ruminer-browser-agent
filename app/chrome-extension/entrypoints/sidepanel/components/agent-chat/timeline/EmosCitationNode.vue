@@ -1,31 +1,24 @@
 <template>
   <span class="emos-cite-root" @mouseenter="hovered = true" @mouseleave="hovered = false">
-    <button
-      type="button"
-      class="emos-cite-pill ac-btn ac-focus-ring"
-      :title="titleText"
-      @click="handleClick"
-    >
+    <button type="button" class="emos-cite-pill ac-btn ac-focus-ring" @click="handleClick">
       {{ displayText }}
     </button>
-
     <div v-if="hovered" class="emos-cite-bubble" role="tooltip">
-      <div class="emos-cite-bubble-title">Citations</div>
-      <div v-if="citationItems.length === 0" class="emos-cite-bubble-empty">
-        No preview yet. Ask the agent to run <code>emos_search_memories</code>.
-      </div>
+      <div class="emos-cite-bubble-title">{{ titleText }}</div>
 
+      <!-- Show citation items if available -->
       <button
-        v-for="item in citationItems"
-        :key="item.message_id"
+        v-for="item in displayItems"
+        :key="item.key"
         type="button"
         class="emos-cite-bubble-item ac-btn"
         @click="handleOpenItem(item)"
       >
         <div class="emos-cite-bubble-meta">
           <span class="emos-cite-bubble-key">[^{{ item.key }}]</span>
-          <span class="emos-cite-bubble-id">{{ item.message_id }}</span>
+          <span v-if="item.sender" class="emos-cite-bubble-sender">{{ item.senderLabel }}</span>
         </div>
+        <div v-if="item.dateLabel" class="emos-cite-bubble-date">{{ item.dateLabel }}</div>
         <div class="emos-cite-bubble-summary">{{ item.content }}</div>
       </button>
     </div>
@@ -34,13 +27,13 @@
 
 <script lang="ts" setup>
 import { computed, inject, ref } from 'vue';
-import type { MemoryItem } from '../../../composables/useEmosSearch';
 import {
   EMOS_CITATION_MEMORIES_BY_ID_KEY,
   EMOS_CITATION_OPEN_DETAILS_KEY,
   type EmosCitationMemoriesById,
   type EmosCitationOpenDetails,
 } from '../../../composables/emos-citations';
+import type { MemoryItem } from '../../../composables/useEmosSearch';
 
 interface EmosCiteNodeType {
   type: 'emos-cite';
@@ -113,6 +106,19 @@ const citationItems = computed(() => {
 
   return items;
 });
+
+const displayItems = computed(() =>
+  citationItems.value.map((item) => ({
+    ...item,
+    senderLabel: item.sender_name ?? item.sender ?? '',
+    dateLabel: item.create_time
+      ? new Date(item.create_time).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : '',
+  })),
+);
 
 function handleOpenItem(item: MemoryItem): void {
   if (!openDetails) return;

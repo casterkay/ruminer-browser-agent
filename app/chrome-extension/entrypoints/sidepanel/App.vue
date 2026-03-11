@@ -12,10 +12,13 @@
 
       <div v-show="activeTab === 'workflows'" class="workflows-wrapper">
         <WorkflowsView
+          :is-active="activeTab === 'workflows'"
           :flows="displayFlows"
           :runs="workflows.runs.value"
           :triggers="workflows.triggers.value"
           :progress-by-run-id="workflows.progressByRunId.value"
+          :queue-progress="workflows.queueProgress.value"
+          :manual-run-ids="manualResultRunIds"
           :only-bound="onlyBound"
           :open-run-id="openRunId"
           :refreshing="workflowRefreshing"
@@ -33,6 +36,11 @@
           @schedule-change="scheduleChange"
           @update:only-bound="onlyBound = $event"
           @toggle-run="toggleRun"
+          @pause-queue="pauseQueue"
+          @resume-queue="resumeQueue"
+          @stop-queue="stopQueue"
+          @manual-run-handled="handleManualRunHandled"
+          @open-chat-session="openChatSession"
           @create-trigger="openBuilder('trigger')"
           @edit-trigger="openBuilder('trigger', $event)"
           @remove-trigger="deleteTrigger"
@@ -71,6 +79,7 @@ import {
   type FlowApprovalsStore,
 } from '@/common/flow-approvals';
 import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
+import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import { computed, onMounted, ref } from 'vue';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
@@ -120,6 +129,33 @@ const workflows = useWorkflowsV3({
 
 const workflowRefreshing = ref(false);
 const runningFlowIds = ref<Set<string>>(new Set());
+const manualResultRunIds = ref<Set<string>>(new Set());
+
+function trackManualRun(runId: string | null | undefined): void {
+  const rid = String(runId || '').trim();
+  if (!rid) return;
+  manualResultRunIds.value = new Set([...manualResultRunIds.value, rid]);
+}
+
+function handleManualRunHandled(runId: string): void {
+  const rid = String(runId || '').trim();
+  if (!rid || !manualResultRunIds.value.has(rid)) return;
+  const next = new Set(manualResultRunIds.value);
+  next.delete(rid);
+  manualResultRunIds.value = next;
+}
+
+function openChatSession(payload: { sessionId: string } | string): void {
+  const sessionId = typeof payload === 'string' ? payload : payload.sessionId;
+  const sid = String(sessionId || '').trim();
+  if (!sid) return;
+  setActiveTab('chat');
+  window.dispatchEvent(
+    new CustomEvent('ruminer.agentChat.navigateSession', {
+      detail: { sessionId: sid },
+    }),
+  );
+}
 
 const displayFlows = computed(() => {
   if (!onlyBound.value || !activeHostname.value) {
@@ -267,7 +303,10 @@ async function runFlow(flowId: string): Promise<void> {
 
     const requiredTools = normalizeToolList(flow?.meta?.requiredTools);
     if (requiredTools.length === 0) {
-      await workflows.runFlow(flowId, args);
+      const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
+      if (nextArgs === null) return;
+      const r = await workflows.runFlow(flowId, nextArgs);
+      trackManualRun(r?.runId);
       return;
     }
 
@@ -276,13 +315,19 @@ async function runFlow(flowId: string): Promise<void> {
     const existing = approvals[flowId];
 
     if (existing?.approvedToolsHash === requiredToolsHash) {
-      await workflows.runFlow(flowId, args);
+      const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
+      if (nextArgs === null) return;
+      const r = await workflows.runFlow(flowId, nextArgs);
+      trackManualRun(r?.runId);
       return;
     }
 
     const prevTools = normalizeToolList(existing?.approvedTools);
     if (existing && isToolListSuperset(prevTools, requiredTools)) {
-      await workflows.runFlow(flowId, args);
+      const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
+      if (nextArgs === null) return;
+      const r = await workflows.runFlow(flowId, nextArgs);
+      trackManualRun(r?.runId);
       return;
     }
 
@@ -309,12 +354,95 @@ async function runFlow(flowId: string): Promise<void> {
       },
     });
 
-    await workflows.runFlow(flowId, args);
+    const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
+    if (nextArgs === null) return;
+    const r = await workflows.runFlow(flowId, nextArgs);
+    trackManualRun(r?.runId);
   } finally {
     const next = new Set(runningFlowIds.value);
     next.delete(flowId);
     runningFlowIds.value = next;
   }
+}
+
+function hostnameMatchesDomain(hostname: string, domain: string): boolean {
+  const h = hostname.toLowerCase();
+  const d = domain.toLowerCase();
+  if (!h || !d) return false;
+  if (h === d) return true;
+  return h.endsWith(`.${d}`);
+}
+
+function urlMatchesFlowBindings(urlString: string, flow: FlowV3 | null): boolean {
+  if (!flow?.meta?.bindings?.length) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    return false;
+  }
+
+  for (const binding of flow.meta.bindings) {
+    const kind = String((binding as any).kind || '');
+    const value = String((binding as any).value || '');
+    if (!kind || !value) continue;
+    if (kind === 'url' && urlString.startsWith(value)) return true;
+    if (kind === 'path' && parsed.pathname.startsWith(value.startsWith('/') ? value : `/${value}`))
+      return true;
+    if (kind === 'domain' && hostnameMatchesDomain(parsed.hostname, value)) return true;
+  }
+
+  return false;
+}
+
+async function maybeAddConversationUrlArg(
+  flowId: string,
+  flow: FlowV3 | null,
+  args: Record<string, string> | undefined,
+): Promise<Record<string, string> | undefined | null> {
+  if (!flowId.endsWith('.conversation_ingest.v1')) {
+    return args;
+  }
+
+  const activeUrl = await getActiveTabUrl();
+
+  const bindings = Array.isArray(flow?.meta?.bindings) ? flow!.meta!.bindings : [];
+  const bindingHints = bindings
+    .map((b: any) => {
+      const kind = String(b?.kind || '').trim();
+      const value = String(b?.value || '').trim();
+      if (!kind || !value) return null;
+      if (kind === 'domain') return value;
+      if (kind === 'url') return value;
+      if (kind === 'path') return `path:${value}`;
+      return `${kind}:${value}`;
+    })
+    .filter(Boolean)
+    .join(', ');
+
+  if (!activeUrl) {
+    window.alert(
+      `This workflow requires a conversation page.\n\nOpen a matching tab${
+        bindingHints ? ` (${bindingHints})` : ''
+      } and try again.`,
+    );
+    return null;
+  }
+
+  if (!urlMatchesFlowBindings(activeUrl, flow)) {
+    let host = '';
+    try {
+      host = new URL(activeUrl).hostname;
+    } catch {}
+    window.alert(
+      `Active tab does not match this workflow’s bindings.\n\nActive tab: ${
+        host || activeUrl
+      }\nExpected: ${bindingHints || 'any site'}`,
+    );
+    return null;
+  }
+
+  return { ...(args ?? {}), ruminerConversationUrl: activeUrl };
 }
 
 async function stopRun(payload: { runId: string; status: string }): Promise<void> {
@@ -324,6 +452,18 @@ async function stopRun(payload: { runId: string; status: string }): Promise<void
     return;
   }
   await workflows.cancelRun(payload.runId, reason);
+}
+
+async function pauseQueue(): Promise<void> {
+  await workflows.pauseQueueWave('Paused by user');
+}
+
+async function resumeQueue(): Promise<void> {
+  await workflows.resumeQueueWave();
+}
+
+async function stopQueue(): Promise<void> {
+  await workflows.stopQueueWave('Stopped by user');
 }
 
 async function scheduleChange(payload: {

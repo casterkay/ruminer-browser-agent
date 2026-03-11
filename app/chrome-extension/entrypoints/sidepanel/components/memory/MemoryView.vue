@@ -57,7 +57,7 @@
               class="refresh-btn ac-btn ac-focus-ring"
               :style="refreshBtnStyle"
               :disabled="memory.loading.value"
-              @click="refreshSearch"
+              @click="hardRefreshSearch"
             >
               <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path
@@ -358,6 +358,11 @@ function refreshSearch(): void {
   scheduleSearch(true);
 }
 
+function hardRefreshSearch(): void {
+  memory.clearCache();
+  scheduleSearch(true);
+}
+
 function openDateMenu(): void {
   tempDateRange.start = filters.startDate;
   tempDateRange.end = filters.endDate;
@@ -424,6 +429,11 @@ function getPlatformKey(item: MemoryItem): string {
   const group = item.group_id || '';
   if (group.includes(':')) {
     return group.split(':')[0].trim().toLowerCase();
+  }
+
+  const messageId = item.message_id || '';
+  if (messageId.includes(':')) {
+    return messageId.split(':')[0].trim().toLowerCase();
   }
 
   const sender = item.sender?.trim().toLowerCase() || '';

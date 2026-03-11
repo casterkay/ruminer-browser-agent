@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { consumeLastEmosSearchResult } from '../../mcp/register-tools';
 import { OpenClawGatewayClient } from '../openclaw/gateway-client';
 import { getOpenClawGatewaySettings } from '../openclaw/settings-service';
 import { parseOpenClawToolEvent } from '../openclaw/tool-events';
@@ -246,11 +247,20 @@ export class OpenClawEngine implements AgentEngine {
         return;
       }
 
+      // OpenClaw strips data.result from tool events when verbose!="full".
+      // For emos_search_memories we bridge this via the in-process MCP result cache
+      // populated in register-tools.ts when the MCP call completes.
+      let content = parsed.content;
+      if (parsed.phase === 'result' && parsed.metadata.toolName === 'emos_search_memories') {
+        const cached = consumeLastEmosSearchResult();
+        if (cached) content = cached;
+      }
+
       const message: AgentMessage = {
         id: parsed.id,
         sessionId,
         role: 'tool',
-        content: parsed.content,
+        content,
         messageType: parsed.phase === 'use' ? 'tool_use' : 'tool_result',
         cliSource: this.name,
         requestId,
@@ -270,7 +280,6 @@ export class OpenClawEngine implements AgentEngine {
     const off = gateway.onEvent((evt) => {
       if (evt.event !== 'chat' && evt.event !== 'openclaw') return;
 
-      let shouldLog = isDebugEnabled;
       const payloadAny = evt.payload as any;
       const payloadSessionKeyDebug =
         typeof payloadAny?.sessionKey === 'string' ? payloadAny.sessionKey : undefined;
@@ -281,14 +290,8 @@ export class OpenClawEngine implements AgentEngine {
             ? payloadAny.requestId
             : undefined;
       const statusDebug = getStatus(payloadAny);
-      if (
-        !shouldLog &&
-        (isErrorStatus(statusDebug) ||
-          isAbortedStatus(statusDebug) ||
-          isTerminalStatus(statusDebug))
-      ) {
-        shouldLog = true;
-      }
+      const shouldLog =
+        isErrorStatus(statusDebug) || isAbortedStatus(statusDebug) || isTerminalStatus(statusDebug);
       if (shouldLog) {
         debugLog('event', {
           event: evt.event,

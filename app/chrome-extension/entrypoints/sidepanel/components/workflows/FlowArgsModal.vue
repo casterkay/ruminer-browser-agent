@@ -1,67 +1,65 @@
 <template>
-  <Teleport to=".sidepanel-root">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      aria-modal="true"
-      role="dialog"
-    >
-      <div class="absolute inset-0" :style="backdropStyle" @click="$emit('cancel')"></div>
+  <div
+    v-if="open"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    aria-modal="true"
+    role="dialog"
+  >
+    <div class="absolute inset-0" :style="backdropStyle" @click="$emit('cancel')"></div>
 
-      <div class="relative w-full max-w-md p-4" :style="modalStyle" @click.stop>
-        <div class="text-sm font-semibold" :style="{ color: 'var(--ac-text)' }">Run workflow</div>
-        <div class="mt-1 text-xs" :style="{ color: 'var(--ac-text-muted)' }">
-          <span class="font-medium" :style="{ color: 'var(--ac-text)' }">{{ flowName }}</span>
-          requires parameters:
-        </div>
+    <div class="relative w-full max-w-md p-4" :style="modalStyle" @click.stop>
+      <div class="text-sm font-semibold" :style="{ color: 'var(--ac-text)' }">Run workflow</div>
+      <div class="mt-1 text-xs" :style="{ color: 'var(--ac-text-muted)' }">
+        <span class="font-medium" :style="{ color: 'var(--ac-text)' }">{{ flowName }}</span>
+        requires parameters:
+      </div>
 
-        <div class="mt-3 space-y-3">
-          <div v-for="v in variables" :key="v.name" class="space-y-1">
-            <div class="flex items-center justify-between gap-2">
-              <label class="text-xs font-medium" :style="{ color: 'var(--ac-text)' }">
-                {{ v.label || v.name }}
-              </label>
-              <span class="text-[10px]" :style="{ color: 'var(--ac-text-subtle)' }">{{
-                v.name
-              }}</span>
-            </div>
-
-            <input
-              v-model="values[v.name]"
-              class="w-full px-3 py-2 text-xs rounded"
-              :style="inputStyle"
-              :type="v.sensitive ? 'password' : 'text'"
-              :placeholder="v.description || 'Required'"
-              autocomplete="off"
-              spellcheck="false"
-            />
+      <div class="mt-3 space-y-3">
+        <div v-for="v in variables" :key="v.name" class="space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-xs font-medium" :style="{ color: 'var(--ac-text)' }">
+              {{ v.label || v.name }}
+            </label>
+            <span class="text-[10px]" :style="{ color: 'var(--ac-text-subtle)' }">{{
+              v.name
+            }}</span>
           </div>
-        </div>
 
-        <div v-if="validationError" class="mt-3 text-xs" :style="{ color: 'var(--ac-danger)' }">
-          {{ validationError }}
-        </div>
-
-        <div class="mt-4 flex items-center justify-end gap-2">
-          <button
-            class="px-3 py-2 text-xs font-medium"
-            :style="btnSecondaryStyle"
-            @click="$emit('cancel')"
-          >
-            Cancel
-          </button>
-          <button
-            class="px-3 py-2 text-xs font-medium"
-            :style="btnPrimaryStyle"
-            :disabled="!canSubmit"
-            @click="submit"
-          >
-            Run
-          </button>
+          <input
+            v-model="values[v.name]"
+            class="w-full px-3 py-2 text-xs rounded"
+            :style="inputStyle"
+            :type="v.sensitive ? 'password' : 'text'"
+            :placeholder="v.description || 'Required'"
+            autocomplete="off"
+            spellcheck="false"
+          />
         </div>
       </div>
+
+      <div v-if="validationError" class="mt-3 text-xs" :style="{ color: 'var(--ac-danger)' }">
+        {{ validationError }}
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button
+          class="px-3 py-2 text-xs font-medium"
+          :style="btnSecondaryStyle"
+          @click="$emit('cancel')"
+        >
+          Cancel
+        </button>
+        <button
+          class="px-3 py-2 text-xs font-medium"
+          :style="btnPrimaryStyle"
+          :disabled="!canSubmit"
+          @click="submit"
+        >
+          Run
+        </button>
+      </div>
     </div>
-  </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">

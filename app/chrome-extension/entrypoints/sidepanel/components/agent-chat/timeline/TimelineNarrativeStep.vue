@@ -32,16 +32,22 @@ import type { TimelineItem } from '../../../composables/useAgentThreads';
 // Import to register custom components (side-effect)
 import { AGENTCHAT_MD_SCOPE } from './markstream-thinking';
 import { formatAssistantMarkdownWithEmosCitations } from '../../../composables/emos-citations';
+import {
+  squashBlankLinesInsideThinkingTags,
+  wrapThoughtCalloutsAsThinking,
+} from './normalize-thinking';
 
 /** Custom HTML tags to be rendered by registered custom components */
-const CUSTOM_HTML_TAGS = ['thinking', 'emos-cite'] as const;
+const CUSTOM_HTML_TAGS = ['thinking', 'think', 'emos-cite'] as const;
 
 const props = defineProps<{
   item: Extract<TimelineItem, { kind: 'assistant_text' }>;
 }>();
 
 const processedContent = computed(() => {
-  return formatAssistantMarkdownWithEmosCitations(props.item.text ?? '');
+  const withCitations = formatAssistantMarkdownWithEmosCitations(props.item.text ?? '');
+  const withCallouts = wrapThoughtCalloutsAsThinking(withCitations);
+  return squashBlankLinesInsideThinkingTags(withCallouts);
 });
 </script>
 

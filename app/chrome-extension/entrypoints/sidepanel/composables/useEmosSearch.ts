@@ -33,12 +33,129 @@ export interface UseEmosSearch {
   selectedItem: Ref<MemoryItem | null>;
   isConfigured: Ref<boolean>;
   search: (filters: MemoryFilters) => Promise<void>;
+  clearCache: () => void;
   remove: (item: MemoryItem) => Promise<boolean>;
   selectItem: (item: MemoryItem | null) => void;
 }
 
 function toTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+type CachedSearchResult = {
+  items: MemoryItem[];
+  expiresAt: number;
+  lastAccessAt: number;
+};
+
+const EMOS_SEARCH_CACHE_TTL_MS = 30_000;
+const EMOS_SEARCH_CACHE_MAX_ENTRIES = 40;
+const emosSearchCache = new Map<string, CachedSearchResult | Promise<CachedSearchResult>>();
+let lastEmosSettingsSignature = '';
+
+function getSpeakerIdsForRequest(speakers?: string[]): string[] {
+  return Array.from(
+    new Set(
+      (speakers && speakers.length > 0 ? speakers : [...DEFAULT_SPEAKER_IDS]).map((v) => v.trim()),
+    ),
+  ).filter((value) => value.length > 0);
+}
+
+function getSpeakerIdsForCache(speakers?: string[]): string[] {
+  const ids = getSpeakerIdsForRequest(speakers);
+  ids.sort((a, b) => a.localeCompare(b));
+  return ids;
+}
+
+function buildSearchCacheKey(body: Record<string, unknown>, speakers?: string[]): string {
+  const query = toTrimmedString(body.query);
+  const startTime = toTrimmedString(body.start_time);
+  const endTime = toTrimmedString(body.end_time);
+  const limit =
+    typeof body.limit === 'number' && Number.isFinite(body.limit) ? Math.trunc(body.limit) : 50;
+  const speakerKey = getSpeakerIdsForCache(speakers).join(',');
+  return [query, startTime, endTime, String(limit), speakerKey].join('\n');
+}
+
+function clearEmosSearchCache(): void {
+  emosSearchCache.clear();
+}
+
+function pruneEmosSearchCache(now = Date.now()): void {
+  for (const [key, entry] of emosSearchCache.entries()) {
+    if (entry instanceof Promise) continue;
+    if (entry.expiresAt <= now) {
+      emosSearchCache.delete(key);
+    }
+  }
+
+  const resolvedEntries = Array.from(emosSearchCache.entries()).filter(
+    (candidate): candidate is [string, CachedSearchResult] => !(candidate[1] instanceof Promise),
+  );
+
+  if (resolvedEntries.length <= EMOS_SEARCH_CACHE_MAX_ENTRIES) return;
+
+  resolvedEntries.sort((a, b) => a[1].lastAccessAt - b[1].lastAccessAt);
+  const toEvict = resolvedEntries.length - EMOS_SEARCH_CACHE_MAX_ENTRIES;
+  for (let i = 0; i < toEvict; i++) {
+    emosSearchCache.delete(resolvedEntries[i][0]);
+  }
+}
+
+async function fetchAndNormalizeSearchResult(
+  body: Record<string, unknown>,
+  speakers?: string[],
+): Promise<MemoryItem[]> {
+  const response = await fetchSearchResult(body, speakers);
+  const rawList = extractRawItems(response);
+  const normalized = rawList
+    .map((raw) => normalizeItem(raw))
+    .filter((item) => item.content.trim().length > 0);
+  return Array.from(new Map(normalized.map((item) => [item.message_id, item])).values());
+}
+
+async function getCachedSearchResult(
+  cacheKey: string,
+  fetcher: () => Promise<MemoryItem[]>,
+): Promise<MemoryItem[]> {
+  const now = Date.now();
+  const cached = emosSearchCache.get(cacheKey);
+
+  if (cached && !(cached instanceof Promise)) {
+    if (cached.expiresAt > now) {
+      cached.lastAccessAt = now;
+      return cached.items;
+    }
+    emosSearchCache.delete(cacheKey);
+  }
+
+  if (cached instanceof Promise) {
+    const awaited = await cached;
+    awaited.lastAccessAt = Date.now();
+    return awaited.items;
+  }
+
+  const pending = (async () => {
+    const items = await fetcher();
+    const entry: CachedSearchResult = {
+      items,
+      expiresAt: Date.now() + EMOS_SEARCH_CACHE_TTL_MS,
+      lastAccessAt: Date.now(),
+    };
+    return entry;
+  })();
+
+  emosSearchCache.set(cacheKey, pending);
+
+  try {
+    const entry = await pending;
+    emosSearchCache.set(cacheKey, entry);
+    pruneEmosSearchCache();
+    return entry.items;
+  } catch (error) {
+    emosSearchCache.delete(cacheKey);
+    throw error;
+  }
 }
 
 function capitalizeSenderId(value: string): string {
@@ -122,11 +239,7 @@ function normalizeItem(raw: any): MemoryItem {
 const DEFAULT_SPEAKER_IDS = ['me', 'bot'] as const;
 
 async function fetchSearchResult(body: Record<string, unknown>, speakers?: string[]): Promise<any> {
-  const userIds = Array.from(
-    new Set(
-      (speakers && speakers.length > 0 ? speakers : [...DEFAULT_SPEAKER_IDS]).map((v) => v.trim()),
-    ),
-  ).filter((value) => value.length > 0);
+  const userIds = getSpeakerIdsForRequest(speakers);
   if (userIds.length === 0) {
     return { result: { memories: [] } };
   }
@@ -255,6 +368,14 @@ function extractRawItems(response: any): any[] {
   return collected;
 }
 
+function extractPlatformPrefix(item: MemoryItem): string {
+  const groupId = (item.group_id || '').toLowerCase();
+  if (groupId.includes(':')) return groupId.split(':')[0];
+  const messageId = (item.message_id || '').toLowerCase();
+  if (messageId.includes(':')) return messageId.split(':')[0];
+  return '';
+}
+
 function safeParseDate(value?: string): number | null {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -277,9 +398,16 @@ export function useEmosSearch(): UseEmosSearch {
       isConfigured.value = !!settings.baseUrl.trim() && !!settings.apiKey.trim();
 
       if (!isConfigured.value) {
+        clearEmosSearchCache();
         items.value = [];
         return;
       }
+
+      const nextSignature = `${settings.baseUrl.trim()}\n${settings.apiKey.trim()}`;
+      if (lastEmosSettingsSignature && lastEmosSettingsSignature !== nextSignature) {
+        clearEmosSearchCache();
+      }
+      lastEmosSettingsSignature = nextSignature;
 
       const body: Record<string, unknown> = {
         query: filters.query || '',
@@ -293,14 +421,10 @@ export function useEmosSearch(): UseEmosSearch {
         body.end_time = filters.endDate;
       }
 
-      const response = await fetchSearchResult(body, filters.speakers);
-
-      const rawList = extractRawItems(response);
-      const normalized = rawList
-        .map((raw) => normalizeItem(raw))
-        .filter((item) => item.content.trim().length > 0);
-      const deduped = Array.from(
-        new Map(normalized.map((item) => [item.message_id, item])).values(),
+      pruneEmosSearchCache();
+      const cacheKey = buildSearchCacheKey(body, filters.speakers);
+      const deduped = await getCachedSearchResult(cacheKey, async () =>
+        fetchAndNormalizeSearchResult(body, filters.speakers),
       );
 
       const explicitPlatformArray = Array.isArray(filters.platform);
@@ -315,8 +439,8 @@ export function useEmosSearch(): UseEmosSearch {
           ? []
           : platformFilters.length > 0
             ? deduped.filter((item) => {
-                const groupId = (item.group_id || '').toLowerCase();
-                return platformFilters.some((platform) => groupId.startsWith(`${platform}:`));
+                const prefix = extractPlatformPrefix(item);
+                return prefix ? platformFilters.includes(prefix) : false;
               })
             : deduped;
 
@@ -349,6 +473,10 @@ export function useEmosSearch(): UseEmosSearch {
     }
   }
 
+  function clearCache(): void {
+    clearEmosSearchCache();
+  }
+
   async function remove(item: MemoryItem): Promise<boolean> {
     try {
       const userId = (() => {
@@ -368,6 +496,14 @@ export function useEmosSearch(): UseEmosSearch {
         user_id: userId || undefined,
         group_id: item.group_id,
       });
+
+      for (const [cacheKey, entry] of emosSearchCache.entries()) {
+        if (entry instanceof Promise) continue;
+        if (entry.items.some((candidate) => candidate.message_id === item.message_id)) {
+          entry.items = entry.items.filter((candidate) => candidate.message_id !== item.message_id);
+        }
+      }
+
       items.value = items.value.filter((entry) => entry.message_id !== item.message_id);
       if (selectedItem.value?.message_id === item.message_id) {
         selectedItem.value = null;
@@ -390,6 +526,7 @@ export function useEmosSearch(): UseEmosSearch {
     selectedItem,
     isConfigured: computed(() => isConfigured.value),
     search,
+    clearCache,
     remove,
     selectItem,
   };

@@ -108,8 +108,7 @@ export class ClaudeEngine implements AgentEngine {
     }
 
     // Resolve model
-    const resolvedModel =
-      model?.trim() || process.env.CLAUDE_DEFAULT_MODEL || 'claude-sonnet-4-20250514';
+    const resolvedModel = model?.trim() || process.env.CLAUDE_DEFAULT_MODEL || 'claude-sonnet-4-6';
 
     // State management
     const stderrBuffer: string[] = [];
@@ -729,6 +728,11 @@ export class ClaudeEngine implements AgentEngine {
       // This only controls the built-in "chrome-mcp" entry; user-configured MCP servers remain untouched.
       const CHROME_MCP_SERVER_NAME = 'chrome-mcp';
       if (enableChromeMcp) {
+        const chromeMcpUrl = getChromeMcpUrl({
+          agentSessionId: sessionId,
+          agentRequestId: requestId,
+          agentEngine: this.name,
+        });
         const existingMcpServers =
           queryOptions.mcpServers &&
           typeof queryOptions.mcpServers === 'object' &&
@@ -740,10 +744,10 @@ export class ClaudeEngine implements AgentEngine {
           ...existingMcpServers,
           [CHROME_MCP_SERVER_NAME]: {
             type: 'http',
-            url: getChromeMcpUrl(),
+            url: chromeMcpUrl,
           },
         };
-        console.error(`[ClaudeEngine] Chrome MCP server enabled: ${getChromeMcpUrl()}`);
+        console.error(`[ClaudeEngine] Chrome MCP server enabled: ${chromeMcpUrl}`);
       } else if (
         queryOptions.mcpServers &&
         typeof queryOptions.mcpServers === 'object' &&
@@ -1577,7 +1581,7 @@ export class ClaudeEngine implements AgentEngine {
 
     // Try to get specific fix suggestion from CCR config
     let suggestion =
-      'Edit ~/.claude-code-router/config.json and set Router.default to "provider,model" format (e.g., "venus,claude-4-5-sonnet-20250929"), then restart CCR.';
+      'Edit ~/.claude-code-router/config.json and set Router.default to "provider,model" format, then restart CCR.';
 
     try {
       const validation = await validateCcrConfig();

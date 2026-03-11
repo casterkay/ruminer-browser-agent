@@ -6,9 +6,17 @@ import type { ISODateTimeString } from '@/entrypoints/background/record-replay-v
 import { sha256Hex } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/hash';
 import { stableJson } from '@/entrypoints/shared/utils/stable-json';
 import { createChatgptBuiltinFlows } from './chatgpt';
+import { createGeminiBuiltinFlows } from './gemini';
+import { createClaudeBuiltinFlows } from './claude';
+import { createDeepseekBuiltinFlows } from './deepseek';
 
 function listBuiltinFlows(nowIso: string): FlowV3[] {
-  return [...createChatgptBuiltinFlows(nowIso)];
+  return [
+    ...createChatgptBuiltinFlows(nowIso),
+    ...createGeminiBuiltinFlows(nowIso),
+    ...createClaudeBuiltinFlows(nowIso),
+    ...createDeepseekBuiltinFlows(nowIso),
+  ];
 }
 
 async function computeFlowVersionHash(flow: FlowV3): Promise<string> {

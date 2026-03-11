@@ -15,7 +15,7 @@
     "dev:native": "pnpm --filter mcp-chrome-bridge dev",
     "dev:extension": "pnpm --filter chrome-mcp-server dev",
     "dev": "pnpm --filter chrome-mcp-shared build && pnpm -r --parallel dev",
-    "log": "tail -f $(ls -t ~/Library/Logs/mcp-chrome-bridge/native_host_stderr_unix_*.log | head -1)",
+    "log": "tail -n 50 -f $(ls -t ~/Library/Logs/mcp-chrome-bridge/native_host_stderr_unix_*.log | head -1)",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "pnpm -r format",

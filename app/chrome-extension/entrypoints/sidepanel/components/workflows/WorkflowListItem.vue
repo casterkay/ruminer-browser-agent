@@ -208,6 +208,8 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
+// TODO: add icons for domains (e.g. website favicon)
+
 interface FlowLite {
   id: string;
   name: string;

@@ -28,26 +28,26 @@ export type AgentCliType = 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
 
 export const CLAUDE_MODELS: ModelDefinition[] = [
   {
-    id: 'claude-sonnet-4-5-20250929',
-    name: 'Claude Sonnet 4.5',
+    id: 'claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
     description: 'Balanced model with large context window',
     supportsImages: true,
   },
   {
-    id: 'claude-opus-4-5-20251101',
-    name: 'Claude Opus 4.5',
+    id: 'claude-opus-4-6',
+    name: 'Claude Opus 4.6',
     description: 'Strongest reasoning model',
     supportsImages: true,
   },
   {
-    id: 'claude-haiku-4-5-20251001',
+    id: 'claude-haiku-4-5',
     name: 'Claude Haiku 4.5',
     description: 'Fast and cost-efficient',
     supportsImages: true,
   },
 ];
 
-export const CLAUDE_DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
+export const CLAUDE_DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 // ============================================================
 // Codex Models
@@ -162,8 +162,8 @@ export const CURSOR_MODELS: ModelDefinition[] = [
     description: 'Cursor auto-selects the best model',
   },
   {
-    id: 'claude-sonnet-4-5-20250929',
-    name: 'Claude Sonnet 4.5',
+    id: 'claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
     description: 'Anthropic Claude via Cursor',
     supportsImages: true,
   },

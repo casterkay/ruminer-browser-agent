@@ -482,6 +482,11 @@ function buildEmosGroupId(): string {
 function buildEmosMessageId(messageId: string): string {
   const session = sessions.selectedSession.value;
   if (!session) return '';
+  // If messageId is long (e.g., a UUID), use shorter format without session ID
+  // to avoid overly long composite IDs like "platform:uuid:uuid"
+  if (messageId.length > 16) {
+    return `${session.engineName}:${messageId}`;
+  }
   return `${session.engineName}:${session.id}:${messageId}`;
 }
 
@@ -1655,8 +1660,8 @@ function injectToolRestrictions(
 function injectRuminateRagGuidance(instruction: string): string {
   const guidance = [
     'Ruminate mode (RAG):',
-    '- Before replying, make the best use of the `emos_search_memories` tool to search the user’s own past messages.',
-    '- Always set `user_id: "me"` (user messages only).',
+    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user’s own past messages.",
+    '- Always set `user_id: "me"`.',
     '- Use the retrieved memories to ground your response when relevant.',
     '',
     'When you use any memory in your answer, provide citations by message IDs in exactly this format:',
@@ -2229,12 +2234,22 @@ const handleEscape = (e: KeyboardEvent) => {
   }
 };
 
+const AGENT_CHAT_NAVIGATE_EVENT = 'ruminer.agentChat.navigateSession';
+
+function handleNavigateSessionEvent(event: Event): void {
+  const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
+  const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
+  if (!sessionId) return;
+  void handleSessionSelectAndNavigate(sessionId);
+}
+
 onMounted(() => {
   document.addEventListener('keydown', handleEscape);
   document.addEventListener('visibilitychange', handlePageVisibilityChange);
   chrome.tabs.onActivated.addListener(handleTabActivated);
   chrome.runtime.onMessage.addListener(handleMarkerSavedMessage);
   chrome.runtime.onMessage.addListener(handleRecordingCompletedMessage);
+  window.addEventListener(AGENT_CHAT_NAVIGATE_EVENT, handleNavigateSessionEvent);
   void fetchPageMarkers();
 });
 
@@ -2244,6 +2259,7 @@ onUnmounted(() => {
   chrome.tabs.onActivated.removeListener(handleTabActivated);
   chrome.runtime.onMessage.removeListener(handleMarkerSavedMessage);
   chrome.runtime.onMessage.removeListener(handleRecordingCompletedMessage);
+  window.removeEventListener(AGENT_CHAT_NAVIGATE_EVENT, handleNavigateSessionEvent);
   emosSuggestions.clear();
   if (toastTimer) {
     clearTimeout(toastTimer);

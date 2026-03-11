@@ -94,12 +94,23 @@ async function executeScript(
   frameId: number | undefined,
   code: string,
   args: Record<string, JsonValue>,
+  injectionContext: { runId?: string },
   world: BrowserWorld,
 ): Promise<{ ok: true; result: JsonValue } | { ok: false; error: string }> {
   const frameIds = typeof frameId === 'number' ? [frameId] : undefined;
+  const reservedArgs: Record<string, JsonValue> = {
+    __rr_v3_runId:
+      typeof injectionContext.runId === 'string' && injectionContext.runId.trim()
+        ? injectionContext.runId
+        : null,
+  };
+  const mergedArgs: Record<string, JsonValue> = {
+    ...args,
+    ...reservedArgs,
+  };
 
   try {
-    const injected = await chrome.scripting.executeScript({
+    const injectionResults = await chrome.scripting.executeScript({
       target: { tabId, frameIds } as chrome.scripting.InjectionTarget,
       world: world === 'ISOLATED' ? 'ISOLATED' : 'MAIN',
       func: (scriptCode: string, scriptArgs: Record<string, JsonValue>) => {
@@ -131,10 +142,10 @@ async function executeScript(
           return { success: false, error: e instanceof Error ? e.message : String(e) };
         }
       },
-      args: [code, args],
+      args: [code, mergedArgs],
     });
 
-    const scriptResult = Array.isArray(injected) ? injected[0]?.result : undefined;
+    const scriptResult = Array.isArray(injectionResults) ? injectionResults[0]?.result : undefined;
 
     // Handle async result
     if (scriptResult instanceof Promise) {
@@ -213,7 +224,14 @@ export const scriptHandler: ActionHandler<'script'> = {
     }
 
     // Execute script
-    const result = await executeScript(tabId, ctx.frameId, params.code, argsResult.resolved, world);
+    const result = await executeScript(
+      tabId,
+      ctx.frameId,
+      params.code,
+      argsResult.resolved,
+      { runId: ctx.runId },
+      world,
+    );
 
     if (!result.ok) {
       return failed('SCRIPT_FAILED', result.error);

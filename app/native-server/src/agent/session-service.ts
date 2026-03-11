@@ -10,6 +10,12 @@ import { randomUUID } from 'node:crypto';
 import { getDb, type SessionRow } from './db';
 import type { EngineName } from './engines/types';
 import type { SQLInputValue } from 'node:sqlite';
+import { upsertProject } from './project-service';
+import { getDefaultProjectRoot } from './storage';
+import {
+  createMessage as createStoredMessage,
+  getMessagesCountBySessionId,
+} from './message-service';
 
 // ============================================================
 // Types
@@ -574,4 +580,135 @@ export async function getOrCreateDefaultSession(
     ...options,
     name: options.name || `Default ${engineName} session`,
   });
+}
+
+// ============================================================
+// Ingest Session Helpers (Ruminer)
+// ============================================================
+
+const IMPORTED_CONVERSATIONS_PROJECT_ID = 'ruminer.imported_conversations';
+const IMPORTED_CONVERSATIONS_PROJECT_NAME = 'Imported Conversations';
+
+export interface UpsertIngestedConversationSessionInput {
+  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
+  conversationId: string;
+  conversationTitle?: string | null;
+  conversationUrl?: string | null;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    createTime?: string | null;
+  }>;
+}
+
+export interface UpsertIngestedConversationSessionResult {
+  ok: true;
+  projectId: string;
+  sessionId: string;
+  messageCount: number;
+}
+
+function platformDisplayName(platform: string): string {
+  switch (platform) {
+    case 'chatgpt':
+      return 'ChatGPT';
+    case 'gemini':
+      return 'Gemini';
+    case 'claude':
+      return 'Claude';
+    case 'deepseek':
+      return 'DeepSeek';
+    default:
+      return platform.trim() || 'Chat';
+  }
+}
+
+function toIsoOrNow(value: string | null | undefined): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (raw) {
+    const ts = Date.parse(raw);
+    if (Number.isFinite(ts)) return new Date(ts).toISOString();
+  }
+  return new Date().toISOString();
+}
+
+export async function ensureImportedConversationsProject(): Promise<{ projectId: string }> {
+  const rootPath = getDefaultProjectRoot(IMPORTED_CONVERSATIONS_PROJECT_NAME);
+  const project = await upsertProject({
+    id: IMPORTED_CONVERSATIONS_PROJECT_ID,
+    name: IMPORTED_CONVERSATIONS_PROJECT_NAME,
+    rootPath,
+    allowCreate: true,
+    enableChromeMcp: true,
+  });
+  return { projectId: project.id };
+}
+
+/**
+ * Upsert an ingested conversation into the Agent DB as a Session + Messages.
+ *
+ * Session ID is deterministic and equals messages.conversation_id:
+ * `${platform}:${conversationId}`
+ *
+ * Messages are upserted with deterministic IDs `${sessionId}:${index}` (index from the source array).
+ */
+export async function upsertIngestedConversationSession(
+  input: UpsertIngestedConversationSessionInput,
+): Promise<UpsertIngestedConversationSessionResult> {
+  const platform = input.platform;
+  const conversationId = input.conversationId.trim();
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  const { projectId } = await ensureImportedConversationsProject();
+  const sessionId = `${platform}:${conversationId}`;
+
+  const title = (input.conversationTitle ?? '').trim();
+  const sessionName = title || `${platformDisplayName(platform)} ${conversationId}`;
+
+  const existing = await getSession(sessionId);
+  if (!existing) {
+    await createSession(projectId, 'openclaw', {
+      id: sessionId,
+      name: sessionName,
+    });
+  } else if (title && (!existing.name || existing.name.trim() !== title)) {
+    await updateSession(sessionId, { name: title });
+  }
+
+  const url = (input.conversationUrl ?? '').trim() || null;
+  const msgs = Array.isArray(input.messages) ? input.messages : [];
+
+  for (let i = 0; i < msgs.length; i++) {
+    const raw = msgs[i];
+    const role = raw?.role === 'assistant' ? 'assistant' : 'user';
+    const content = typeof raw?.content === 'string' ? raw.content.trim() : '';
+    if (!content) continue;
+
+    await createStoredMessage({
+      id: `${sessionId}:${i}`,
+      projectId,
+      sessionId,
+      conversationId: sessionId,
+      role,
+      messageType: 'chat',
+      content,
+      createdAt: toIsoOrNow(raw?.createTime ?? null),
+      metadata: {
+        source: 'ruminer_ingest',
+        platform,
+        conversationId,
+        conversationTitle: title || null,
+        conversationUrl: url,
+        index: i,
+      },
+    });
+  }
+
+  // Touch updatedAt so imported sessions float to the top for this project.
+  await touchSessionActivity(sessionId);
+
+  const messageCount = await getMessagesCountBySessionId(sessionId);
+  return { ok: true, projectId, sessionId, messageCount };
 }

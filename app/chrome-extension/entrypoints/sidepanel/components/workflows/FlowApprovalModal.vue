@@ -1,63 +1,61 @@
 <template>
-  <Teleport to=".sidepanel-root">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      aria-modal="true"
-      role="dialog"
-    >
-      <div class="absolute inset-0" :style="backdropStyle" @click="$emit('cancel')"></div>
+  <div
+    v-if="open"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    aria-modal="true"
+    role="dialog"
+  >
+    <div class="absolute inset-0" :style="backdropStyle" @click="$emit('cancel')"></div>
 
-      <div class="relative w-full max-w-md p-4" :style="modalStyle" @click.stop>
-        <div class="text-sm font-semibold" :style="{ color: 'var(--ac-text)' }">
-          Approve workflow tools
-        </div>
-        <div class="mt-1 text-xs" :style="{ color: 'var(--ac-text-muted)' }">
-          <span class="font-medium" :style="{ color: 'var(--ac-text)' }">{{ flowName }}</span>
-          declares these tools:
-        </div>
+    <div class="relative w-full max-w-md p-4" :style="modalStyle" @click.stop>
+      <div class="text-sm font-semibold" :style="{ color: 'var(--ac-text)' }">
+        Approve workflow tools
+      </div>
+      <div class="mt-1 text-xs" :style="{ color: 'var(--ac-text-muted)' }">
+        <span class="font-medium" :style="{ color: 'var(--ac-text)' }">{{ flowName }}</span>
+        declares these tools:
+      </div>
 
-        <div class="mt-3 max-h-52 overflow-y-auto ac-scroll">
-          <ul class="space-y-1">
-            <li
-              v-for="tool in requiredTools"
-              :key="tool"
-              class="text-xs px-2 py-1 rounded"
-              :style="toolPillStyle(tool)"
-            >
-              {{ tool }}
-            </li>
-          </ul>
-        </div>
+      <div class="mt-3 max-h-52 overflow-y-auto ac-scroll">
+        <ul class="space-y-1">
+          <li
+            v-for="tool in requiredTools"
+            :key="tool"
+            class="text-xs px-2 py-1 rounded"
+            :style="toolPillStyle(tool)"
+          >
+            {{ tool }}
+          </li>
+        </ul>
+      </div>
 
-        <div
-          v-if="addedTools.length > 0"
-          class="mt-3 text-xs"
-          :style="{ color: 'var(--ac-text-muted)' }"
+      <div
+        v-if="addedTools.length > 0"
+        class="mt-3 text-xs"
+        :style="{ color: 'var(--ac-text-muted)' }"
+      >
+        Newly required:
+        <span :style="{ color: 'var(--ac-warning, #d97706)' }">{{ addedTools.join(', ') }}</span>
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button
+          class="px-3 py-2 text-xs font-medium"
+          :style="btnSecondaryStyle"
+          @click="$emit('cancel')"
         >
-          Newly required:
-          <span :style="{ color: 'var(--ac-warning, #d97706)' }">{{ addedTools.join(', ') }}</span>
-        </div>
-
-        <div class="mt-4 flex items-center justify-end gap-2">
-          <button
-            class="px-3 py-2 text-xs font-medium"
-            :style="btnSecondaryStyle"
-            @click="$emit('cancel')"
-          >
-            Cancel
-          </button>
-          <button
-            class="px-3 py-2 text-xs font-medium"
-            :style="btnPrimaryStyle"
-            @click="$emit('approve')"
-          >
-            Approve & Run
-          </button>
-        </div>
+          Cancel
+        </button>
+        <button
+          class="px-3 py-2 text-xs font-medium"
+          :style="btnPrimaryStyle"
+          @click="$emit('approve')"
+        >
+          Approve & Run
+        </button>
       </div>
     </div>
-  </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">

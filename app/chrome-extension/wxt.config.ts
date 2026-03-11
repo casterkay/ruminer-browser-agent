@@ -39,8 +39,7 @@ export default defineConfig({
     // ],
   },
   manifest: {
-    // Use environment variable for the key, fallback to undefined if not set
-    key: CHROME_EXTENSION_KEY,
+    ...(IS_DEV ? {} : { key: CHROME_EXTENSION_KEY }),
     default_locale: 'zh_CN',
     name: '__MSG_extensionName__',
     description: '__MSG_extensionDescription__',

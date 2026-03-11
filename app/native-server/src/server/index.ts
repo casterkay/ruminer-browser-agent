@@ -19,6 +19,10 @@ import { closeDb } from '../agent/db';
 import { ClaudeEngine } from '../agent/engines/claude';
 import { CodexEngine } from '../agent/engines/codex';
 import { OpenClawEngine } from '../agent/engines/openclaw';
+import {
+  runWithMcpToolTelemetryContext,
+  setMcpToolTelemetryStreamManager,
+} from '../agent/mcp-tool-telemetry';
 import { AgentStreamManager } from '../agent/stream-manager';
 import {
   ERROR_MESSAGES,
@@ -55,6 +59,7 @@ export class Server {
   constructor() {
     this.fastify = Fastify({ logger: SERVER_CONFIG.LOGGER_ENABLED });
     this.agentStreamManager = new AgentStreamManager();
+    setMcpToolTelemetryStreamManager(this.agentStreamManager);
     this.agentChatService = new AgentChatService({
       engines: [new OpenClawEngine(), new CodexEngine(), new ClaudeEngine()],
       streamManager: this.agentStreamManager,
@@ -213,6 +218,11 @@ export class Server {
 
     // MCP POST endpoint
     this.fastify.post('/mcp', async (request, reply) => {
+      const query = (request.query ?? {}) as Record<string, unknown>;
+      const agentSessionId = typeof query.agentSessionId === 'string' ? query.agentSessionId : '';
+      const agentRequestId = typeof query.agentRequestId === 'string' ? query.agentRequestId : '';
+      const agentEngine = typeof query.agentEngine === 'string' ? query.agentEngine : '';
+
       const sessionId = request.headers['mcp-session-id'] as string | undefined;
       let transport: StreamableHTTPServerTransport | undefined = this.transportsMap.get(
         sessionId || '',
@@ -243,7 +253,16 @@ export class Server {
       }
 
       try {
-        await transport.handleRequest(request.raw, reply.raw, request.body);
+        await runWithMcpToolTelemetryContext(
+          {
+            agentSessionId,
+            agentRequestId,
+            agentEngine,
+          },
+          async () => {
+            await transport.handleRequest(request.raw, reply.raw, request.body);
+          },
+        );
       } catch (error) {
         if (!reply.sent) {
           reply

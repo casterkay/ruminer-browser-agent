@@ -90,6 +90,15 @@
     <!-- Timeline -->
     <AgentTimeline :items="thread.items" :state="thread.state" />
 
+    <!-- Citation Detail Modal (teleported to avoid stacking context issues) -->
+    <Teleport :to="overlayTarget" :disabled="!overlayTarget">
+      <EmosCitationDetailModal
+        v-if="selectedCitation"
+        :item="selectedCitation"
+        @close="selectedCitation = null"
+      />
+    </Teleport>
+
     <!-- Image Viewer Modal (teleported to avoid stacking context issues) -->
     <Teleport :to="overlayTarget" :disabled="!overlayTarget">
       <div
@@ -150,14 +159,16 @@
 import type { AttachmentMetadata } from 'chrome-mcp-shared';
 import { computed, inject, onMounted, provide, ref, watch } from 'vue';
 import { AGENT_SERVER_PORT_KEY } from '../../composables';
-import type { AgentThread } from '../../composables/useAgentThreads';
-import type { MemoryItem } from '../../composables/useEmosSearch';
 import {
   EMOS_CITATION_MEMORIES_BY_ID_KEY,
+  EMOS_CITATION_OPEN_DETAILS_KEY,
   extractEmosCitationMemoriesFromToolResultText,
 } from '../../composables/emos-citations';
+import type { AgentThread } from '../../composables/useAgentThreads';
+import type { MemoryItem } from '../../composables/useEmosSearch';
 import AgentTimeline from './AgentTimeline.vue';
 import ApplyMessageChip from './ApplyMessageChip.vue';
+import EmosCitationDetailModal from './EmosCitationDetailModal.vue';
 
 const props = defineProps<{
   thread: AgentThread;
@@ -190,6 +201,13 @@ const citationMemoriesById = computed(() => {
 });
 
 provide(EMOS_CITATION_MEMORIES_BY_ID_KEY, citationMemoriesById);
+
+// Citation detail modal
+const selectedCitation = ref<MemoryItem | null>(null);
+
+provide(EMOS_CITATION_OPEN_DETAILS_KEY, (item: MemoryItem) => {
+  selectedCitation.value = item;
+});
 
 // Inject server port from parent
 const serverPort = inject(AGENT_SERVER_PORT_KEY, ref<number | null>(null));
@@ -231,16 +249,20 @@ function closeViewer(): void {
   viewerAttachment.value = null;
 }
 
-// Handle Escape key to close viewer
+// Handle Escape key to close viewer or citation modal
 function handleKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && viewerAttachment.value) {
-    closeViewer();
+  if (e.key === 'Escape') {
+    if (selectedCitation.value) {
+      selectedCitation.value = null;
+    } else if (viewerAttachment.value) {
+      closeViewer();
+    }
   }
 }
 
-// Register/unregister keyboard listener only when viewer is open
+// Register/unregister keyboard listener when any overlay is open
 watch(
-  () => viewerAttachment.value,
+  () => viewerAttachment.value ?? selectedCitation.value,
   (current, _prev, onCleanup) => {
     if (!current) return;
     document.addEventListener('keydown', handleKeydown);

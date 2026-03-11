@@ -15,8 +15,8 @@
  * 5. Return derived env vars if healthy
  */
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 
 /**
  * Result of CCR detection.
@@ -300,8 +300,8 @@ export function clearCcrCache(): void {
  * particularly the "Router.default must be provider,model" requirement.
  *
  * The most common misconfiguration is setting Router.default to just a provider
- * name (e.g., "venus") instead of the required "provider,model" format
- * (e.g., "venus,claude-4-5-sonnet-20250929"). This causes CCR to crash with
+ * name (e.g., "venus") instead of the required "provider,model" format.
+ * This causes CCR to crash with
  * "Cannot read properties of undefined (reading 'includes')" when it tries
  * to split the model name.
  */

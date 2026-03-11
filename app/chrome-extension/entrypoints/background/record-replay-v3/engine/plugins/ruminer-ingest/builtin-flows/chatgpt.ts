@@ -12,78 +12,27 @@ const CHATGPT_DEFAULT_REQUIRED_TOOLS = [
   TOOL_NAMES.BROWSER.JAVASCRIPT,
 ] as const;
 
-const CHATGPT_IMPORT_ALL_SCRIPT = `
+const CHATGPT_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'chatgpt';
+  const FLOW_ID = 'ruminer.chatgpt.scanner.v1';
+  const INGEST_FLOW_ID = 'ruminer.chatgpt.conversation_ingest.v1';
   const LIMIT = 100;
-  const MAX_PAGES_PER_RUN = 5;
-  const MAX_CONVERSATIONS_PER_RUN = 10;
-  const SAFETY_MAX_OFFSET = 1000;
-  const MIN_DELAY_MS = 200;
-  const MAX_DELAY_MS = 500;
+  const TAIL_SIZE = 6;
 
-  const STATE_KEY = 'ruminer.chatgpt.import_all.state.v1';
-  const DEFAULT_STATE = {
-    schemaVersion: 1,
-    backfillOffset: 0,
-    backfillDone: false,
-    lastImportedUpdateTimeById: {},
-    lastRunAt: null,
-  };
-
-  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
-  const jitter = () => MIN_DELAY_MS + Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1));
+  const runId = typeof __rr_v3_runId === 'string' && __rr_v3_runId.trim() ? __rr_v3_runId.trim() : null;
 
   const notify = async (title, message) => {
-    try {
-      await chrome.runtime.sendMessage({ type: 'ruminer.workflow.notify', title, message });
-    } catch {}
+    try { await chrome.runtime.sendMessage({ type: 'ruminer.workflow.notify', title, message }); } catch {}
+  };
+
+  const progress = async (payload) => {
+    if (!runId) return;
+    try { await chrome.runtime.sendMessage({ type: 'ruminer.workflow.progress', runId, flowId: FLOW_ID, payload }); } catch {}
   };
 
   const safeJson = async (response) => {
-    try {
-      return await response.json();
-    } catch {
-      return null;
-    }
-  };
-
-  const getState = async () => {
-    const raw = await chrome.storage.local.get(STATE_KEY);
-    const v = raw && raw[STATE_KEY];
-    if (!v || typeof v !== 'object' || v.schemaVersion !== 1) return { ...DEFAULT_STATE };
-    const s = {
-      ...DEFAULT_STATE,
-      ...v,
-      lastImportedUpdateTimeById:
-        v.lastImportedUpdateTimeById && typeof v.lastImportedUpdateTimeById === 'object'
-          ? v.lastImportedUpdateTimeById
-          : {},
-    };
-    s.backfillOffset =
-      typeof s.backfillOffset === 'number' && Number.isFinite(s.backfillOffset) && s.backfillOffset >= 0
-        ? Math.floor(s.backfillOffset)
-        : 0;
-    s.backfillDone = Boolean(s.backfillDone);
-    return s;
-  };
-
-  const setState = async (state) => {
-    try {
-      state.lastRunAt = new Date().toISOString();
-      // Prune state map to avoid unbounded growth (keep newest by update_time).
-      const map = state.lastImportedUpdateTimeById || {};
-      const entries = Object.entries(map)
-        .map(([k, v]) => [k, typeof v === 'number' && Number.isFinite(v) ? v : 0])
-        .sort((a, b) => b[1] - a[1]);
-      const MAX = 5000;
-      const pruned = {};
-      for (let i = 0; i < entries.length && i < MAX; i++) {
-        pruned[entries[i][0]] = entries[i][1];
-      }
-      state.lastImportedUpdateTimeById = pruned;
-      await chrome.storage.local.set({ [STATE_KEY]: state });
-    } catch {}
+    try { return await response.json(); } catch { return null; }
   };
 
   const getAccessToken = async () => {
@@ -100,9 +49,7 @@ return (async () => {
     try {
       const m = document.cookie.match('(^|;)\\\\s*' + key + '\\\\s*=\\\\s*([^;]+)');
       return m ? String(m.pop() || '') : '';
-    } catch {
-      return '';
-    }
+    } catch { return ''; }
   };
 
   const getTeamAccountId = async (accessToken) => {
@@ -110,10 +57,7 @@ return (async () => {
     if (!workspaceId) return null;
     const url = new URL('/backend-api/accounts/check/v4-2023-04-27', location.origin).toString();
     const resp = await fetch(url, {
-      headers: {
-        Authorization: 'Bearer ' + accessToken,
-        'X-Authorization': 'Bearer ' + accessToken,
-      },
+      headers: { Authorization: 'Bearer ' + accessToken, 'X-Authorization': 'Bearer ' + accessToken },
       credentials: 'include',
     });
     if (!resp.ok) return null;
@@ -122,9 +66,7 @@ return (async () => {
       const account = payload && payload.accounts && payload.accounts[workspaceId];
       const accountId = account && account.account && account.account.account_id;
       return typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   };
 
   const fetchBackendApi = async (path, query, accessToken, accountId) => {
@@ -135,16 +77,13 @@ return (async () => {
       url.searchParams.set(k, String(v));
     }
 
-    const headers = {
-      Authorization: 'Bearer ' + accessToken,
-      'X-Authorization': 'Bearer ' + accessToken,
-    };
+    const headers = { Authorization: 'Bearer ' + accessToken, 'X-Authorization': 'Bearer ' + accessToken };
     if (accountId) headers['Chatgpt-Account-Id'] = accountId;
 
     const resp = await fetch(url.toString(), { headers, credentials: 'include' });
     if (!resp.ok) {
       const body = await safeJson(resp);
-      const msg = (body && (body.detail || body.error)) ? String(body.detail || body.error) : '';
+      const msg = body && (body.detail || body.error) ? String(body.detail || body.error) : '';
       throw new Error('ChatGPT backend API failed (' + resp.status + '): ' + (msg || resp.statusText || 'request failed'));
     }
     return safeJson(resp);
@@ -182,12 +121,12 @@ return (async () => {
       if (typeof content.title === 'string') bits.push(content.title);
       if (typeof content.text === 'string') bits.push(content.text);
       if (typeof content.url === 'string') bits.push(content.url);
-      return bits.join('\\n');
+      return bits.join('\\\\n');
     }
     return '';
   };
 
-  const extractMessages = (conversation) => {
+  const extractConversationMessages = (conversation) => {
     const mapping = conversation && conversation.mapping ? conversation.mapping : null;
     const current = conversation && conversation.current_node ? conversation.current_node : null;
     if (!mapping || typeof mapping !== 'object' || !current) return [];
@@ -207,282 +146,223 @@ return (async () => {
     const out = [];
     for (const node of chain) {
       const msg = node && node.message ? node.message : null;
-      const role = msg && msg.author && msg.author.role ? String(msg.author.role) : '';
+      const role = msg && typeof msg.author === 'object' && typeof msg.author.role === 'string' ? msg.author.role : '';
       if (role !== 'user' && role !== 'assistant') continue;
-
-      if (msg && msg.metadata && msg.metadata.is_visually_hidden_from_conversation === true) continue;
-
-      const content = extractContentText(msg && msg.content ? msg.content : null).trim();
+      const content = extractContentText(msg && msg.content ? msg.content : null).replace(/\\r\\n/g, '\\n').trim();
       if (!content) continue;
-
-      const createTimeSec = msg && typeof msg.create_time === 'number' ? msg.create_time : null;
-      const createTimeIso =
-        typeof createTimeSec === 'number' && Number.isFinite(createTimeSec)
-          ? new Date(createTimeSec * 1000).toISOString()
-          : null;
-
-      out.push({ role, content, createTime: createTimeIso });
+      out.push({ role, content });
     }
     return out;
   };
 
-  const groupId = (conversationId) => PLATFORM + ':' + conversationId;
+  const bytesToHex = (buffer) => Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const sha256Hex = async (input) => {
+    const enc = new TextEncoder();
+    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
+    return bytesToHex(digest);
+  };
 
+  const hashMessage = async (role, content) => {
+    // Must match background canonicalization: stableJson({ content, role }) where keys sort to content,role.
+    return sha256Hex(JSON.stringify({ content: String(content || '').replace(/\\r\\n/g, '\\n').trim(), role }));
+  };
+
+  const tailHashes = async (messages) => {
+    const tail = messages.slice(-TAIL_SIZE);
+    const out = [];
+    for (const m of tail) {
+      out.push(await hashMessage(m.role, m.content));
+    }
+    return out;
+  };
+
+  const getConversationStates = async (groupIds) => {
+    const resp = await chrome.runtime.sendMessage({ type: 'ruminer.ledger.getConversationStates', groupIds, tailSize: TAIL_SIZE });
+    if (!resp || !resp.ok) {
+      const err = resp && resp.error ? String(resp.error) : 'ledger.getConversationStates failed';
+      throw new Error(err);
+    }
+    return resp.result || {};
+  };
+
+  const enqueueRuns = async (items) => {
+    const resp = await chrome.runtime.sendMessage({ type: 'ruminer.rr_v3.enqueueRuns', items });
+    if (!resp || !resp.ok) {
+      const err = resp && resp.error ? String(resp.error) : 'enqueueRuns failed';
+      throw new Error(err);
+    }
+    return resp.result || {};
+  };
+
+  const startedAt = Date.now();
   const accessToken = await getAccessToken();
   const accountId = await getTeamAccountId(accessToken);
 
-  let state = await getState();
-  const isBackfill = !state.backfillDone;
-  let offset = isBackfill ? state.backfillOffset : 0;
+  let sawMissing = false;
+  let stopOnUnchanged = false;
+  let unchangedStopAt = null;
 
-  let pages = 0;
   let scanned = 0;
-  let considered = 0;
-  let fetched = 0;
-  let convIngested = 0;
-  let convSkipped = 0;
-  let convFailed = 0;
-  let msgIngested = 0;
-  let msgUpdated = 0;
-  let msgSkipped = 0;
-  let msgFailed = 0;
-  const convErrors = [];
+  let enqueued = 0;
 
-  const startedAt = Date.now();
+  await progress({ kind: 'chatgpt.scanner.started', limit: LIMIT, tailSize: TAIL_SIZE });
 
-  try {
-    while (pages < MAX_PAGES_PER_RUN && considered < MAX_CONVERSATIONS_PER_RUN) {
-      if (offset >= SAFETY_MAX_OFFSET) break;
+  let offset = 0;
+  while (!stopOnUnchanged) {
+    const list = await listConversations(offset, accessToken, accountId);
+    const items = list && Array.isArray(list.items) ? list.items : [];
+    if (items.length === 0) break;
 
-      const list = await listConversations(offset, accessToken, accountId);
-      const items = list && Array.isArray(list.items) ? list.items : [];
-      const total = list && typeof list.total === 'number' ? list.total : null;
+    const rows = items
+      .map((it) => {
+        const id = String(it && it.id ? it.id : '').trim();
+        if (!id) return null;
+        const title = typeof it.title === 'string' ? it.title : null;
+        const url = 'https://chatgpt.com/c/' + id;
+        return { id, title, url, groupId: PLATFORM + ':' + id };
+      })
+      .filter(Boolean);
 
-      if (items.length === 0) {
-        if (isBackfill) {
-          state.backfillDone = true;
-          state.backfillOffset = 0;
-        }
-        break;
-      }
+    const groupIds = rows.map((r) => r.groupId);
+    const states = await getConversationStates(groupIds);
 
-      scanned += items.length;
+    const toEnqueue = [];
 
-      // For items without an update_time cache entry, consult the ingestion ledger (group_id index)
-      // so we can skip already-ingested conversations without fetching full details.
-      const unknownGroupIds = [];
-      for (const it of items) {
-        const id = it && typeof it.id === 'string' ? it.id : '';
-        if (!id) continue;
-        if (!state.lastImportedUpdateTimeById[id]) unknownGroupIds.push(groupId(id));
-      }
+    for (const row of rows) {
+      scanned += 1;
+      const state = states && states[row.groupId] ? states[row.groupId] : { exists: false };
 
-      let ledgerHas = {};
-      if (unknownGroupIds.length > 0) {
-        const resp = await chrome.runtime.sendMessage({
-          type: 'ruminer.ledger.hasAnyForGroups',
-          groupIds: unknownGroupIds,
+      if (!state.exists) {
+        sawMissing = true;
+        toEnqueue.push({
+          flowId: INGEST_FLOW_ID,
+          args: {
+            ruminerPlatform: PLATFORM,
+            ruminerConversationId: row.id,
+            ruminerConversationUrl: row.url,
+            ...(row.title ? { ruminerConversationTitle: row.title } : {}),
+          },
         });
-        if (resp && resp.ok && resp.result && typeof resp.result === 'object') {
-          ledgerHas = resp.result;
-        }
+        continue;
       }
 
-      const candidates = [];
-      for (const it of items) {
-        const id = it && typeof it.id === 'string' ? it.id.trim() : '';
-        if (!id) continue;
+      if (state.status === 'skipped') continue;
 
-        const updateTime = it && typeof it.update_time === 'number' ? it.update_time : 0;
-        const cached = state.lastImportedUpdateTimeById[id] || 0;
-
-        if (cached && updateTime && updateTime <= cached) {
-          convSkipped += 1;
-          continue;
-        }
-
-        if (!cached && ledgerHas[groupId(id)]) {
-          // Already ingested at least once; cache update_time to enable fast future skips.
-          if (updateTime) state.lastImportedUpdateTimeById[id] = updateTime;
-          convSkipped += 1;
-          continue;
-        }
-
-        candidates.push({
-          id,
-          title: it && typeof it.title === 'string' ? it.title : null,
-          updateTime: updateTime || null,
+      if (state.status === 'failed') {
+        toEnqueue.push({
+          flowId: INGEST_FLOW_ID,
+          args: {
+            ruminerPlatform: PLATFORM,
+            ruminerConversationId: row.id,
+            ruminerConversationUrl: row.url,
+            ...(row.title ? { ruminerConversationTitle: row.title } : {}),
+          },
         });
+        continue;
       }
 
-      // Incremental mode: if the top page has nothing to do, stop early.
-      if (!isBackfill && offset === 0 && candidates.length === 0) {
-        break;
-      }
+      if (!sawMissing) {
+        const conv = await fetchConversation(row.id, accessToken, accountId);
+        const msgs = extractConversationMessages(conv);
+        const currentTail = await tailHashes(msgs);
+        const ledgerTail = Array.isArray(state.tailHashes) ? state.tailHashes : [];
+        const unchanged = ledgerTail.length === currentTail.length && ledgerTail.every((h, i) => h === currentTail[i]);
 
-      for (const c of candidates) {
-        if (considered >= MAX_CONVERSATIONS_PER_RUN) break;
-        considered += 1;
-
-        try {
-          const conv = await fetchConversation(c.id, accessToken, accountId);
-          fetched += 1;
-
-          const messages = extractMessages(conv);
-          const conversationUrl = 'https://chatgpt.com/c/' + c.id;
-          const ingestResp = await chrome.runtime.sendMessage({
-            type: 'ruminer.chatgpt.ingestConversation',
-            platform: PLATFORM,
-            conversationId: c.id,
-            conversationTitle:
-              c.title || (conv && typeof conv.title === 'string' ? conv.title : null),
-            conversationUrl,
-            conversationUpdateTime: c.updateTime,
-            messages,
-          });
-
-          if (!ingestResp || !ingestResp.ok) {
-            const err =
-              ingestResp && ingestResp.error ? String(ingestResp.error) : 'Unknown ingest error';
-            throw new Error(err);
-          }
-
-          const r = ingestResp.result || {};
-          convIngested += 1;
-          msgIngested += typeof r.ingested === 'number' ? r.ingested : 0;
-          msgUpdated += typeof r.updated === 'number' ? r.updated : 0;
-          msgSkipped += typeof r.skipped === 'number' ? r.skipped : 0;
-          msgFailed += typeof r.failed === 'number' ? r.failed : 0;
-
-          if (typeof c.updateTime === 'number' && Number.isFinite(c.updateTime)) {
-            state.lastImportedUpdateTimeById[c.id] = c.updateTime;
-          }
-
-          await setState(state);
-          await sleep(jitter());
-        } catch (error) {
-          convFailed += 1;
-          const msg = error && error.message ? String(error.message) : String(error);
-          convErrors.push(c.id + ': ' + msg);
-
-          // Fatal auth/session errors: abort so scheduler retries instead of silently skipping.
-          if (
-            msg.includes('Not logged in') ||
-            msg.includes('missing access token') ||
-            msg.includes('(401)') ||
-            msg.includes('(403)') ||
-            msg.includes('EMOS settings incomplete')
-          ) {
-            throw error;
-          }
-
-          await sleep(jitter());
-        }
-      }
-
-      offset += items.length;
-      pages += 1;
-
-      if (isBackfill) {
-        state.backfillOffset = offset;
-        if (typeof total === 'number' && offset >= total) {
-          state.backfillDone = true;
-          state.backfillOffset = 0;
+        if (unchanged) {
+          stopOnUnchanged = true;
+          unchangedStopAt = row.id;
           break;
         }
-      } else {
-        // Incremental: only ever scan the top N pages per run.
-        break;
+
+        toEnqueue.push({
+          flowId: INGEST_FLOW_ID,
+          args: {
+            ruminerPlatform: PLATFORM,
+            ruminerConversationId: row.id,
+            ruminerConversationUrl: row.url,
+            ...(row.title ? { ruminerConversationTitle: row.title } : {}),
+          },
+        });
       }
     }
 
-    if (isBackfill && state.backfillDone === true) {
-      // Backfill complete: switch to incremental mode next run.
-      state.backfillOffset = 0;
+    if (toEnqueue.length > 0) {
+      await progress({
+        kind: 'chatgpt.scanner.enqueued',
+        conversations: toEnqueue.map((item) => {
+          const args = item && item.args ? item.args : {};
+          const cid = String(args.ruminerConversationId || '').trim();
+          return {
+            platform: PLATFORM,
+            sessionId: PLATFORM + ':' + cid,
+            conversationId: cid,
+            title: args.ruminerConversationTitle || null,
+            url: args.ruminerConversationUrl || null,
+          };
+        }),
+      });
+      const r = await enqueueRuns(toEnqueue);
+      enqueued += Number(r.enqueued || 0);
     }
 
-    await setState(state);
-
-    const durationMs = Date.now() - startedAt;
-    const mode = isBackfill ? 'Backfill' : 'Incremental';
-    await notify(
-      'ChatGPT – Import All',
-      mode +
-        ': scanned ' +
-        scanned +
-        ', fetched ' +
-        fetched +
-        ', conv ' +
-        convIngested +
-        ', conv_failed ' +
-        convFailed +
-        ', msgs +' +
-        (msgIngested + msgUpdated) +
-        ', skipped ' +
-        msgSkipped +
-        ', failed ' +
-        msgFailed +
-        ' (' +
-        durationMs +
-        'ms)',
-    );
-
-    return {
-      ok: true,
-      mode: isBackfill ? 'backfill' : 'incremental',
+    await progress({
+      kind: 'chatgpt.scanner.page',
+      offset,
       scanned,
-      fetched,
-      conversationsIngested: convIngested,
-      conversationsSkipped: convSkipped,
-      conversationsFailed: convFailed,
-      messagesIngested: msgIngested,
-      messagesUpdated: msgUpdated,
-      messagesSkipped: msgSkipped,
-      messagesFailed: msgFailed,
-      durationMs,
-      backfillOffset: state.backfillOffset,
-      backfillDone: state.backfillDone,
-    };
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    const message = error && error.message ? String(error.message) : String(error);
-    await notify('ChatGPT – Import All (failed)', message);
-    throw error;
+      enqueued,
+      sawMissing,
+      stopOnUnchanged,
+      ...(unchangedStopAt ? { unchangedStopAt } : {}),
+    });
+
+    if (stopOnUnchanged) break;
+    offset += items.length;
   }
+
+  const durationMs = Date.now() - startedAt;
+  await notify(
+    'ChatGPT – Import All',
+    'enqueued ' +
+      enqueued +
+      ', scanned ' +
+      scanned +
+      (unchangedStopAt ? ', stopped at unchanged ' + unchangedStopAt : '') +
+      ' (' +
+      durationMs +
+      'ms)',
+  );
+
+  await progress({ kind: 'chatgpt.scanner.finished', scanned, enqueued, sawMissing, unchangedStopAt, durationMs });
+  return { ok: true, scanned, enqueued, sawMissing, unchangedStopAt, durationMs };
 })();
 `.trim();
 
-const CHATGPT_IMPORT_CURRENT_TAB_SCRIPT = `
+const CHATGPT_INGEST_SCRIPT = `
 return (async () => {
-  const url = String(location.href || '');
-  if (!url.startsWith('https://chatgpt.com/c/')) {
-    try {
-      await chrome.runtime.sendMessage({
-        type: 'ruminer.workflow.notify',
-        title: 'ChatGPT – Import Current Conversation (blocked)',
-        message: 'Current tab URL must start with https://chatgpt.com/c/',
-      });
-    } catch {}
-    throw new Error('Current tab URL must start with https://chatgpt.com/c/');
+  const PLATFORM = 'chatgpt';
+  const rawUrl = String(location.href || '');
+  let parsedUrl;
+  try { parsedUrl = new URL(rawUrl); } catch { parsedUrl = null; }
+
+  const allowedHosts = new Set(['chatgpt.com', 'chat.openai.com']);
+  const host = parsedUrl ? String(parsedUrl.host || '') : '';
+  if (!parsedUrl || !allowedHosts.has(host)) {
+    throw new Error('Tab must be on chatgpt.com or chat.openai.com');
   }
 
-  const m = location.pathname.match(/^\\\\/c\\\\/([^/?#]+)/i);
+  const m = String(parsedUrl.pathname || '').match(/\\/(?:c|chat)\\/([^/?#]+)/i);
   const conversationId = m ? String(m[1]) : '';
-  if (!conversationId) {
-    throw new Error('Failed to parse conversation id from URL');
-  }
+  if (!conversationId) throw new Error('Failed to parse conversation id from URL');
+
+  const runId = typeof __rr_v3_runId === 'string' && __rr_v3_runId.trim() ? __rr_v3_runId.trim() : null;
 
   const safeJson = async (response) => {
-    try {
-      return await response.json();
-    } catch {
-      return null;
-    }
+    try { return await response.json(); } catch { return null; }
   };
 
   const getAccessToken = async () => {
-    const sUrl = new URL('/api/auth/session', location.origin).toString();
-    const resp = await fetch(sUrl, { credentials: 'include' });
+    const url = new URL('/api/auth/session', location.origin).toString();
+    const resp = await fetch(url, { credentials: 'include' });
     if (!resp.ok) throw new Error('Not logged in to ChatGPT');
     const payload = await safeJson(resp);
     const token = payload && typeof payload.accessToken === 'string' ? payload.accessToken : '';
@@ -492,22 +372,17 @@ return (async () => {
 
   const getCookie = (key) => {
     try {
-      const mm = document.cookie.match('(^|;)\\\\s*' + key + '\\\\s*=\\\\s*([^;]+)');
-      return mm ? String(mm.pop() || '') : '';
-    } catch {
-      return '';
-    }
+      const m = document.cookie.match('(^|;)\\\\s*' + key + '\\\\s*=\\\\s*([^;]+)');
+      return m ? String(m.pop() || '') : '';
+    } catch { return ''; }
   };
 
   const getTeamAccountId = async (accessToken) => {
     const workspaceId = getCookie('_account');
     if (!workspaceId) return null;
-    const aUrl = new URL('/backend-api/accounts/check/v4-2023-04-27', location.origin).toString();
-    const resp = await fetch(aUrl, {
-      headers: {
-        Authorization: 'Bearer ' + accessToken,
-        'X-Authorization': 'Bearer ' + accessToken,
-      },
+    const url = new URL('/backend-api/accounts/check/v4-2023-04-27', location.origin).toString();
+    const resp = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + accessToken, 'X-Authorization': 'Bearer ' + accessToken },
       credentials: 'include',
     });
     if (!resp.ok) return null;
@@ -516,25 +391,24 @@ return (async () => {
       const account = payload && payload.accounts && payload.accounts[workspaceId];
       const accountId = account && account.account && account.account.account_id;
       return typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   };
 
   const fetchBackendApi = async (path, accessToken, accountId) => {
-    const bUrl = new URL('/backend-api' + path, location.origin);
-    const headers = {
-      Authorization: 'Bearer ' + accessToken,
-      'X-Authorization': 'Bearer ' + accessToken,
-    };
+    const url = new URL('/backend-api' + path, location.origin);
+    const headers = { Authorization: 'Bearer ' + accessToken, 'X-Authorization': 'Bearer ' + accessToken };
     if (accountId) headers['Chatgpt-Account-Id'] = accountId;
-    const resp = await fetch(bUrl.toString(), { headers, credentials: 'include' });
+    const resp = await fetch(url.toString(), { headers, credentials: 'include' });
     if (!resp.ok) {
       const body = await safeJson(resp);
-      const msg = (body && (body.detail || body.error)) ? String(body.detail || body.error) : '';
+      const msg = body && (body.detail || body.error) ? String(body.detail || body.error) : '';
       throw new Error('ChatGPT backend API failed (' + resp.status + '): ' + (msg || resp.statusText || 'request failed'));
     }
     return safeJson(resp);
+  };
+
+  const fetchConversation = async (id, accessToken, accountId) => {
+    return fetchBackendApi('/conversation/' + encodeURIComponent(id), accessToken, accountId);
   };
 
   const extractContentText = (content) => {
@@ -561,12 +435,12 @@ return (async () => {
       if (typeof content.title === 'string') bits.push(content.title);
       if (typeof content.text === 'string') bits.push(content.text);
       if (typeof content.url === 'string') bits.push(content.url);
-      return bits.join('\\n');
+      return bits.join('\\\\n');
     }
     return '';
   };
 
-  const extractMessages = (conversation) => {
+  const extractConversationMessages = (conversation) => {
     const mapping = conversation && conversation.mapping ? conversation.mapping : null;
     const current = conversation && conversation.current_node ? conversation.current_node : null;
     if (!mapping || typeof mapping !== 'object' || !current) return [];
@@ -586,89 +460,59 @@ return (async () => {
     const out = [];
     for (const node of chain) {
       const msg = node && node.message ? node.message : null;
-      const role = msg && msg.author && msg.author.role ? String(msg.author.role) : '';
+      const role = msg && typeof msg.author === 'object' && typeof msg.author.role === 'string' ? msg.author.role : '';
       if (role !== 'user' && role !== 'assistant') continue;
-
-      if (msg && msg.metadata && msg.metadata.is_visually_hidden_from_conversation === true) continue;
-
-      const content = extractContentText(msg && msg.content ? msg.content : null).trim();
+      const content = extractContentText(msg && msg.content ? msg.content : null).replace(/\\r\\n/g, '\\n').trim();
       if (!content) continue;
-
-      const createTimeSec = msg && typeof msg.create_time === 'number' ? msg.create_time : null;
-      const createTimeIso =
-        typeof createTimeSec === 'number' && Number.isFinite(createTimeSec)
-          ? new Date(createTimeSec * 1000).toISOString()
-          : null;
-
-      out.push({ role, content, createTime: createTimeIso });
+      const createTime = msg && (msg.create_time || msg.createTime) ? String(msg.create_time || msg.createTime) : null;
+      out.push({ role, content, createTime });
     }
     return out;
   };
 
   const startedAt = Date.now();
+  const accessToken = await getAccessToken();
+  const accountId = await getTeamAccountId(accessToken);
 
-  try {
-    const accessToken = await getAccessToken();
-    const accountId = await getTeamAccountId(accessToken);
-    const conv = await fetchBackendApi('/conversation/' + encodeURIComponent(conversationId), accessToken, accountId);
-    const title = conv && typeof conv.title === 'string' ? conv.title : null;
-    const messages = extractMessages(conv);
+  const conv = await fetchConversation(conversationId, accessToken, accountId);
+  const title = conv && typeof conv.title === 'string' ? conv.title : null;
+  const messages = extractConversationMessages(conv);
 
-    const ingestResp = await chrome.runtime.sendMessage({
-      type: 'ruminer.chatgpt.ingestConversation',
-      platform: 'chatgpt',
-      conversationId,
-      conversationTitle: title,
-      conversationUrl: url,
-      conversationUpdateTime: null,
-      messages,
-    });
+  const ingestResp = await chrome.runtime.sendMessage({
+    type: 'ruminer.ingest.ingestConversation',
+    platform: PLATFORM,
+    conversationId,
+    runId,
+    conversationTitle: title,
+    conversationUrl: rawUrl,
+    messages,
+  });
 
-    if (!ingestResp || !ingestResp.ok) {
-      const err = ingestResp && ingestResp.error ? String(ingestResp.error) : 'Unknown ingest error';
-      throw new Error(err);
-    }
-
-    const r = ingestResp.result || {};
-    const durationMs = Date.now() - startedAt;
-
-    try {
-      await chrome.runtime.sendMessage({
-        type: 'ruminer.workflow.notify',
-        title: 'ChatGPT – Import Current Conversation',
-        message:
-          'msgs +' +
-          (Number(r.ingested || 0) + Number(r.updated || 0)) +
-          ', skipped ' +
-          Number(r.skipped || 0) +
-          ', failed ' +
-          Number(r.failed || 0) +
-          ' (' +
-          durationMs +
-          'ms)',
-      });
-    } catch {}
-
-    return {
-      ok: true,
-      conversationId,
-      messagesIngested: Number(r.ingested || 0),
-      messagesUpdated: Number(r.updated || 0),
-      messagesSkipped: Number(r.skipped || 0),
-      messagesFailed: Number(r.failed || 0),
-      durationMs,
-    };
-  } catch (error) {
-    const message = error && error.message ? String(error.message) : String(error);
-    try {
-      await chrome.runtime.sendMessage({
-        type: 'ruminer.workflow.notify',
-        title: 'ChatGPT – Import Current Conversation (failed)',
-        message,
-      });
-    } catch {}
-    throw error;
+  if (!ingestResp || !ingestResp.ok) {
+    const err = ingestResp && ingestResp.error ? String(ingestResp.error) : 'Unknown ingest error';
+    throw new Error(err);
   }
+
+  const r = ingestResp.result || {};
+  const durationMs = Date.now() - startedAt;
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'ruminer.workflow.notify',
+      title: 'ChatGPT – Import Conversation',
+      message:
+        'upserted ' +
+        Number(r.upserted || 0) +
+        ', skipped ' +
+        Number(r.skipped || 0) +
+        ', failed ' +
+        Number(r.failed || 0) +
+        ' (' +
+        durationMs +
+        'ms)',
+    });
+  } catch {}
+
+  return { ok: true, conversationId, ...r, durationMs };
 })();
 `.trim();
 
@@ -683,7 +527,7 @@ function createBaseFlow(
     ...partial,
     meta: {
       ...(partial.meta ?? {}),
-      tags: Array.from(new Set([...(partial.meta?.tags ?? []), 'builtin', 'chatgpt'])),
+      tags: partial.meta?.tags ?? [],
       bindings: partial.meta?.bindings?.length ? partial.meta.bindings : CHATGPT_DOMAIN_BINDINGS,
       requiredTools: partial.meta?.requiredTools?.length
         ? partial.meta.requiredTools
@@ -705,12 +549,12 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       ui: { x: 0, y: 0 },
     },
     {
-      id: 'n.import_all',
+      id: 'n.scan',
       kind: 'script',
-      name: 'Import all (API)',
+      name: 'Scan & enqueue (API)',
       config: {
         world: 'ISOLATED',
-        code: CHATGPT_IMPORT_ALL_SCRIPT,
+        code: CHATGPT_SCANNER_SCRIPT,
       },
       ui: { x: 240, y: 0 },
     },
@@ -723,16 +567,37 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
     },
   ];
 
-  const importCurrentTabNodes: NodeV3[] = [
+  const ingestNodes: NodeV3[] = [
     {
-      id: 'n.import_current',
-      kind: 'script',
-      name: 'Import Current Conversation (API)',
+      id: 'n.open_conv',
+      kind: 'openTab',
+      name: 'Open conversation (background)',
       config: {
-        world: 'ISOLATED',
-        code: CHATGPT_IMPORT_CURRENT_TAB_SCRIPT,
+        url: {
+          kind: 'var',
+          ref: { name: 'ruminerConversationUrl' },
+          default: 'about:blank',
+        },
+        active: false,
       },
       ui: { x: 0, y: 0 },
+    },
+    {
+      id: 'n.ingest',
+      kind: 'script',
+      name: 'Ingest conversation (API)',
+      config: {
+        world: 'ISOLATED',
+        code: CHATGPT_INGEST_SCRIPT,
+      },
+      ui: { x: 240, y: 0 },
+    },
+    {
+      id: 'n.close_tab',
+      kind: 'closeTab',
+      name: 'Close background tab',
+      config: {},
+      ui: { x: 480, y: 0 },
     },
   ];
 
@@ -741,41 +606,40 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       id: 'ruminer.chatgpt.scanner.v1',
       name: 'ChatGPT – Import All',
       description:
-        'Imports ChatGPT conversations via backend API in bounded background batches (no DOM scraping).',
+        'Scans ChatGPT conversations via backend API and enqueues per-conversation ingestion runs.',
       entryNodeId: 'n.open_tab',
       nodes: importAllNodes,
       edges: [
-        { id: 'e.open__import', from: 'n.open_tab', to: 'n.import_all' },
-        { id: 'e.import__close', from: 'n.import_all', to: 'n.close_tab' },
-        {
-          id: 'e.import__close_on_error',
-          from: 'n.import_all',
-          to: 'n.close_tab',
-          label: 'onError',
-        },
+        { id: 'e.open__scan', from: 'n.open_tab', to: 'n.scan' },
+        { id: 'e.scan__close', from: 'n.scan', to: 'n.close_tab' },
+        { id: 'e.scan__close_on_error', from: 'n.scan', to: 'n.close_tab', label: 'onError' },
       ],
       variables: [],
       meta: {
-        tags: ['scanner', 'scheduled'],
+        tags: ['chatgpt', 'scanner', 'builtin'],
       },
       policy: {
-        runTimeoutMs: 120_000,
+        runTimeoutMs: 600_000,
       },
     }),
     createBaseFlow(nowIso, {
       id: 'ruminer.chatgpt.conversation_ingest.v1',
       name: 'ChatGPT – Import Current Conversation',
       description:
-        'Imports the currently viewed ChatGPT conversation (requires URL https://chatgpt.com/c/...).',
-      entryNodeId: 'n.import_current',
-      nodes: importCurrentTabNodes,
-      edges: [],
+        'Imports a single ChatGPT conversation into EMOS. Sidepanel will use the active tab URL as the conversation URL.',
+      entryNodeId: 'n.open_conv',
+      nodes: ingestNodes,
+      edges: [
+        { id: 'e.open__ingest', from: 'n.open_conv', to: 'n.ingest' },
+        { id: 'e.ingest__close', from: 'n.ingest', to: 'n.close_tab' },
+        { id: 'e.ingest__close_on_error', from: 'n.ingest', to: 'n.close_tab', label: 'onError' },
+      ],
       variables: [],
       meta: {
-        tags: ['ingest'],
+        tags: ['chatgpt', 'ingestor', 'builtin'],
       },
       policy: {
-        runTimeoutMs: 60_000,
+        runTimeoutMs: 300_000,
       },
     }),
   ];

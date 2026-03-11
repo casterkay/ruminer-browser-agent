@@ -75,6 +75,7 @@ import {
   getSessionsByProject,
   getSessionsByProjectAndEngine,
   updateSession,
+  upsertIngestedConversationSession,
   type CreateSessionOptions,
   type UpdateSessionInput,
 } from '../../agent/session-service';
@@ -744,6 +745,110 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
   // ============================================================
   // Session Routes
   // ============================================================
+
+  // Upsert an ingested conversation into sessions/messages (Imported Conversations project)
+  fastify.post(
+    '/agent/session/ingest',
+    async (
+      request: FastifyRequest<{
+        Body: {
+          platform?: string;
+          conversationId?: string;
+          conversationTitle?: string | null;
+          conversationUrl?: string | null;
+          messages?: Array<{
+            role?: string;
+            content?: string;
+            createTime?: string | null;
+          }>;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const body = request.body || {};
+      const platform = typeof body.platform === 'string' ? body.platform.trim().toLowerCase() : '';
+      const conversationId =
+        typeof body.conversationId === 'string' ? body.conversationId.trim() : '';
+
+      if (
+        platform !== 'chatgpt' &&
+        platform !== 'gemini' &&
+        platform !== 'claude' &&
+        platform !== 'deepseek'
+      ) {
+        return reply.status(HTTP_STATUS.BAD_REQUEST).send({ ok: false, error: 'Invalid platform' });
+      }
+      if (!conversationId) {
+        return reply
+          .status(HTTP_STATUS.BAD_REQUEST)
+          .send({ ok: false, error: 'conversationId is required' });
+      }
+
+      try {
+        const result = await upsertIngestedConversationSession({
+          platform,
+          conversationId,
+          conversationTitle:
+            typeof body.conversationTitle === 'string' ? body.conversationTitle : null,
+          conversationUrl: typeof body.conversationUrl === 'string' ? body.conversationUrl : null,
+          messages: Array.isArray(body.messages)
+            ? body.messages.map((m) => ({
+                role: m?.role === 'assistant' ? 'assistant' : 'user',
+                content: typeof m?.content === 'string' ? m.content : '',
+                createTime: typeof m?.createTime === 'string' ? m.createTime : null,
+              }))
+            : [],
+        });
+        return reply.status(HTTP_STATUS.OK).send(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fastify.log.error({ err: error }, 'Failed to upsert ingested conversation session');
+        return reply
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .send({ ok: false, error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+      }
+    },
+  );
+
+  // Batch session summaries (existence + message count)
+  fastify.post(
+    '/agent/sessions/summaries',
+    async (request: FastifyRequest<{ Body: { sessionIds?: string[] } }>, reply: FastifyReply) => {
+      const body = request.body || {};
+      const sessionIds = Array.isArray(body.sessionIds)
+        ? body.sessionIds.map((s) => String(s || '').trim()).filter(Boolean)
+        : [];
+
+      if (sessionIds.length === 0) {
+        return reply.status(HTTP_STATUS.OK).send({ ok: true, summaries: [] });
+      }
+
+      try {
+        const summaries = await Promise.all(
+          sessionIds.map(async (sessionId) => {
+            const session = await getSession(sessionId);
+            if (!session) return { sessionId, exists: false as const };
+            const count = await getMessagesCountBySessionId(sessionId);
+            return {
+              sessionId,
+              exists: true as const,
+              projectId: session.projectId,
+              name: session.name,
+              messageCount: count,
+            };
+          }),
+        );
+
+        return reply.status(HTTP_STATUS.OK).send({ ok: true, summaries });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fastify.log.error({ err: error }, 'Failed to batch session summaries');
+        return reply
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .send({ ok: false, error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+      }
+    },
+  );
 
   // List all sessions across all projects
   fastify.get('/agent/sessions', async (_request: FastifyRequest, reply: FastifyReply) => {

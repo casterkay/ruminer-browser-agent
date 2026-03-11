@@ -11,10 +11,11 @@
 
 import { onMounted, onUnmounted, ref, type Ref } from 'vue';
 
-import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import type { RunRecordV3 } from '@/entrypoints/background/record-replay-v3/domain/events';
-import type { TriggerSpec } from '@/entrypoints/background/record-replay-v3/domain/triggers';
+import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import type { FlowId, RunId } from '@/entrypoints/background/record-replay-v3/domain/ids';
+import type { TriggerSpec } from '@/entrypoints/background/record-replay-v3/domain/triggers';
+import type { RunQueueItem } from '@/entrypoints/background/record-replay-v3/engine/queue/queue';
 import { useRRV3Rpc } from './useRRV3Rpc';
 
 // ==================== UI Types ====================
@@ -146,15 +147,24 @@ export interface UseWorkflowsV3Return {
   flows: Ref<FlowLite[]>;
   runs: Ref<RunLite[]>;
   triggers: Ref<TriggerLite[]>;
+  progressByRunId: Ref<Record<string, string>>;
+  queueItems: Ref<RunQueueItem[]>;
+  queueProgress: Ref<QueueProgressLite>;
 
   // Actions
   refresh: () => Promise<void>;
   refreshFlows: () => Promise<void>;
   refreshRuns: () => Promise<void>;
   refreshTriggers: () => Promise<void>;
+  refreshQueue: () => Promise<void>;
   runFlow: (flowId: string, args?: Record<string, unknown>) => Promise<{ runId: string } | null>;
   cancelQueueItem: (runId: string, reason?: string) => Promise<boolean>;
   cancelRun: (runId: string, reason?: string) => Promise<boolean>;
+  pauseRun: (runId: string, reason?: string) => Promise<boolean>;
+  resumeRun: (runId: string) => Promise<boolean>;
+  pauseQueueWave: (reason?: string) => Promise<void>;
+  resumeQueueWave: () => Promise<void>;
+  stopQueueWave: (reason?: string) => Promise<void>;
   deleteFlow: (flowId: string) => Promise<boolean>;
   exportFlow: (flowId: string) => Promise<FlowV3 | null>;
   deleteTrigger: (triggerId: string) => Promise<boolean>;
@@ -163,7 +173,25 @@ export interface UseWorkflowsV3Return {
   // V3-specific
   getFlowById: (flowId: string) => Promise<FlowV3 | null>;
   getRunEvents: (runId: string) => Promise<unknown[]>;
+  onRunEvent: (listener: (event: UiRunEvent) => void) => () => void;
 }
+
+export type UiRunEvent = {
+  runId: string;
+  type: string;
+  seq: number;
+  ts: number;
+  [key: string]: unknown;
+};
+
+export type QueueProgressLite = {
+  done: number;
+  total: number;
+  queued: number;
+  running: number;
+  paused: number;
+  queueSize: number;
+};
 
 /**
  * V3 Workflows data layer composable
@@ -180,6 +208,18 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
   const flows = ref<FlowLite[]>([]);
   const runs = ref<RunLite[]>([]);
   const triggers = ref<TriggerLite[]>([]);
+  const progressByRunId = ref<Record<string, string>>({});
+  const queueItems = ref<RunQueueItem[]>([]);
+  const queueWaveRunIds = ref<Set<string>>(new Set());
+
+  const queueProgress = ref<QueueProgressLite>({
+    done: 0,
+    total: 0,
+    queued: 0,
+    running: 0,
+    paused: 0,
+    queueSize: 0,
+  });
 
   // Auto-refresh timer
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -224,9 +264,67 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     loading.value = true;
     error.value = null;
     try {
-      await Promise.all([refreshFlows(), refreshRuns(), refreshTriggers()]);
+      await Promise.all([refreshFlows(), refreshRuns(), refreshTriggers(), refreshQueue()]);
     } finally {
       loading.value = false;
+    }
+  }
+
+  function recomputeQueueProgress(): void {
+    const items = queueItems.value;
+    const queueSize = items.length;
+    if (queueSize === 0) {
+      queueWaveRunIds.value = new Set();
+      queueProgress.value = {
+        done: 0,
+        total: 0,
+        queued: 0,
+        running: 0,
+        paused: 0,
+        queueSize: 0,
+      };
+      return;
+    }
+
+    const nextWave = new Set(queueWaveRunIds.value);
+    for (const item of items) nextWave.add(String(item.id));
+    queueWaveRunIds.value = nextWave;
+
+    let queued = 0;
+    let running = 0;
+    let paused = 0;
+    for (const item of items) {
+      if (item.status === 'queued') queued += 1;
+      else if (item.status === 'running') running += 1;
+      else if (item.status === 'paused') paused += 1;
+    }
+
+    let done = 0;
+    for (const run of runs.value) {
+      if (!nextWave.has(run.id)) continue;
+      if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'canceled') {
+        done += 1;
+      }
+    }
+
+    queueProgress.value = {
+      done,
+      total: nextWave.size,
+      queued,
+      running,
+      paused,
+      queueSize,
+    };
+  }
+
+  async function refreshQueue(): Promise<void> {
+    try {
+      const result = (await rpc.request('rr_v3.listQueue')) as RunQueueItem[] | null;
+      queueItems.value = Array.isArray(result) ? (result as RunQueueItem[]) : [];
+      recomputeQueueProgress();
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to refresh queue:', e);
+      error.value = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -240,7 +338,7 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
         ...(args ? { args: args as any } : {}),
       })) as { runId: RunId; position: number } | null;
       // Refresh runs to show the new run
-      void refreshRuns();
+      void Promise.all([refreshRuns(), refreshQueue()]);
       return result ? { runId: result.runId } : null;
     } catch (e) {
       console.warn('[useWorkflowsV3] Failed to run flow:', e);
@@ -255,7 +353,7 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
         runId: runId as RunId,
         ...(reason ? { reason } : {}),
       });
-      void refreshRuns();
+      void Promise.all([refreshRuns(), refreshQueue()]);
       return true;
     } catch (e) {
       console.warn('[useWorkflowsV3] Failed to cancel queue item:', e);
@@ -270,13 +368,78 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
         runId: runId as RunId,
         ...(reason ? { reason } : {}),
       });
-      void refreshRuns();
+      void Promise.all([refreshRuns(), refreshQueue()]);
       return true;
     } catch (e) {
       console.warn('[useWorkflowsV3] Failed to cancel run:', e);
       error.value = e instanceof Error ? e.message : String(e);
       return false;
     }
+  }
+
+  async function pauseRun(runId: string, reason?: string): Promise<boolean> {
+    try {
+      await rpc.request('rr_v3.pauseRun', {
+        runId: runId as RunId,
+        ...(reason ? { reason } : {}),
+      });
+      void Promise.all([refreshRuns(), refreshQueue()]);
+      return true;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to pause run:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
+  async function resumeRun(runId: string): Promise<boolean> {
+    try {
+      await rpc.request('rr_v3.resumeRun', {
+        runId: runId as RunId,
+      });
+      void Promise.all([refreshRuns(), refreshQueue()]);
+      return true;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to resume run:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
+  async function pauseQueueWave(reason: string = 'Paused by user'): Promise<void> {
+    const items = queueItems.value;
+    const running = items.filter((i) => i.status === 'running').map((i) => String(i.id));
+    for (const runId of running) {
+      // Best-effort: pause what we can
+
+      await pauseRun(runId, reason);
+    }
+    await refreshQueue();
+  }
+
+  async function resumeQueueWave(): Promise<void> {
+    const items = queueItems.value;
+    const paused = items.filter((i) => i.status === 'paused').map((i) => String(i.id));
+    for (const runId of paused) {
+      await resumeRun(runId);
+    }
+    await refreshQueue();
+  }
+
+  async function stopQueueWave(reason: string = 'Stopped by user'): Promise<void> {
+    const items = queueItems.value;
+    const queued = items.filter((i) => i.status === 'queued').map((i) => String(i.id));
+    const active = items
+      .filter((i) => i.status === 'running' || i.status === 'paused')
+      .map((i) => String(i.id));
+
+    for (const runId of queued) {
+      await cancelQueueItem(runId, reason);
+    }
+    for (const runId of active) {
+      await cancelRun(runId, reason);
+    }
+    await Promise.all([refreshRuns(), refreshQueue()]);
   }
 
   const cronTriggerIdForFlow = (flowId: string): string => `cron:${flowId}`;
@@ -390,6 +553,21 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
 
   // ==================== Lifecycle ====================
 
+  function setRunProgress(runId: string, message: string): void {
+    const rid = String(runId || '').trim();
+    const msg = String(message || '').trim();
+    if (!rid || !msg) return;
+    progressByRunId.value = { ...progressByRunId.value, [rid]: msg };
+  }
+
+  function clearRunProgress(runId: string): void {
+    const rid = String(runId || '').trim();
+    if (!rid || !progressByRunId.value[rid]) return;
+    const next = { ...progressByRunId.value };
+    delete next[rid];
+    progressByRunId.value = next;
+  }
+
   onMounted(async () => {
     if (autoConnect) {
       await rpc.ensureConnected();
@@ -405,7 +583,7 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
 
     // Subscribe to all run events for real-time updates
     void rpc.subscribe(null);
-    eventUnsubscribe = rpc.onEvent((event) => {
+    eventUnsubscribe = rpc.onEvent((event: any) => {
       // Refresh runs when run status changes
       const runStatusEvents = [
         'run.queued',
@@ -418,7 +596,31 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
         'run.recovered',
       ];
       if (runStatusEvents.includes(event.type)) {
-        void refreshRuns();
+        void Promise.all([refreshRuns(), refreshQueue()]);
+      }
+
+      // Track last seen progress per run (shown on the active-run list item).
+      if (event.type === 'log' && typeof event.message === 'string' && event.message.trim()) {
+        setRunProgress(event.runId, event.message);
+      } else if (event.type === 'node.started') {
+        setRunProgress(event.runId, `Running: ${event.nodeId}`);
+      } else if (event.type === 'run.queued') {
+        setRunProgress(event.runId, 'Queued');
+      } else if (event.type === 'run.started') {
+        setRunProgress(event.runId, 'Started');
+      } else if (event.type === 'run.paused') {
+        setRunProgress(event.runId, 'Paused');
+      } else if (event.type === 'run.resumed') {
+        setRunProgress(event.runId, 'Resumed');
+      }
+
+      // Clear progress when run is terminal.
+      if (
+        event.type === 'run.succeeded' ||
+        event.type === 'run.failed' ||
+        event.type === 'run.canceled'
+      ) {
+        clearRunProgress(event.runId);
       }
     });
   });
@@ -445,18 +647,28 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     flows,
     runs,
     triggers,
+    progressByRunId,
+    queueItems,
+    queueProgress,
     refresh,
     refreshFlows,
     refreshRuns,
     refreshTriggers,
+    refreshQueue,
     runFlow,
     cancelQueueItem,
     cancelRun,
+    pauseRun,
+    resumeRun,
+    pauseQueueWave,
+    resumeQueueWave,
+    stopQueueWave,
     deleteFlow,
     exportFlow,
     deleteTrigger,
     upsertCronSchedule,
     getFlowById,
     getRunEvents,
-  };
+    onRunEvent: (listener: (event: UiRunEvent) => void) => rpc.onEvent(listener as any),
+  } as unknown as UseWorkflowsV3Return;
 }

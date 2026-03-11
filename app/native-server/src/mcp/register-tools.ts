@@ -1,12 +1,35 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import {
   CallToolRequestSchema,
   CallToolResult,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { NativeMessageType, TOOL_NAMES, TOOL_SCHEMAS } from 'chrome-mcp-shared';
+import { emitMcpToolResult, emitMcpToolUse } from '../agent/mcp-tool-telemetry';
 import nativeMessagingHostInstance from '../native-messaging-host';
-import { NativeMessageType, TOOL_SCHEMAS } from 'chrome-mcp-shared';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+
+// ---------------------------------------------------------------------------
+// In-process cache for emos_search_memories results
+// The OpenClaw gateway strips data.result from tool events by default
+// (verbose="off"). We cache the result here so the OpenClaw engine can inject
+// it as the tool_result message content when the WS event arrives.
+// ---------------------------------------------------------------------------
+let _lastEmosSearchResultText: string | null = null;
+let _lastEmosSearchResultTs = 0;
+
+/**
+ * Consume and return the most-recently cached emos_search_memories result if
+ * it was stored within `maxAgeMs` milliseconds ago. Clears the cache on read.
+ */
+export function consumeLastEmosSearchResult(maxAgeMs = 30_000): string | null {
+  if (_lastEmosSearchResultText && Date.now() - _lastEmosSearchResultTs <= maxAgeMs) {
+    const result = _lastEmosSearchResultText;
+    _lastEmosSearchResultText = null;
+    return result;
+  }
+  return null;
+}
 
 async function listDynamicFlowTools(): Promise<Tool[]> {
   try {
@@ -81,6 +104,8 @@ export const setupTools = (server: Server) => {
 
 const handleToolCall = async (name: string, args: any): Promise<CallToolResult> => {
   try {
+    emitMcpToolUse(name, args);
+
     // If calling a dynamic flow tool (name starts with flow.), proxy to common flow-run tool
     if (name && name.startsWith('flow.')) {
       // We need to resolve flow by slug to ID
@@ -100,13 +125,19 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
           NativeMessageType.CALL_TOOL,
           120000,
         );
-        if (proxyRes.status === 'success') return proxyRes.data;
-        return {
+        if (proxyRes.status === 'success') {
+          const data = proxyRes.data as CallToolResult;
+          emitMcpToolResult(name, args, data);
+          return data;
+        }
+        const errorResult: CallToolResult = {
           content: [{ type: 'text', text: `Error calling dynamic flow tool: ${proxyRes.error}` }],
           isError: true,
         };
+        emitMcpToolResult(name, args, errorResult);
+        return errorResult;
       } catch (err: any) {
-        return {
+        const errorResult: CallToolResult = {
           content: [
             {
               type: 'text',
@@ -115,6 +146,8 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
           ],
           isError: true,
         };
+        emitMcpToolResult(name, args, errorResult);
+        return errorResult;
       }
     }
     // 发送请求到Chrome扩展并等待响应
@@ -127,9 +160,28 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
       120000, // 延长到 120 秒，避免性能分析等长任务超时
     );
     if (response.status === 'success') {
-      return response.data;
+      // Cache emos_search_memories results for the OpenClaw citation system.
+      // Tool events from the gateway arrive with result stripped (verbose="off"),
+      // so we bridge the gap via this in-process store.
+      if (name === TOOL_NAMES.MEMORY.SEARCH_MEMORIES) {
+        const data = response.data as CallToolResult;
+        const firstText = Array.isArray(data?.content)
+          ? ((
+              data.content.find(
+                (c: any) => c?.type === 'text' && typeof c?.text === 'string',
+              ) as any
+            )?.text ?? null)
+          : null;
+        if (firstText) {
+          _lastEmosSearchResultText = firstText;
+          _lastEmosSearchResultTs = Date.now();
+        }
+      }
+      const data = response.data as CallToolResult;
+      emitMcpToolResult(name, args, data);
+      return data;
     } else {
-      return {
+      const errorResult: CallToolResult = {
         content: [
           {
             type: 'text',
@@ -138,9 +190,11 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
         ],
         isError: true,
       };
+      emitMcpToolResult(name, args, errorResult);
+      return errorResult;
     }
   } catch (error: any) {
-    return {
+    const errorResult: CallToolResult = {
       content: [
         {
           type: 'text',
@@ -149,5 +203,7 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
       ],
       isError: true,
     };
+    emitMcpToolResult(name, args, errorResult);
+    return errorResult;
   }
 };

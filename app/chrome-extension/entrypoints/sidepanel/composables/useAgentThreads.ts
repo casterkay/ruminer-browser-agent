@@ -490,6 +490,7 @@ function getMessageAttachments(msg: AgentMessage): AttachmentMetadata[] {
 function mapMessageToTimelineItem(msg: AgentMessage): TimelineItem | null {
   const createdAt = msg.createdAt;
   const requestId = msg.requestId?.trim() || undefined;
+  const timelineId = `${msg.id}:${msg.messageType}`;
 
   // User chat messages are displayed in thread header (title + attachments),
   // so we don't create timeline items for them to avoid duplicate display.
@@ -500,7 +501,7 @@ function mapMessageToTimelineItem(msg: AgentMessage): TimelineItem | null {
   if (msg.role === 'assistant' && msg.messageType === 'chat') {
     return {
       kind: 'assistant_text',
-      id: msg.id,
+      id: timelineId,
       requestId,
       createdAt,
       messageId: msg.id,
@@ -509,10 +510,12 @@ function mapMessageToTimelineItem(msg: AgentMessage): TimelineItem | null {
     };
   }
 
-  if (msg.role === 'tool' && msg.messageType === 'tool_use') {
+  // Tool lifecycle messages: treat messageType as source of truth (some older
+  // persisted records may have incorrect role values).
+  if (msg.messageType === 'tool_use') {
     return {
       kind: 'tool_use',
-      id: msg.id,
+      id: timelineId,
       requestId,
       createdAt,
       messageId: msg.id,
@@ -521,11 +524,11 @@ function mapMessageToTimelineItem(msg: AgentMessage): TimelineItem | null {
     };
   }
 
-  if (msg.role === 'tool' && msg.messageType === 'tool_result') {
+  if (msg.messageType === 'tool_result') {
     const tool = presentTool(msg);
     return {
       kind: 'tool_result',
-      id: msg.id,
+      id: timelineId,
       requestId,
       createdAt,
       messageId: msg.id,

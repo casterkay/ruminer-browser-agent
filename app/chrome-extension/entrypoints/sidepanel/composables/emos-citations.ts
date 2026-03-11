@@ -14,6 +14,8 @@ export const EMOS_CITATION_OPEN_DETAILS_KEY: InjectionKey<EmosCitationOpenDetail
 
 const FOOTNOTE_REF_LINE = /^\[\^(\d+)\]:\s*(.+?)\s*$/;
 const INLINE_CITE = /\[\^(\d+(?:\s*,\s*\d+)*)\]/g;
+// Pattern to match headers like "---\nReferences:\n" or "---\n# Citations:\n" before footnotes
+const CITATION_HEADER_PATTERN = /^---\s*\n+[#*\s\w:-]*\n*/;
 
 function escapeHtmlAttr(value: string): string {
   return String(value ?? '')
@@ -66,7 +68,11 @@ export function stripTrailingFootnoteReferences(text: string): {
     return { body: src, refs: new Map() };
   }
 
-  const body = lines.slice(0, refStart).join('\n').replace(/\s+$/g, '');
+  const body = lines
+    .slice(0, refStart)
+    .join('\n')
+    .replace(CITATION_HEADER_PATTERN, '')
+    .replace(/\s+$/g, '');
 
   return { body, refs };
 }
@@ -180,12 +186,13 @@ function collectEmosMemories(value: unknown, out: Record<string, unknown>[]): vo
     typeof value.message_id === 'string' ||
     typeof value.id === 'string' ||
     typeof value.memory_id === 'string' ||
+    typeof value.event_id === 'string' ||
     typeof value.summary === 'string' ||
     typeof value.content === 'string';
 
   if (
     maybe &&
-    (value.message_id || value.id || value.memory_id) &&
+    (value.message_id || value.id || value.memory_id || value.event_id) &&
     (value.summary || value.content)
   ) {
     out.push(value);

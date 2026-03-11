@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col" :style="containerStyle">
+  <div ref="rootRef" class="h-full flex flex-col" :style="containerStyle">
     <!-- Fixed Header: Search + Actions -->
     <div class="flex-shrink-0 px-4 py-3 border-b" :style="headerStyle">
       <div class="flex items-center gap-2">
@@ -77,11 +77,7 @@
         <label
           class="flex items-center gap-2 text-sm cursor-pointer"
           :style="{ color: 'var(--ac-text-muted)' }"
-          :title="
-            props.activeHostname
-              ? 'Only show workflows bound to ' + props.activeHostname
-              : 'Filter workflows by active tab domain'
-          "
+          :title="'Filter workflows by active tab domain'"
         >
           <input
             type="checkbox"
@@ -89,9 +85,7 @@
             @change="$emit('update:onlyBound', ($event.target as HTMLInputElement).checked)"
             class="workflow-checkbox"
           />
-          <span>{{
-            props.activeHostname ? 'Match ' + props.activeHostname : 'Match active tab'
-          }}</span>
+          <span>{{ 'Filter by active tab domain' }}</span>
         </label>
         <span class="text-xs" :style="{ color: 'var(--ac-text-subtle)' }">
           {{ filteredFlows.length }} workflow{{ filteredFlows.length !== 1 ? 's' : '' }}
@@ -101,6 +95,71 @@
 
     <!-- Scrollable Content -->
     <div class="flex-1 overflow-y-auto ac-scroll">
+      <!-- Queue Progress (hidden when queue is empty) -->
+      <div v-if="queueProgress?.queueSize && queueProgress.queueSize > 0" class="px-4 pt-3">
+        <div class="rounded-xl p-3 border" :style="sectionStyle">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">Queue</div>
+              <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
+                {{ queueProgress.running }} running • {{ queueProgress.queued }} queued •
+                {{ queueProgress.paused }} paused
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                class="p-2 rounded transition-colors disabled:opacity-50"
+                :style="queueButtonStyle"
+                :disabled="queueProgress.running === 0 && queueProgress.paused === 0"
+                @click="toggleQueuePauseResume"
+                :title="
+                  queueProgress.running > 0 ? 'Pause all running runs' : 'Resume all paused runs'
+                "
+              >
+                <ILucidePause v-if="queueProgress.running > 0" class="w-4 h-4" />
+                <ILucidePlay v-else class="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                class="p-2 rounded transition-colors disabled:opacity-50"
+                :style="queueStopButtonStyle"
+                @click="$emit('stopQueue')"
+                title="Stop all queued/running/paused runs"
+              >
+                <ILucideSquare class="w-4 h-4 fill-current" />
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <div
+              class="flex items-center justify-between text-xs"
+              :style="{ color: 'var(--ac-text-muted)' }"
+            >
+              <span>Progress</span>
+              <span>{{ queueProgress.done }}/{{ queueProgress.total }}</span>
+            </div>
+            <div
+              class="mt-2 h-2 rounded-full overflow-hidden"
+              :style="{ backgroundColor: 'var(--ac-surface-muted)' }"
+            >
+              <div
+                class="h-full transition-all"
+                :style="{
+                  width:
+                    queueProgress.total > 0
+                      ? `${Math.round((queueProgress.done / queueProgress.total) * 100)}%`
+                      : '0%',
+                  backgroundColor: 'var(--ac-accent)',
+                }"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Empty State -->
       <div
         v-if="filteredFlows.length === 0"
@@ -461,11 +520,227 @@
       </div>
     </div>
   </div>
+
+  <!-- Manual run result modal -->
+  <Teleport :to="overlayTarget" :disabled="!overlayTarget">
+    <div
+      v-if="resultModalRunId"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Workflow result"
+    >
+      <div class="absolute inset-0 bg-black/60" @click="closeResultModal" />
+
+      <div
+        class="relative w-[92vw] max-w-2xl max-h-[88vh] overflow-hidden"
+        :style="{
+          backgroundColor: 'var(--ac-surface, #ffffff)',
+          border: '1px solid var(--ac-border, #e5e5e5)',
+          borderRadius: 'var(--ac-radius-card, 12px)',
+          boxShadow: 'var(--ac-shadow-float, 0 4px 20px -2px rgba(0,0,0,0.2))',
+        }"
+      >
+        <div class="px-4 py-3 border-b" :style="{ borderColor: 'var(--ac-border)' }">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-sm font-medium truncate" :style="{ color: 'var(--ac-text)' }">
+                {{ resultModalFlow?.name || resultModalRun?.flowId || 'Workflow' }}
+              </div>
+              <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
+                Status: {{ resultModalRun ? getRunStatusText(resultModalRun) : '' }}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button
+                v-if="isIngestorResult && resultModalSessionId && resultModalSessionExists"
+                class="text-xs px-2 py-1 rounded"
+                :style="newButtonStyle"
+                @click="openChatSessionById(resultModalSessionId)"
+                title="Open saved session in Chat"
+              >
+                Open in Chat
+              </button>
+              <button
+                class="text-xs px-2 py-1 rounded"
+                :style="queueButtonStyle"
+                @click="closeResultModal"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 overflow-y-auto ac-scroll max-h-[78vh]">
+          <div v-if="resultModalLoading" class="text-sm" :style="{ color: 'var(--ac-text-muted)' }">
+            Loading…
+          </div>
+
+          <template v-else>
+            <div
+              v-if="resultModalRun?.error?.message"
+              class="mb-3 text-xs px-2 py-1 rounded"
+              :style="{
+                backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                color: 'var(--ac-danger, #ef4444)',
+              }"
+            >
+              {{ resultModalRun.error.message }}
+            </div>
+
+            <!-- Ingestor result -->
+            <div v-if="isIngestorResult" class="space-y-3">
+              <div
+                v-if="!resultModalIngest && resultModalSessionId"
+                class="text-xs px-2 py-1 rounded"
+                :style="{
+                  backgroundColor: 'var(--ac-surface-muted, #f5f5f4)',
+                  color: 'var(--ac-text-muted, #6b7280)',
+                  border: '1px solid var(--ac-border, #e5e5e5)',
+                }"
+              >
+                Ingest telemetry missing for this run; showing best-effort session derived from the
+                conversation URL.
+              </div>
+              <div class="text-xs" :style="{ color: 'var(--ac-text-muted)' }">
+                <div>
+                  <span class="font-medium" :style="{ color: 'var(--ac-text)' }">Session</span>:
+                  <span class="ml-1">{{ resultModalSessionId || '—' }}</span>
+                </div>
+                <div v-if="resultModalIngest?.conversationTitle">
+                  <span class="font-medium" :style="{ color: 'var(--ac-text)' }">Title</span>:
+                  <span class="ml-1">{{ resultModalIngest.conversationTitle }}</span>
+                </div>
+                <div v-if="resultModalIngest?.conversationUrl" class="mt-1">
+                  <button
+                    class="text-xs px-2 py-1 rounded"
+                    :style="queueButtonStyle"
+                    @click="openRunUrl(String(resultModalIngest.conversationUrl))"
+                    title="Open source page"
+                  >
+                    Open source page
+                  </button>
+                </div>
+              </div>
+
+              <div class="rounded-lg p-3 border" :style="sectionStyle">
+                <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">Results</div>
+                <div class="text-xs mt-1" :style="{ color: 'var(--ac-text-muted)' }">
+                  EMOS: upserted {{ resultModalIngest?.emos?.upserted ?? 0 }}, skipped
+                  {{ resultModalIngest?.emos?.skipped ?? 0 }}, failed
+                  {{ resultModalIngest?.emos?.failed ?? 0 }}
+                </div>
+                <div class="text-xs mt-1" :style="{ color: 'var(--ac-text-muted)' }">
+                  Saved messages:
+                  {{
+                    resultModalSessionId
+                      ? (sessionSummariesById[resultModalSessionId]?.messageCount ?? '—')
+                      : '—'
+                  }}
+                </div>
+
+                <div
+                  v-if="resultModalIngest && resultModalIngest.sessionSaveOk === false"
+                  class="mt-2 text-xs px-2 py-1 rounded"
+                  :style="{
+                    backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                    color: 'var(--ac-danger, #ef4444)',
+                  }"
+                >
+                  Failed to save session:
+                  {{ resultModalIngest.sessionSaveError || 'Unknown error' }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Scanner result -->
+            <div v-else-if="isScannerResult" class="space-y-3">
+              <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">
+                Conversations ({{ resultModalScannerConversations.length }})
+              </div>
+
+              <div
+                v-if="resultModalScannerConversations.length === 0"
+                class="text-xs"
+                :style="{ color: 'var(--ac-text-muted)' }"
+              >
+                No enqueued conversations found in progress events.
+              </div>
+
+              <div v-else class="space-y-2">
+                <div
+                  v-for="conv in resultModalScannerConversations"
+                  :key="conv.sessionId"
+                  class="flex items-center justify-between gap-3 p-3 rounded-lg border"
+                  :style="{
+                    borderColor: 'var(--ac-border)',
+                    backgroundColor: 'var(--ac-surface)',
+                  }"
+                >
+                  <div class="min-w-0">
+                    <div class="text-sm truncate" :style="{ color: 'var(--ac-text)' }">
+                      {{ conv.title || conv.conversationId || conv.sessionId }}
+                    </div>
+                    <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
+                      <span v-if="conv.platform">{{ conv.platform }} • </span>
+                      <span
+                        >{{
+                          sessionSummariesById[conv.sessionId]?.messageCount ?? '—'
+                        }}
+                        messages</span
+                      >
+                      <span class="mx-1">•</span>
+                      <span>{{
+                        sessionSummariesById[conv.sessionId]?.exists ? 'Saved' : 'Pending'
+                      }}</span>
+                    </div>
+                    <div v-if="conv.url" class="mt-1">
+                      <button
+                        class="text-xs px-2 py-1 rounded"
+                        :style="queueButtonStyle"
+                        @click="openRunUrl(String(conv.url))"
+                        title="Open source page"
+                      >
+                        Open source page
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    class="text-xs px-2 py-1 rounded flex-shrink-0"
+                    :style="newButtonStyle"
+                    :disabled="sessionSummariesById[conv.sessionId]?.exists !== true"
+                    @click="openChatSessionById(conv.sessionId)"
+                    title="Open saved session in Chat"
+                  >
+                    Open in Chat
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Generic result fallback -->
+            <div v-else class="space-y-2 text-xs" :style="{ color: 'var(--ac-text-muted)' }">
+              <div>Flow ID: {{ resultModalRun?.flowId }}</div>
+              <div>Run ID: {{ resultModalRunId }}</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script lang="ts" setup>
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import WorkflowListItem from './WorkflowListItem.vue';
+import { STORAGE_KEYS } from '@/common/constants';
+import ILucidePause from '~icons/lucide/pause';
+import ILucidePlay from '~icons/lucide/play';
+import ILucideSquare from '~icons/lucide/square';
 
 interface FlowLite {
   id: string;
@@ -486,9 +761,9 @@ interface RunLite {
   finishedAt?: string;
   success?: boolean;
   /** Whether the run is still in progress (queued/running/paused) */
-  isInProgress?: boolean;
+  isInProgress: boolean;
   /** V3 run status */
-  status?: 'queued' | 'running' | 'paused' | 'succeeded' | 'failed' | 'canceled';
+  status: 'queued' | 'running' | 'paused' | 'succeeded' | 'failed' | 'canceled';
   args?: any;
   error?: any;
   repair?: any;
@@ -505,11 +780,43 @@ interface Trigger {
   [key: string]: any;
 }
 
+type QueueProgressLite = {
+  done: number;
+  total: number;
+  queued: number;
+  running: number;
+  paused: number;
+  queueSize: number;
+};
+
+type SessionSummary = {
+  sessionId: string;
+  exists: boolean;
+  projectId?: string;
+  name?: string;
+  messageCount?: number;
+};
+
+type ScannerConversationLite = {
+  platform?: string;
+  sessionId: string;
+  conversationId?: string;
+  title?: string | null;
+  url?: string | null;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 const props = defineProps<{
+  isActive: boolean;
   flows: FlowLite[];
   runs: RunLite[];
   triggers: Trigger[];
   progressByRunId?: Record<string, string>;
+  queueProgress?: QueueProgressLite;
+  manualRunIds?: Set<string>;
   onlyBound: boolean;
   openRunId: string | null;
   refreshing?: boolean;
@@ -533,9 +840,22 @@ const emit = defineEmits<{
   (e: 'createTrigger'): void;
   (e: 'editTrigger', id: string): void;
   (e: 'removeTrigger', id: string): void;
+  (e: 'pauseQueue'): void;
+  (e: 'resumeQueue'): void;
+  (e: 'stopQueue'): void;
+  (e: 'manualRunHandled', runId: string): void;
+  (e: 'openChatSession', payload: { sessionId: string }): void;
 }>();
 
 // Local state
+const rootRef = ref<HTMLElement | null>(null);
+const overlayTarget = ref<Element | null>(null);
+
+onMounted(() => {
+  overlayTarget.value =
+    rootRef.value?.closest('.agent-theme') ?? rootRef.value?.ownerDocument?.body ?? null;
+});
+
 const searchQuery = ref('');
 const expandedSections = ref<Set<string>>(new Set());
 
@@ -600,10 +920,6 @@ type ProcessedCounts = {
   msgFailed?: number;
   messagesPlus?: number;
 };
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
 
 function asFiniteInt(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
@@ -999,6 +1315,378 @@ const triggerActionStyle = computed(() => ({
 const triggerActionDangerStyle = computed(() => ({
   color: 'var(--ac-danger)',
 }));
+
+const queueButtonStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted)',
+  color: 'var(--ac-text)',
+  border: '1px solid var(--ac-border)',
+}));
+
+const queueStopButtonStyle = computed(() => ({
+  backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+  color: 'var(--ac-danger, #ef4444)',
+  border: '1px solid var(--ac-danger-light, #fee2e2)',
+}));
+
+// ==================== Manual Run Result Modal ====================
+
+const resultModalRunId = ref<string | null>(null);
+const resultModalEvents = ref<any[]>([]);
+const resultModalLoading = ref(false);
+const sessionSummariesById = ref<Record<string, SessionSummary>>({});
+const seenManualRunIds = ref<Set<string>>(new Set());
+
+function toggleQueuePauseResume(): void {
+  const qp = props.queueProgress;
+  if (!qp || (qp.running === 0 && qp.paused === 0)) return;
+  if (qp.running > 0) {
+    emit('pauseQueue');
+    return;
+  }
+  emit('resumeQueue');
+}
+
+const resultModalRun = computed(() => {
+  const rid = resultModalRunId.value;
+  if (!rid) return null;
+  return props.runs.find((r) => r.id === rid) ?? null;
+});
+
+const resultModalFlow = computed(() => {
+  const flowId = resultModalRun.value?.flowId;
+  if (!flowId) return null;
+  return props.flows.find((f) => f.id === flowId) ?? null;
+});
+
+const resultModalTags = computed(() => {
+  const tags = resultModalFlow.value?.meta?.tags;
+  return Array.isArray(tags) ? tags : [];
+});
+
+const isIngestorResult = computed(() => resultModalTags.value.includes('ingestor'));
+const isScannerResult = computed(() => resultModalTags.value.includes('scanner'));
+
+type IngestPlatform = 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
+
+function inferPlatformFromTags(tags: string[]): IngestPlatform | null {
+  if (tags.includes('chatgpt')) return 'chatgpt';
+  if (tags.includes('gemini')) return 'gemini';
+  if (tags.includes('claude')) return 'claude';
+  if (tags.includes('deepseek')) return 'deepseek';
+  return null;
+}
+
+function inferPlatformFromUrl(urlString: string): IngestPlatform | null {
+  let u: URL;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return null;
+  }
+  const host = String(u.hostname || '').toLowerCase();
+  if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
+  if (host === 'claude.ai') return 'claude';
+  if (host === 'gemini.google.com') return 'gemini';
+  if (host === 'chat.deepseek.com') return 'deepseek';
+  return null;
+}
+
+function parseConversationIdFromUrl(platform: IngestPlatform, urlString: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return null;
+  }
+
+  const pathname = String(u.pathname || '');
+
+  if (platform === 'chatgpt') {
+    const m = pathname.match(/\/(?:c|chat)\/([^/?#]+)/i);
+    return m ? String(m[1] || '').trim() || null : null;
+  }
+
+  if (platform === 'claude') {
+    const m = pathname.match(/^\/chat\/([^/?#]+)/i);
+    return m ? String(m[1] || '').trim() || null : null;
+  }
+
+  if (platform === 'gemini') {
+    const m = pathname.match(/^\/app\/([^/?#]+)/i);
+    return m ? String(m[1] || '').trim() || null : null;
+  }
+
+  if (platform === 'deepseek') {
+    const m = pathname.match(/\/(?:chat|c)\/([^/?#]+)/i);
+    if (m) return String(m[1] || '').trim() || null;
+    for (const key of ['conversationId', 'chatId', 'id']) {
+      const v = u.searchParams.get(key);
+      if (v && v.trim()) return v.trim();
+    }
+    const seg = pathname.split('/').filter(Boolean).pop();
+    return seg ? String(seg).trim() || null : null;
+  }
+
+  return null;
+}
+
+function deriveSessionIdFromRunArgs(run: RunLite | null, tags: string[]): string | null {
+  const rawUrl =
+    typeof run?.args?.ruminerConversationUrl === 'string' ? run!.args!.ruminerConversationUrl : '';
+  const urlString = String(rawUrl || '').trim();
+  if (!urlString) return null;
+  const platform = inferPlatformFromTags(tags) ?? inferPlatformFromUrl(urlString);
+  if (!platform) return null;
+  const conversationId = parseConversationIdFromUrl(platform, urlString);
+  if (!conversationId) return null;
+  return `${platform}:${conversationId}`;
+}
+
+function findLatestIngestResult(events: any[]): Record<string, unknown> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e?.type !== 'log') continue;
+    if (String(e?.message || '') !== 'ruminer.ingest.result') continue;
+    if (!isPlainRecord(e?.data)) continue;
+    return e.data as Record<string, unknown>;
+  }
+  return null;
+}
+
+function extractScannerConversations(events: any[]): ScannerConversationLite[] {
+  const out: ScannerConversationLite[] = [];
+  for (const e of events) {
+    if (e?.type !== 'log') continue;
+    if (String(e?.message || '') !== 'workflow.progress') continue;
+    const data = e?.data;
+    if (!isPlainRecord(data)) continue;
+    const payload = (data as any).payload;
+    if (!isPlainRecord(payload)) continue;
+    const kind = String((payload as any).kind || '');
+    if (!kind.endsWith('.scanner.enqueued')) continue;
+    const convs = (payload as any).conversations;
+    if (!Array.isArray(convs)) continue;
+    for (const c of convs) {
+      if (!isPlainRecord(c)) continue;
+      const sessionId = String((c as any).sessionId || '').trim();
+      if (!sessionId) continue;
+      out.push({
+        platform: typeof (c as any).platform === 'string' ? String((c as any).platform) : undefined,
+        sessionId,
+        conversationId:
+          typeof (c as any).conversationId === 'string'
+            ? String((c as any).conversationId)
+            : undefined,
+        title: typeof (c as any).title === 'string' ? String((c as any).title) : null,
+        url: typeof (c as any).url === 'string' ? String((c as any).url) : null,
+      });
+    }
+  }
+  // Deduplicate by sessionId (keep first occurrence with best metadata)
+  const byId = new Map<string, ScannerConversationLite>();
+  for (const c of out) {
+    const existing = byId.get(c.sessionId);
+    if (!existing) {
+      byId.set(c.sessionId, c);
+      continue;
+    }
+    byId.set(c.sessionId, {
+      ...existing,
+      title: existing.title || c.title,
+      url: existing.url || c.url,
+      conversationId: existing.conversationId || c.conversationId,
+      platform: existing.platform || c.platform,
+    });
+  }
+  return Array.from(byId.values());
+}
+
+const resultModalScannerConversations = computed(() =>
+  extractScannerConversations(resultModalEvents.value),
+);
+
+const resultModalIngest = computed<any | null>(() =>
+  findLatestIngestResult(resultModalEvents.value),
+);
+
+function ingestFieldText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function ingestFieldBool(value: unknown): boolean {
+  return value === true;
+}
+
+const resultModalSessionId = computed(() => {
+  const ingest = resultModalIngest.value;
+  if (ingest && typeof ingest.sessionId === 'string' && ingest.sessionId.trim())
+    return ingest.sessionId.trim();
+  const platform = ingestFieldText(resultModalIngest.value?.platform);
+  const conversationId = ingestFieldText(resultModalIngest.value?.conversationId);
+  if (platform && conversationId) return `${platform}:${conversationId}`;
+  const fallback = deriveSessionIdFromRunArgs(resultModalRun.value, resultModalTags.value);
+  if (fallback) return fallback;
+  return null;
+});
+
+const resultModalSessionExists = computed(() => {
+  const sid = resultModalSessionId.value;
+  if (!sid) return false;
+  return sessionSummariesById.value[sid]?.exists === true;
+});
+
+async function getNativeServerPort(): Promise<number | null> {
+  try {
+    const stored = await chrome.storage.local.get([STORAGE_KEYS.SERVER_STATUS]);
+    const status = stored?.[STORAGE_KEYS.SERVER_STATUS] as
+      | { isRunning?: boolean; port?: unknown }
+      | undefined;
+    if (!status?.isRunning) return null;
+    const raw = status.port;
+    const port = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : Number.NaN;
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) return null;
+    return Math.floor(port);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSessionSummaries(sessionIds: string[]): Promise<void> {
+  const ids = Array.from(new Set(sessionIds.map((s) => String(s || '').trim()).filter(Boolean)));
+  if (ids.length === 0) return;
+
+  const port = await getNativeServerPort();
+  if (!port) return;
+
+  try {
+    const url = `http://127.0.0.1:${port}/agent/sessions/summaries`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionIds: ids }),
+    });
+    if (!resp.ok) return;
+    const payload = (await resp.json().catch(() => null)) as any;
+    if (!payload || payload.ok !== true || !Array.isArray(payload.summaries)) return;
+
+    const next: Record<string, SessionSummary> = { ...sessionSummariesById.value };
+    for (const s of payload.summaries as any[]) {
+      if (!isPlainRecord(s)) continue;
+      const sessionId = String((s as any).sessionId || '').trim();
+      if (!sessionId) continue;
+      next[sessionId] = {
+        sessionId,
+        exists: (s as any).exists === true,
+        projectId:
+          typeof (s as any).projectId === 'string' ? String((s as any).projectId) : undefined,
+        name: typeof (s as any).name === 'string' ? String((s as any).name) : undefined,
+        messageCount:
+          typeof (s as any).messageCount === 'number' ? (s as any).messageCount : undefined,
+      };
+    }
+    sessionSummariesById.value = next;
+  } catch {
+    // ignore
+  }
+}
+
+async function openResultModal(runId: string): Promise<void> {
+  const rid = String(runId || '').trim();
+  if (!rid) return;
+  resultModalRunId.value = rid;
+  resultModalLoading.value = true;
+  resultModalEvents.value = [];
+  sessionSummariesById.value = {};
+
+  try {
+    const events = await props.getRunEvents(rid);
+    resultModalEvents.value = Array.isArray(events) ? (events as any[]) : [];
+
+    const scannerConvs = extractScannerConversations(resultModalEvents.value);
+    if (scannerConvs.length > 0) {
+      await fetchSessionSummaries(scannerConvs.map((c) => c.sessionId));
+    } else {
+      const ingest = findLatestIngestResult(resultModalEvents.value);
+      const sid = ingest && typeof ingest.sessionId === 'string' ? ingest.sessionId.trim() : '';
+      const fallbackSid = deriveSessionIdFromRunArgs(
+        props.runs.find((r) => r.id === rid) ?? null,
+        resultModalTags.value,
+      );
+      const targetSid = sid || fallbackSid || '';
+      if (targetSid) await fetchSessionSummaries([targetSid]);
+    }
+  } finally {
+    resultModalLoading.value = false;
+  }
+}
+
+function closeResultModal(): void {
+  resultModalRunId.value = null;
+  resultModalEvents.value = [];
+  resultModalLoading.value = false;
+  sessionSummariesById.value = {};
+}
+
+function openChatSessionById(sessionId: string): void {
+  const sid = String(sessionId || '').trim();
+  if (!sid) return;
+  emit('openChatSession', { sessionId: sid });
+}
+
+function isTerminalStatus(status: string | undefined): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'canceled';
+}
+
+function maybeHandleManualTerminalRun(runId: string): void {
+  const rid = String(runId || '').trim();
+  const manual = props.manualRunIds;
+  if (!rid || !manual || !manual.has(rid)) return;
+  if (!props.isActive) return;
+  if (seenManualRunIds.value.has(rid)) return;
+  if (resultModalRunId.value) return;
+
+  seenManualRunIds.value = new Set([...seenManualRunIds.value, rid]);
+  emit('manualRunHandled', rid);
+  void openResultModal(rid);
+}
+
+let manualRunUnsubscribe: (() => void) | null = null;
+
+onMounted(() => {
+  if (!props.onRunEvent) return;
+  manualRunUnsubscribe = props.onRunEvent((event: any) => {
+    const rid = String(event?.runId || '').trim();
+    if (!rid) return;
+    if (
+      event?.type === 'run.succeeded' ||
+      event?.type === 'run.failed' ||
+      event?.type === 'run.canceled'
+    ) {
+      maybeHandleManualTerminalRun(rid);
+    }
+  });
+});
+
+onUnmounted(() => {
+  manualRunUnsubscribe?.();
+  manualRunUnsubscribe = null;
+});
+
+watch(
+  [() => props.isActive, () => props.manualRunIds, () => props.runs],
+  () => {
+    if (!props.isActive) return;
+    const manual = props.manualRunIds;
+    if (!manual || manual.size === 0) return;
+    for (const rid of manual) {
+      const run = props.runs.find((r) => r.id === rid);
+      if (run && isTerminalStatus(run.status)) {
+        maybeHandleManualTerminalRun(rid);
+      }
+    }
+  },
+  { immediate: true, deep: false },
+);
 </script>
 
 <style scoped>

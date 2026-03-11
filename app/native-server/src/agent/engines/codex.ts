@@ -1,17 +1,17 @@
-import { spawn } from 'node:child_process';
-import readline from 'node:readline';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import {
   CODEX_AUTO_INSTRUCTIONS,
   DEFAULT_CODEX_CONFIG,
   type CodexEngineConfig,
 } from 'chrome-mcp-shared';
-import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
-import type { AgentMessage, RealtimeEvent } from '../types';
-import { AgentToolBridge } from '../tool-bridge';
-import { getProject } from '../project-service';
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import readline from 'node:readline';
 import { getChromeMcpUrl } from '../../constant';
+import { getProject } from '../project-service';
+import { AgentToolBridge } from '../tool-bridge';
+import type { AgentMessage } from '../types';
+import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
 
 type TodoListPhase = 'started' | 'update' | 'completed';
 
@@ -121,7 +121,11 @@ export class CodexEngine implements AgentEngine {
     // Inject local Chrome MCP server via runtime config override (no global codex config mutation)
     // Use a unique server name to avoid collision with any existing global config
     if (enableChromeMcp) {
-      const chromeMcpUrl = getChromeMcpUrl();
+      const chromeMcpUrl = getChromeMcpUrl({
+        agentSessionId: sessionId,
+        agentRequestId: requestId,
+        agentEngine: this.name,
+      });
       // Set both url and type for complete HTTP MCP server configuration
       args.push('-c', `mcp_servers.chrome_mcp_http.url=${JSON.stringify(chromeMcpUrl)}`);
       args.push('-c', `mcp_servers.chrome_mcp_http.type="http"`);

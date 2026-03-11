@@ -31,7 +31,7 @@
         Thinking...
       </span>
       <template v-else>
-        <span class="thinking-summary" v-html="formatLine(firstLine)" />
+        <span class="thinking-summary" v-html="formatLine(summaryLine)" />
         <span v-if="canExpand" class="thinking-toggle">
           <svg
             :class="{ 'thinking-toggle--expanded': expanded }"
@@ -45,16 +45,15 @@
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
-          {{ moreCount }} more {{ moreCount === 1 ? 'line' : 'lines' }}
         </span>
       </template>
     </button>
 
     <Transition name="thinking-expand">
-      <span v-if="expanded && !isLoading && restLines.length > 0" class="thinking-content">
-        <template v-for="(line, idx) in restLines" :key="idx">
+      <span v-if="expanded && !isLoading && expandedLines.length > 0" class="thinking-content">
+        <template v-for="(line, idx) in expandedLines" :key="idx">
           <span v-html="formatLine(line)" />
-          <br v-if="idx < restLines.length - 1" />
+          <br v-if="idx < expandedLines.length - 1" />
         </template>
       </span>
     </Transition>
@@ -69,7 +68,7 @@ import { computed, ref } from 'vue';
  * When customHtmlTags=['thinking'] is set, the parser produces nodes with type='thinking'.
  */
 interface ThinkingNodeType {
-  type: 'thinking';
+  type: string;
   tag?: string;
   content: string;
   raw: string;
@@ -92,54 +91,99 @@ const expanded = ref(false);
 /** Whether the node is still loading (streaming, tag not closed yet) */
 const isLoading = computed(() => props.loading ?? props.node.loading ?? false);
 
+const MAX_SUMMARY_CHARS = 140;
+
+const tagName = computed(() => {
+  const raw = String(props.node.tag ?? props.node.type ?? 'thinking')
+    .trim()
+    .toLowerCase();
+  return raw || 'thinking';
+});
+
 /**
  * Extract inner text from the thinking node.
  * Prefer node.raw over node.content as content may lose line breaks in some cases.
  */
 const innerText = computed(() => {
+  const tag = tagName.value;
+  const extractInner = (src: string): string | null => {
+    if (!src) return null;
+    const re = new RegExp(`<${tag}\\\\b[^>]*>([\\\\s\\\\S]*?)<\\\\/${tag}>`, 'i');
+    const match = src.match(re);
+    return match ? match[1] : null;
+  };
+
   // Try raw first (more reliable for preserving line breaks)
   const rawSrc = String(props.node.raw ?? '');
   if (rawSrc) {
-    const rawMatch = rawSrc.match(/<thinking\b[^>]*>([\s\S]*?)<\/thinking>/i);
-    if (rawMatch) {
-      return rawMatch[1].trim();
-    }
+    const extracted = extractInner(rawSrc);
+    if (extracted !== null) return extracted.trim();
   }
 
   // Fallback to content
   const src = String(props.node.content ?? '');
-  const match = src.match(/<thinking\b[^>]*>([\s\S]*?)<\/thinking>/i);
-  if (match) {
-    return match[1].trim();
-  }
+  const extracted = extractInner(src);
+  if (extracted !== null) return extracted.trim();
 
   // Strip opening/closing tags if present
   return src
-    .replace(/^<thinking\b[^>]*>/i, '')
-    .replace(/<\/thinking>\s*$/i, '')
+    .replace(new RegExp(`^<${tag}\\\\b[^>]*>`, 'i'), '')
+    .replace(new RegExp(`<\\\\/${tag}>\\\\s*$`, 'i'), '')
     .trim();
 });
 
-/** Split content into lines, filtering empty ones */
-const lines = computed(() => {
-  return innerText.value.split('\n').filter((line) => line.trim());
+const normalizedText = computed(() =>
+  innerText.value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim(),
+);
+
+const allLines = computed(() => normalizedText.value.split('\n'));
+
+const firstNonEmptyLineIndex = computed(() => {
+  const idx = allLines.value.findIndex((line) => line.trim().length > 0);
+  return idx === -1 ? 0 : idx;
 });
 
 /** First line shown as summary */
 const firstLine = computed(() => {
-  const line = lines.value[0] ?? '';
-  // Strip leading/trailing ** for cleaner display
-  return line.replace(/^\*\*/, '').replace(/\*\*$/, '');
+  return (allLines.value[firstNonEmptyLineIndex.value] ?? '').trim();
+});
+
+const summaryLine = computed(() => {
+  const line = firstLine.value.replace(/^\*\*/, '').replace(/\*\*$/, '');
+  if (line.length <= MAX_SUMMARY_CHARS) return line;
+  return line.slice(0, MAX_SUMMARY_CHARS - 1).trimEnd() + '…';
 });
 
 /** Remaining lines for expanded view */
-const restLines = computed(() => lines.value.slice(1));
+const restLines = computed(() => {
+  return allLines.value.slice(firstNonEmptyLineIndex.value + 1);
+});
 
-/** Number of additional lines */
-const moreCount = computed(() => restLines.value.length);
+const moreLineCount = computed(() => {
+  return restLines.value.filter((line) => line.trim().length > 0).length;
+});
+
+const isLongSingleLine = computed(() => {
+  return moreLineCount.value === 0 && normalizedText.value.length > MAX_SUMMARY_CHARS;
+});
 
 /** Whether the section can be expanded */
-const canExpand = computed(() => !isLoading.value && moreCount.value > 0);
+const canExpand = computed(() => {
+  return !isLoading.value && (moreLineCount.value > 0 || isLongSingleLine.value);
+});
+
+const expandedLines = computed(() => {
+  if (moreLineCount.value > 0) {
+    // If the summary is truncated, include the full first line in the expanded block
+    // so users can reveal the hidden tail without losing context.
+    if (summaryLine.value !== firstLine.value) {
+      return [firstLine.value, ...restLines.value];
+    }
+    return restLines.value;
+  }
+  if (isLongSingleLine.value) return [normalizedText.value];
+  return [];
+});
 
 function toggle(): void {
   if (canExpand.value) {
@@ -273,6 +317,7 @@ function formatLine(text: string): string {
   font-size: 13px;
   font-style: italic;
   line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .thinking-content :deep(strong) {
