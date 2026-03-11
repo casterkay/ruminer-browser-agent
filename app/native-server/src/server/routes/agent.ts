@@ -566,7 +566,13 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         const id = safeString(value.id || value.agentId || value.key).trim();
         if (!id) return null;
         const name = safeString(value.name || value.title || value.label).trim();
-        return name ? { id, name } : { id };
+        const workspaceDir = safeString(
+          value.workspaceDir || value.workspace_dir || value.cwd,
+        ).trim();
+        const result: OpenClawAgentDto = { id };
+        if (name) result.name = name;
+        if (workspaceDir) result.workspaceDir = workspaceDir;
+        return result;
       };
 
       const list: any[] = Array.isArray(raw)

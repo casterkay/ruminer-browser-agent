@@ -336,6 +336,7 @@ export interface AgentSessionOptionsConfig {
 export interface OpenClawAgentDto {
   id: string;
   name?: string;
+  workspaceDir?: string;
 }
 
 export interface ListOpenClawAgentsResponse {

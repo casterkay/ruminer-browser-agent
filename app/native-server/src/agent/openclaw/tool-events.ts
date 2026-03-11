@@ -58,7 +58,9 @@ function fileName(path: string): string {
   return normalized.split('/').pop() || path;
 }
 
-function mapToolKind(toolName: string): 'plan' | 'edit' | 'read' | 'grep' | 'run' | 'generic' {
+function mapToolKind(
+  toolName: string,
+): 'plan' | 'edit' | 'read' | 'grep' | 'recall' | 'run' | 'generic' {
   const normalized = toolName.toLowerCase();
   if (normalized === 'plan' || normalized === 'todowrite' || normalized === 'todo_write') {
     return 'plan';
@@ -73,6 +75,9 @@ function mapToolKind(toolName: string): 'plan' | 'edit' | 'read' | 'grep' | 'run
   }
   if (normalized.includes('read') || normalized.includes('cat')) {
     return 'read';
+  }
+  if (normalized.startsWith('emos_') || /(?:^|__)emos_/.test(normalized)) {
+    return 'recall';
   }
   if (normalized.includes('grep') || normalized.includes('search') || normalized.includes('glob')) {
     return 'grep';
@@ -93,6 +98,7 @@ function mapToolLabel(kind: ReturnType<typeof mapToolKind>, toolName: string): s
   if (kind === 'plan') return 'Plan';
   if (kind === 'edit') return 'Edit';
   if (kind === 'read') return 'Read';
+  if (kind === 'recall') return 'Memory';
   if (kind === 'grep') return 'Grep';
   if (kind === 'run') return 'Run';
   return titleCase(toolName || 'Tool');
@@ -111,6 +117,10 @@ function extractToolTitle(
   }
   if (kind === 'run') {
     return commandDescription || command || titleCase(toolName || 'Command');
+  }
+  if (kind === 'recall') {
+    const shortName = (toolName || 'recall').replace(/^.*?emos_/, 'emos_');
+    return pattern || titleCase(shortName.replace(/^emos_/, '').replace(/_/g, ' '));
   }
   if (kind === 'grep') {
     return pattern || titleCase(toolName || 'Search');

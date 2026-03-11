@@ -103,93 +103,55 @@
             </div>
           </div>
 
-          <!-- Workspace & Project -->
+          <!-- Project Workspace -->
           <div class="space-y-2">
             <label
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
             >
-              Workspace &amp; Project
+              Project Workspace
             </label>
 
             <!-- Workspace path -->
-            <div class="space-y-2 p-2" :style="sectionCardStyle">
+            <div class="space-y-2 px-2">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
-                    Project folder
-                  </div>
-                  <div
-                    class="text-[10px] mt-0.5"
-                    :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"
-                  >
+                  <div class="text-[10px] mt-2" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
                     {{
-                      isWorkspaceConfigurable
-                        ? 'Choose before starting the session.'
-                        : 'Locked after the first message.'
+                      'The project directory contains files that the agent can directly work on. Set it before starting the session. Locked afterwards.'
                     }}
+                  </div>
+
+                  <div
+                    class="text-[10px] font-mono break-words whitespace-pre-wrap relative mt-2"
+                    :style="pathBoxStyle"
+                    :title="defaultProjectPath || ''"
+                  >
+                    {{ defaultProjectPath || 'No project selected.' }}
+
+                    <button
+                      type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 p-1 ac-btn ac-focus-ring"
+                      :style="{ color: 'var(--ac-text-muted, #6e6e6e)', borderRadius: '8px' }"
+                      @click="handleFolderButtonClick"
+                      :aria-expanded="
+                        isWorkspaceConfigurable ? 'false' : String(openProjectMenuOpen)
+                      "
+                    >
+                      <ILucideFolderOpen class="w-4 h-4" />
+                    </button>
+
+                    <AgentOpenProjectMenu
+                      v-if="!isWorkspaceConfigurable"
+                      :open="openProjectMenuOpen"
+                      :defaultTarget="openProjectDefaultTarget"
+                      @select="handleOpenProjectMenuSelect"
+                      @close="handleOpenProjectMenuClose"
+                    />
                   </div>
                 </div>
 
-                <button
-                  v-if="isWorkspaceConfigurable"
-                  type="button"
-                  class="px-2 py-1 text-[10px] font-semibold ac-btn ac-focus-ring cursor-pointer"
-                  :style="secondaryButtonStyle"
-                  :disabled="workspacePicking || isSaving"
-                  @click="$emit('workspace:pick')"
-                >
-                  {{ workspacePicking ? 'Choosing...' : 'Choose folder…' }}
-                </button>
-              </div>
-
-              <div
-                class="text-[10px] font-mono break-words whitespace-pre-wrap"
-                :style="pathBoxStyle"
-                :title="projectRootPath || ''"
-              >
-                {{ projectRootPath || 'No project selected.' }}
-              </div>
-            </div>
-
-            <!-- Open Project -->
-            <div class="space-y-2 p-2" :style="sectionCardStyle">
-              <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
-                Open project workspace
-              </div>
-              <div class="text-[10px]" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                Click to open and set as default.
-              </div>
-
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="flex-1 px-2 py-1.5 text-xs font-medium ac-btn ac-focus-ring cursor-pointer"
-                  :style="openTargetStyle('vscode')"
-                  :disabled="openProjectLoading || isSaving"
-                  @click="$emit('open-project', 'vscode')"
-                >
-                  <span class="inline-flex items-center justify-between w-full gap-2">
-                    <span>VS Code</span>
-                    <span v-if="openProjectDefaultTarget === 'vscode'" class="text-[10px]"
-                      >Default</span
-                    >
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  class="flex-1 px-2 py-1.5 text-xs font-medium ac-btn ac-focus-ring cursor-pointer"
-                  :style="openTargetStyle('terminal')"
-                  :disabled="openProjectLoading || isSaving"
-                  @click="$emit('open-project', 'terminal')"
-                >
-                  <span class="inline-flex items-center justify-between w-full gap-2">
-                    <span>Terminal</span>
-                    <span v-if="openProjectDefaultTarget === 'terminal'" class="text-[10px]"
-                      >Default</span
-                    >
-                  </span>
-                </button>
+                <!-- choose-folder button removed; folder icon will invoke choose when session not started -->
               </div>
             </div>
           </div>
@@ -202,8 +164,8 @@
             >
               EverMemOS
             </label>
-            <div class="flex items-start justify-between gap-3 p-2 -mb-2">
-              <div class="min-w-0">
+            <div class="flex items-start justify-between gap-3 px-2">
+              <div class="min-w-0 mt-2">
                 <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
                   Save Conversation to EverMemOS
                 </div>
@@ -213,7 +175,7 @@
               </div>
 
               <button
-                class="relative inline-flex w-9 h-5 items-center flex-shrink-0 ac-btn"
+                class="relative inline-flex w-9 h-5 mt-2 items-center flex-shrink-0 ac-btn"
                 :style="toggleStyle(localSaveConversationToEverMemOS)"
                 :disabled="isSaving"
                 @click="localSaveConversationToEverMemOS = !localSaveConversationToEverMemOS"
@@ -547,10 +509,34 @@ import type {
   AgentSessionOptionsConfig,
   AgentSystemPromptConfig,
   CodexReasoningEffort,
-  OpenProjectTarget,
   OpenClawAgentDto,
+  OpenProjectTarget,
 } from 'chrome-mcp-shared';
 import { computed, ref, watch } from 'vue';
+import ILucideFolderOpen from '~icons/lucide/folder-open';
+import AgentOpenProjectMenu from './AgentOpenProjectMenu.vue';
+
+const openProjectMenuOpen = ref(false);
+
+function handleOpenProjectMenuSelect(target: OpenProjectTarget) {
+  emit('open-project', target);
+  openProjectMenuOpen.value = false;
+}
+
+function handleOpenProjectMenuClose() {
+  openProjectMenuOpen.value = false;
+}
+
+function handleFolderButtonClick(): void {
+  // If workspace is configurable (session not started), repurpose the folder button
+  // to trigger folder picking; otherwise toggle the project menu.
+  if (isWorkspaceConfigurable.value) {
+    emit('workspace:pick');
+    openProjectMenuOpen.value = false;
+    return;
+  }
+  openProjectMenuOpen.value = !openProjectMenuOpen.value;
+}
 
 const props = defineProps<{
   open: boolean;
@@ -618,7 +604,7 @@ const pathBoxStyle = computed(() => ({
   border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
   borderRadius: 'var(--ac-radius-inner, 8px)',
   color: 'var(--ac-text, #1a1a1a)',
-  padding: '8px 10px',
+  padding: '8px 36px 8px 10px',
 }));
 
 const secondaryButtonStyle = computed(() => ({
@@ -660,6 +646,20 @@ const normalizedReasoningEffort = computed(() => {
 const availableModels = computed(() => {
   if (!props.session?.engineName) return [];
   return getModelsForCli(props.session.engineName);
+});
+
+// Get the currently selected OpenClaw agent
+const selectedOpenClawAgent = computed<OpenClawAgentDto | undefined>(() => {
+  if (!props.openclawAgents?.length) return undefined;
+  return props.openclawAgents.find((a) => a.id === localOpenClawAgentId.value);
+});
+
+// Get the default project path - prefer agent's workspaceDir for OpenClaw
+const defaultProjectPath = computed(() => {
+  if (isOpenClawEngine.value && selectedOpenClawAgent.value?.workspaceDir) {
+    return selectedOpenClawAgent.value.workspaceDir;
+  }
+  return props.projectRootPath;
 });
 
 // Initialize local state when session changes

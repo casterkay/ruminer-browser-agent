@@ -1,13 +1,7 @@
 <template>
   <div class="space-y-2">
-    <!-- Label + Title + Diff Stats -->
+    <!-- Title + Diff Stats (no label for standalone results) -->
     <div class="flex items-baseline gap-2 flex-wrap">
-      <span
-        class="text-[11px] font-bold uppercase tracking-wider w-8 flex-shrink-0"
-        :style="{ color: labelColor }"
-      >
-        {{ item.tool.label }}
-      </span>
       <code
         class="text-xs font-semibold"
         :style="{
@@ -101,49 +95,27 @@
       <!-- Command output -->
       <template v-else-if="item.tool.kind === 'run' && item.tool.details">
         <div
-          class="px-3 py-2 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto ac-scroll"
+          class="px-3 py-2 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto ac-scroll"
           :style="{
             backgroundColor: 'var(--ac-code-bg)',
             color: 'var(--ac-code-text)',
           }"
         >
-          {{ truncatedDetails }}
+          {{ item.tool.details }}
         </div>
-        <button
-          v-if="isDetailsTruncated"
-          class="w-full px-3 py-1 text-[10px] text-left cursor-pointer"
-          :style="{
-            backgroundColor: 'var(--ac-surface-muted)',
-            color: 'var(--ac-link)',
-          }"
-          @click="expanded = !expanded"
-        >
-          {{ expanded ? 'Show less' : 'Show more...' }}
-        </button>
       </template>
 
       <!-- Generic details -->
       <template v-else-if="item.tool.details">
         <div
-          class="px-3 py-2 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto ac-scroll"
+          class="px-3 py-2 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto ac-scroll"
           :style="{
             backgroundColor: 'var(--ac-code-bg)',
             color: 'var(--ac-code-text)',
           }"
         >
-          {{ truncatedDetails }}
+          {{ item.tool.details }}
         </div>
-        <button
-          v-if="isDetailsTruncated"
-          class="w-full px-3 py-1 text-[10px] text-left cursor-pointer"
-          :style="{
-            backgroundColor: 'var(--ac-surface-muted)',
-            color: 'var(--ac-link)',
-          }"
-          @click="expanded = !expanded"
-        >
-          {{ expanded ? 'Show less' : 'Show more...' }}
-        </button>
       </template>
     </div>
 
@@ -155,16 +127,12 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import type { TimelineItem } from '../../../composables/useAgentThreads';
 
 const props = defineProps<{
   item: Extract<TimelineItem, { kind: 'tool_result' }>;
 }>();
-
-const expanded = ref(false);
-const MAX_LINES = 10;
-const MAX_CHARS = 500;
 
 const labelColor = computed(() => {
   if (props.item.isError) {
@@ -200,27 +168,5 @@ const showCard = computed(() => {
     (tool.kind === 'run' && tool.details) ||
     tool.details
   );
-});
-
-const isDetailsTruncated = computed(() => {
-  const details = props.item.tool.details ?? '';
-  const lines = details.split('\n');
-  return lines.length > MAX_LINES || details.length > MAX_CHARS;
-});
-
-const truncatedDetails = computed(() => {
-  const details = props.item.tool.details ?? '';
-  if (expanded.value) {
-    return details;
-  }
-
-  const lines = details.split('\n');
-  if (lines.length > MAX_LINES) {
-    return lines.slice(0, MAX_LINES).join('\n');
-  }
-  if (details.length > MAX_CHARS) {
-    return details.slice(0, MAX_CHARS);
-  }
-  return details;
 });
 </script>

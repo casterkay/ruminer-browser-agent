@@ -189,8 +189,13 @@ const citationMemoriesById = computed(() => {
   const map = new Map<string, MemoryItem>();
   for (const item of props.thread.items) {
     if (item.kind !== 'tool_result') continue;
+    // Match by metadata toolName or by resolved tool kind
     const toolName = getToolName(item.tool.raw.metadata);
-    if (toolName !== 'emos_search_memories') continue;
+    const isEmosSearch =
+      toolName === 'emos_search_memories' ||
+      toolName.endsWith('__emos_search_memories') ||
+      item.tool.kind === 'recall';
+    if (!isEmosSearch) continue;
 
     const extracted = extractEmosCitationMemoriesFromToolResultText(item.tool.raw.content);
     for (const memory of extracted) {

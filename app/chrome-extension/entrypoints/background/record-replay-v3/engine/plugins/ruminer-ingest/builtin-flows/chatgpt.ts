@@ -605,8 +605,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.chatgpt.scanner.v1',
       name: 'ChatGPT – Import All',
-      description:
-        'Scans ChatGPT conversations via backend API and enqueues per-conversation ingestion runs.',
+      description: 'Scans ChatGPT conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
       nodes: importAllNodes,
       edges: [
@@ -625,8 +624,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.chatgpt.conversation_ingest.v1',
       name: 'ChatGPT – Import Current Conversation',
-      description:
-        'Imports a single ChatGPT conversation into EMOS. Sidepanel will use the active tab URL as the conversation URL.',
+      description: 'Imports the ChatGPT conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',
       nodes: ingestNodes,
       edges: [

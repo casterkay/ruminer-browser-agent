@@ -4,8 +4,6 @@
       {{ displayText }}
     </button>
     <div v-if="hovered" class="emos-cite-bubble" role="tooltip">
-      <div class="emos-cite-bubble-title">{{ titleText }}</div>
-
       <!-- Show citation items if available -->
       <button
         v-for="item in displayItems"
@@ -14,12 +12,7 @@
         class="emos-cite-bubble-item ac-btn"
         @click="handleOpenItem(item)"
       >
-        <div class="emos-cite-bubble-meta">
-          <span class="emos-cite-bubble-key">[^{{ item.key }}]</span>
-          <span v-if="item.sender" class="emos-cite-bubble-sender">{{ item.senderLabel }}</span>
-        </div>
-        <div v-if="item.dateLabel" class="emos-cite-bubble-date">{{ item.dateLabel }}</div>
-        <div class="emos-cite-bubble-summary">{{ item.content }}</div>
+        {{ item.content }}
       </button>
     </div>
   </span>
@@ -28,12 +21,9 @@
 <script lang="ts" setup>
 import { computed, inject, ref } from 'vue';
 import {
-  EMOS_CITATION_MEMORIES_BY_ID_KEY,
   EMOS_CITATION_OPEN_DETAILS_KEY,
-  type EmosCitationMemoriesById,
   type EmosCitationOpenDetails,
 } from '../../../composables/emos-citations';
-import type { MemoryItem } from '../../../composables/useEmosSearch';
 
 interface EmosCiteNodeType {
   type: 'emos-cite';
@@ -45,16 +35,20 @@ interface EmosCiteNodeType {
   attrs?: Array<[string, string]>;
 }
 
+interface CitationItem {
+  key: string;
+  senderLabel: string;
+  dateLabel: string;
+  content: string;
+  rawTimestamp: string; // Raw timestamp for the modal
+}
+
 const props = defineProps<{
   node: EmosCiteNodeType;
 }>();
 
 const hovered = ref(false);
 
-const memoriesByIdRef = inject(
-  EMOS_CITATION_MEMORIES_BY_ID_KEY,
-  ref<EmosCitationMemoriesById>(new Map()),
-);
 const openDetails = inject<EmosCitationOpenDetails | null>(EMOS_CITATION_OPEN_DETAILS_KEY, null);
 
 function getAttr(name: string): string {
@@ -73,10 +67,9 @@ const keys = computed(() => {
     .filter(Boolean);
 });
 
-const messageIds = computed(() => {
-  const raw = getAttr('message-ids');
-  // Keep positional mapping with `keys` (do not drop empty IDs).
-  return raw.split(',').map((v) => v.trim());
+const contents = computed(() => {
+  const raw = getAttr('contents');
+  return raw.split('|||').map((v) => v.trim());
 });
 
 const displayText = computed(() => {
@@ -84,45 +77,71 @@ const displayText = computed(() => {
   return `[^${keys.value.join(',')}]`;
 });
 
-const titleText = computed(() => {
-  const ids = messageIds.value;
-  const filtered = ids.filter((id) => id.length > 0);
-  if (filtered.length === 0) return 'Citation';
-  return filtered.join('\n');
-});
+// Parse footnote content like "user_123,2024-01-15T10:30:00: Discussed coffee choices"
+// Format: {sender}, {time}: {summary}
+// Fallback: if format doesn't match, treat whole content as summary
+function parseFootnoteContent(content: string): {
+  sender: string;
+  date: string;
+  summary: string;
+  rawTimestamp: string;
+} {
+  // Try to match the expected format: "sender,timestamp: summary"
+  const match = content.match(/^(.+?),(.+?):\s*(.+)$/);
+  if (match) {
+    const sender = match[1].trim();
+    const rawTimestamp = match[2].trim();
+    const summary = match[3].trim();
+    let date = '';
+    try {
+      date = new Date(rawTimestamp).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    } catch {
+      date = rawTimestamp;
+    }
+    return { sender, date, summary, rawTimestamp };
+  }
 
-const citationItems = computed(() => {
-  const items: Array<MemoryItem & { key: string }> = [];
+  // Fallback: treat whole content as summary
+  return { sender: '', date: '', summary: content, rawTimestamp: '' };
+}
+
+const citationItems = computed((): CitationItem[] => {
+  const items: CitationItem[] = [];
   const k = keys.value;
-  const ids = messageIds.value;
+  const c = contents.value;
 
   for (let idx = 0; idx < k.length; idx++) {
     const key = k[idx];
-    const messageId = ids[idx] ?? '';
-    const item = messageId ? memoriesByIdRef.value.get(messageId) : undefined;
-    if (!item) continue;
-    items.push({ ...item, key });
+    const content = c[idx] ?? '';
+    if (!content) continue;
+
+    const parsed = parseFootnoteContent(content);
+    items.push({
+      key,
+      senderLabel: parsed.sender,
+      dateLabel: parsed.date,
+      content: parsed.summary,
+      rawTimestamp: parsed.rawTimestamp,
+    });
   }
 
   return items;
 });
 
-const displayItems = computed(() =>
-  citationItems.value.map((item) => ({
-    ...item,
-    senderLabel: item.sender_name ?? item.sender ?? '',
-    dateLabel: item.create_time
-      ? new Date(item.create_time).toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : '',
-  })),
-);
+const displayItems = computed(() => citationItems.value);
 
-function handleOpenItem(item: MemoryItem): void {
+function handleOpenItem(item: CitationItem): void {
   if (!openDetails) return;
-  openDetails(item);
+  // Create a minimal MemoryItem for the modal
+  openDetails({
+    message_id: item.key,
+    content: item.content,
+    sender: item.senderLabel,
+    create_time: item.dateLabel,
+  });
 }
 
 function handleClick(): void {
@@ -161,7 +180,6 @@ function handleClick(): void {
   top: 22px;
   left: 0;
   width: min(420px, 72vw);
-  padding: 10px;
   border-radius: var(--ac-radius-card);
   background: var(--ac-surface);
   border: var(--ac-border-width) solid var(--ac-border);
@@ -191,8 +209,7 @@ function handleClick(): void {
 .emos-cite-bubble-item {
   width: 100%;
   text-align: left;
-  padding: 8px;
-  margin: 6px 0 0;
+  padding: 4px;
   border-radius: var(--ac-radius-inner);
   background: var(--ac-surface-inset);
   border: var(--ac-border-width) solid var(--ac-border);
@@ -218,17 +235,5 @@ function handleClick(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.emos-cite-bubble-summary {
-  font-size: 11px;
-  color: var(--ac-text);
-  font-family: var(--ac-font-body);
-  display: -webkit-box;
-  overflow: hidden;
-  line-clamp: 4;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  white-space: pre-wrap;
 }
 </style>

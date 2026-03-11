@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="open"
-    class="fixed top-12 right-4 z-50 min-w-[160px] py-2"
+    class="absolute right-0 top-full mt-2 z-50 min-w-[160px] py-2"
     :style="{
       backgroundColor: 'var(--ac-surface, #ffffff)',
       border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',

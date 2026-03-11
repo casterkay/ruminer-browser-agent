@@ -7,15 +7,15 @@
  * - JSON config and management info caching
  */
 import { randomUUID } from 'node:crypto';
+import type { SQLInputValue } from 'node:sqlite';
 import { getDb, type SessionRow } from './db';
 import type { EngineName } from './engines/types';
-import type { SQLInputValue } from 'node:sqlite';
-import { upsertProject } from './project-service';
-import { getDefaultProjectRoot } from './storage';
 import {
   createMessage as createStoredMessage,
   getMessagesCountBySessionId,
 } from './message-service';
+import { upsertProject } from './project-service';
+import { getDefaultProjectRoot } from './storage';
 
 // ============================================================
 // Types
@@ -331,6 +331,7 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
         const content = firstUserMessage.content;
         const metadataJson = firstUserMessage.metadata;
 
+        // Default preview from raw content; may be overridden by displayText below
         session.preview = truncatePreview(content);
 
         // Parse metadata to extract clientMeta/displayText for special rendering
@@ -344,6 +345,11 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
 
             // Validate displayText is a string
             const displayText = typeof rawDisplayText === 'string' ? rawDisplayText : undefined;
+
+            // Prefer displayText (user's raw input) over content (may contain injected prompts)
+            if (displayText) {
+              session.preview = truncatePreview(displayText);
+            }
 
             // Validate clientMeta structure
             const clientMeta =

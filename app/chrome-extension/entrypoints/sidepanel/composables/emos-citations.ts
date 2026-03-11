@@ -14,8 +14,7 @@ export const EMOS_CITATION_OPEN_DETAILS_KEY: InjectionKey<EmosCitationOpenDetail
 
 const FOOTNOTE_REF_LINE = /^\[\^(\d+)\]:\s*(.+?)\s*$/;
 const INLINE_CITE = /\[\^(\d+(?:\s*,\s*\d+)*)\]/g;
-// Pattern to match headers like "---\nReferences:\n" or "---\n# Citations:\n" before footnotes
-const CITATION_HEADER_PATTERN = /^---\s*\n+[#*\s\w:-]*\n*/;
+const FOOTNOTES_HEADER_PATTERN = /\n[—-]{3,}\s*(\n+[#*\s\w:-]*)?\n*$/;
 
 function escapeHtmlAttr(value: string): string {
   return String(value ?? '')
@@ -71,7 +70,7 @@ export function stripTrailingFootnoteReferences(text: string): {
   const body = lines
     .slice(0, refStart)
     .join('\n')
-    .replace(CITATION_HEADER_PATTERN, '')
+    .replace(FOOTNOTES_HEADER_PATTERN, '')
     .replace(/\s+$/g, '');
 
   return { body, refs };
@@ -115,10 +114,11 @@ function replaceInlineCitationsOutsideCode(line: string, refs: Map<string, strin
         .filter(Boolean);
       if (keys.length === 0) return _full;
 
-      const messageIds = keys.map((k) => refs.get(k) ?? '');
+      // Get footnote contents for each key
+      const contents = keys.map((k) => refs.get(k) ?? '');
       const keysAttr = escapeHtmlAttr(keys.join(','));
-      const idsAttr = escapeHtmlAttr(messageIds.join(','));
-      return `<emos-cite keys="${keysAttr}" message-ids="${idsAttr}"></emos-cite>`;
+      const contentsAttr = escapeHtmlAttr(contents.join('|||'));
+      return `<emos-cite keys="${keysAttr}" contents="${contentsAttr}"></emos-cite>`;
     });
 
     i = chunkEnd;
@@ -182,19 +182,24 @@ function collectEmosMemories(value: unknown, out: Record<string, unknown>[]): vo
   }
   if (!isObjectRecord(value)) return;
 
-  const maybe =
+  // Check for standard message_id fields
+  const hasIdField =
     typeof value.message_id === 'string' ||
     typeof value.id === 'string' ||
     typeof value.memory_id === 'string' ||
-    typeof value.event_id === 'string' ||
-    typeof value.summary === 'string' ||
-    typeof value.content === 'string';
+    typeof value.event_id === 'string';
+  // Check for content fields
+  const hasContentField = typeof value.summary === 'string' || typeof value.content === 'string';
 
-  if (
-    maybe &&
-    (value.message_id || value.id || value.memory_id || value.event_id) &&
-    (value.summary || value.content)
-  ) {
+  const hasEmosFormat =
+    typeof value.timestamp === 'string' && typeof value.user_id === 'string' && hasContentField;
+
+  if (hasIdField && hasContentField) {
+    out.push(value);
+    return;
+  }
+
+  if (hasEmosFormat) {
     out.push(value);
     return;
   }
@@ -214,7 +219,18 @@ export function extractEmosCitationMemoriesFromToolResultText(text: string): Mem
   try {
     parsed = JSON.parse(src);
   } catch {
-    return [];
+    // Content may have a text prefix (e.g. "Result: emos_search_memories\n\n{...}").
+    // Try to find the first JSON object or array and parse from there.
+    const jsonStart = src.search(/[{[]/);
+    if (jsonStart > 0) {
+      try {
+        parsed = JSON.parse(src.slice(jsonStart));
+      } catch {
+        return [];
+      }
+    } else {
+      return [];
+    }
   }
 
   const rawItems: Record<string, unknown>[] = [];
@@ -222,8 +238,19 @@ export function extractEmosCitationMemoriesFromToolResultText(text: string): Mem
 
   const normalized = rawItems
     .map((raw) => {
-      const message_id = pickString(raw, ['message_id', 'event_id', 'id', 'memory_id']);
-      if (!message_id) return null;
+      // Try to get message_id from standard fields
+      let message_id = pickString(raw, ['message_id', 'event_id', 'id', 'memory_id']);
+
+      // If no message_id, generate one from user_id + timestamp (new EMOS API format)
+      if (!message_id) {
+        const user_id = pickString(raw, ['user_id']);
+        const timestamp = pickString(raw, ['timestamp']);
+        if (user_id && timestamp) {
+          message_id = `${user_id}:${timestamp}`;
+        } else {
+          return null;
+        }
+      }
 
       const summary = pickString(raw, ['summary']);
       const content = summary || pickString(raw, ['content', 'text', 'excerpt']);
@@ -234,7 +261,7 @@ export function extractEmosCitationMemoriesFromToolResultText(text: string): Mem
       const sender = pickString(raw, ['sender', 'user_id']);
       const sender_name = pickString(raw, ['sender_name']);
       const role = pickString(raw, ['role']);
-      const create_time = pickString(raw, ['create_time', 'timestamp']);
+      const create_time = pickString(raw, ['timestamp', 'create_time']);
       const group_id = pickString(raw, ['group_id']);
       const group_name = pickString(raw, ['group_name']);
       const source_url = pickString(raw, ['source_url', 'url']);

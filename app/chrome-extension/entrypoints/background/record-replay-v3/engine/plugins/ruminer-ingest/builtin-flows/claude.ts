@@ -409,8 +409,7 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.claude.scanner.v1',
       name: 'Claude – Import All',
-      description:
-        'Scans Claude conversations via DOM and enqueues per-conversation ingestion runs (dialog only).',
+      description: 'Scans Claude conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
       nodes: scannerNodes,
       edges: [
@@ -425,7 +424,7 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.claude.conversation_ingest.v1',
       name: 'Claude – Import Current Conversation',
-      description: 'Imports a single Claude conversation into EMOS (dialog only).',
+      description: 'Imports the Claude conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',
       nodes: ingestNodes,
       edges: [

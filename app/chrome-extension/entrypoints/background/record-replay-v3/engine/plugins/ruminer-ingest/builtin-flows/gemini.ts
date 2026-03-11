@@ -453,8 +453,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.gemini.scanner.v1',
       name: 'Gemini – Import All',
-      description:
-        'Scans Gemini conversations via DOM and enqueues per-conversation ingestion runs (dialog only).',
+      description: 'Scans Gemini conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
       nodes: scannerNodes,
       edges: [
@@ -469,7 +468,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.gemini.conversation_ingest.v1',
       name: 'Gemini – Import Current Conversation',
-      description: 'Imports a single Gemini conversation into EMOS (dialog only).',
+      description: 'Imports the Gemini conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',
       nodes: ingestNodes,
       edges: [

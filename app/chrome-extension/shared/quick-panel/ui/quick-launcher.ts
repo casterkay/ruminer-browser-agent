@@ -13,6 +13,7 @@ import type { AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
 
 import type { QuickPanelAgentBridge } from '../core/agent-bridge';
 import type { FloatingIconManager } from './floating-icon';
+import { createMarkdownRenderer } from './markdown-renderer';
 import { QUICK_PANEL_STYLES } from './styles';
 
 // ============================================================
@@ -59,7 +60,7 @@ interface QueuedMessage {
 // ============================================================
 
 const LAUNCHER_WIDTH = 394;
-const LAUNCHER_HEIGHT = 600;
+const LAUNCHER_HEIGHT = 640;
 const ICON_WIDTH = 64;
 
 const QUICK_LAUNCHER_STYLES = /* css */ `
@@ -195,6 +196,14 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     align-self: flex-start;
   }
 
+  .qp-quick-launcher-msg[data-role='system'] {
+    align-self: flex-start;
+    opacity: 0.7;
+    font-size: 11px;
+    background: linear-gradient(145deg, rgba(60, 60, 60, 0.5), rgba(40, 40, 40, 0.4));
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
   .qp-quick-launcher-msg--queued {
     opacity: 0.68;
     border-style: dashed;
@@ -244,6 +253,111 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     font-weight: 300;
     letter-spacing: 0.1px;
   }
+
+  /* Markdown content styles */
+  .qp-markdown-content {
+    line-height: 1.5;
+  }
+
+  .qp-markdown-content p {
+    margin: 0 0 8px 0;
+  }
+
+  .qp-markdown-content p:last-child {
+    margin-bottom: 0;
+  }
+
+  .qp-markdown-content strong {
+    font-weight: 600;
+    color: var(--qp-text);
+  }
+
+  .qp-markdown-content em {
+    font-style: italic;
+  }
+
+  .qp-markdown-content del {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  .qp-markdown-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: var(--qp-accent);
+  }
+
+  .qp-markdown-content pre {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--qp-glass-border);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 8px 0;
+    overflow-x: auto;
+  }
+
+  .qp-markdown-content pre code {
+    background: transparent;
+    padding: 0;
+    color: var(--qp-text);
+    display: block;
+    line-height: 1.4;
+  }
+
+  .qp-markdown-content ul,
+  .qp-markdown-content ol {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  .qp-markdown-content li {
+    margin: 3px 0;
+  }
+
+  .qp-markdown-content a {
+    color: var(--qp-accent);
+    text-decoration: none;
+  }
+
+  .qp-markdown-content a:hover {
+    text-decoration: underline;
+  }
+
+  .qp-markdown-content blockquote {
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-left: 3px solid var(--qp-accent);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0 6px 6px 0;
+    font-style: italic;
+  }
+
+  .qp-markdown-content hr {
+    border: none;
+    border-top: 1px solid var(--qp-glass-border);
+    margin: 12px 0;
+  }
+
+  .qp-markdown-content h1,
+  .qp-markdown-content h2,
+  .qp-markdown-content h3,
+  .qp-markdown-content h4,
+  .qp-markdown-content h5,
+  .qp-markdown-content h6 {
+    margin: 12px 0 8px 0;
+    font-weight: 600;
+    color: var(--qp-text);
+  }
+
+  .qp-markdown-content h1 { font-size: 14px; }
+  .qp-markdown-content h2 { font-size: 13px; }
+  .qp-markdown-content h3 { font-size: 12px; }
+  .qp-markdown-content h4,
+  .qp-markdown-content h5,
+  .qp-markdown-content h6 { font-size: 12px; opacity: 0.9; }
 
   .qp-quick-launcher-stream-dot {
     width: 6px;
@@ -431,12 +545,71 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     animation: qp-stream-pulse 900ms ease-in-out infinite;
   }
 
+  /* Ephemeral floating overlay - shows thoughts, tool calls, status */
+  /* Positioned between user and agent messages in the scroll area */
+  .qp-ephemeral-overlay {
+    display: none;
+    width: fit-content;
+    max-width: 90%;
+    align-self: center;
+    padding: 6px 14px;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--qp-text-subtle);
+    background: rgba(60, 50, 40, 0.5);
+    border: 1px dashed rgba(229, 169, 61, 0.25);
+    border-radius: 10px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: none;
+    margin: 6px 0;
+  }
+
+  .qp-ephemeral-overlay[data-visible='true'] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: qp-ephemeral-fade 200ms ease;
+  }
+
+  @keyframes qp-ephemeral-fade {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .qp-ephemeral-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--qp-accent);
+    flex-shrink: 0;
+    animation: qp-ephemeral-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes qp-ephemeral-pulse {
+    0%, 100% {
+      opacity: 0.4;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .qp-quick-launcher-messages,
     .qp-quick-launcher-input,
     .qp-quick-launcher-btn,
     .qp-quick-launcher-status-dot,
-    .qp-quick-launcher-stream-dot {
+    .qp-quick-launcher-stream-dot,
+    .qp-ephemeral-overlay {
       transition: none !important;
       animation: none !important;
     }
@@ -514,9 +687,13 @@ export function createQuickPanelLauncher(
   let statusLabelEl: HTMLSpanElement | null = null;
   let sendBtnEl: HTMLButtonElement | null = null;
   let stopBtnEl: HTMLButtonElement | null = null;
+  let ephemeralOverlayEl: HTMLDivElement | null = null;
 
   let originalIconParent: Node | null = null;
   let originalIconNextSibling: Node | null = null;
+
+  // Track latest ephemeral message for floating overlay
+  let currentEphemeralMsg: AgentMessage | null = null;
 
   let expanded = false;
   let hoverWithin = false;
@@ -703,9 +880,12 @@ export function createQuickPanelLauncher(
     historyLoaded = true;
     messageById.clear();
     messageOrder.length = 0;
+    // Clear ephemeral when loading history
+    clearEphemeral();
 
     for (const msg of messages) {
       if (!msg?.id) continue;
+      if (!shouldShowMessage(msg)) continue;
       messageById.set(msg.id, msg);
       messageOrder.push(msg.id);
     }
@@ -716,6 +896,30 @@ export function createQuickPanelLauncher(
 
   function upsertMessage(msg: AgentMessage): void {
     if (!msg?.id) return;
+    // Handle ephemeral messages - show in floating overlay, not in message list
+    if (EPHEMERAL_MESSAGE_TYPES.has(msg.messageType)) {
+      if (isBusy()) {
+        currentEphemeralMsg = msg;
+        updateEphemeralOverlay();
+      }
+      return;
+    }
+    if (!shouldShowMessage(msg)) return;
+
+    const msgRole = msg.role;
+
+    // If this is an assistant message, replace the previous assistant message
+    // (to show only one message per turn)
+    if (msgRole === 'assistant') {
+      // Find the last assistant message and remove it
+      const id = messageOrder.at(-1);
+      const lastMsg = id ? messageById.get(id) : null;
+      if (lastMsg?.role === 'assistant') {
+        messageById.delete(id!);
+        messageOrder.pop();
+      }
+    }
+
     const existed = messageById.has(msg.id);
     messageById.set(msg.id, msg);
     if (!existed) {
@@ -723,6 +927,27 @@ export function createQuickPanelLauncher(
     }
     trimMessages();
     renderMessages();
+  }
+
+  // Message types that are ephemeral (shown as floating overlay, not in messages)
+  const EPHEMERAL_MESSAGE_TYPES = new Set(['thinking', 'tool_use', 'status']);
+
+  function shouldShowMessage(msg: AgentMessage): boolean {
+    // Only show chat messages in the message list
+    return msg.messageType === 'chat';
+  }
+
+  function updateEphemeralOverlay(): void {
+    // Text update is handled in renderMessages - this just triggers a re-render
+    // when ephemeral content changes
+    if (ephemeralOverlayEl && messagesScrollEl) {
+      renderMessages();
+    }
+  }
+
+  function clearEphemeral(): void {
+    currentEphemeralMsg = null;
+    updateEphemeralOverlay();
   }
 
   function trimMessages(): void {
@@ -738,12 +963,44 @@ export function createQuickPanelLauncher(
 
     const frag = document.createDocumentFragment();
 
-    for (const id of messageOrder) {
-      const msg = messageById.get(id);
-      if (!msg) continue;
-      frag.appendChild(renderMessageCard(msg));
+    // Find the last user message index to insert ephemeral after it
+    let lastUserMsgIndex = -1;
+    for (let i = messageOrder.length - 1; i >= 0; i--) {
+      const msg = messageById.get(messageOrder[i]);
+      if (msg?.role === 'user') {
+        lastUserMsgIndex = i;
+        break;
+      }
     }
 
+    // Render messages in chronological order, inserting ephemeral after last user message
+    for (let i = 0; i < messageOrder.length; i++) {
+      const id = messageOrder[i];
+      const msg = messageById.get(id);
+      if (!msg) continue;
+
+      frag.appendChild(renderMessageCard(msg));
+
+      // Insert ephemeral overlay AFTER the last user message
+      if (i === lastUserMsgIndex && ephemeralOverlayEl) {
+        const textSpan = ephemeralOverlayEl.querySelector(
+          '.qp-ephemeral-text',
+        ) as HTMLSpanElement | null;
+        if (currentEphemeralMsg && isBusy()) {
+          const text = resolveMessageText(currentEphemeralMsg);
+          if (textSpan) {
+            textSpan.textContent = text.slice(0, 100) + (text.length > 100 ? '...' : '');
+          }
+          ephemeralOverlayEl.dataset.visible = 'true';
+          frag.appendChild(ephemeralOverlayEl);
+        } else {
+          ephemeralOverlayEl.dataset.visible = 'false';
+          if (textSpan) textSpan.textContent = '';
+        }
+      }
+    }
+
+    // Render queued messages at the end (they're user messages being sent)
     for (const queued of messageQueue) {
       frag.appendChild(renderQueuedCard(queued));
     }
@@ -814,9 +1071,10 @@ export function createQuickPanelLauncher(
     card.className = 'qp-quick-launcher-msg';
     card.dataset.role = role;
 
-    const text = document.createElement('div');
-    text.className = 'qp-quick-launcher-msg-text';
-    text.textContent = resolveMessageText(message);
+    const textContainer = document.createElement('div');
+    textContainer.className = 'qp-quick-launcher-msg-text';
+    const renderer = createMarkdownRenderer(textContainer);
+    renderer.setContent(resolveMessageText(message), isStreamingMessage(message));
 
     const meta = document.createElement('div');
     meta.className = 'qp-quick-launcher-msg-meta';
@@ -838,10 +1096,12 @@ export function createQuickPanelLauncher(
 
     const right = document.createElement('span');
     const engineName = normalizeText(branding.engineDisplayName) || 'Agent';
-    right.textContent = role === 'user' ? 'Me' : role === 'assistant' ? engineName : role;
+    // Hide 'tool' role label - only show user/assistant distinctions
+    const roleLabel = role === 'user' ? 'Me' : role === 'assistant' ? engineName : '';
+    right.textContent = roleLabel;
 
     meta.append(left, right);
-    card.append(text, meta);
+    card.append(textContainer, meta);
     return card;
   }
 
@@ -866,6 +1126,8 @@ export function createQuickPanelLauncher(
           unsubscribeRequestEvents = null;
           setBusyUi(false);
           updateButtons();
+          // Clear ephemeral overlay when done
+          clearEphemeral();
           void processQueue();
         }
         break;
@@ -878,6 +1140,8 @@ export function createQuickPanelLauncher(
         setBusyUi(false);
         updateStatus();
         updateButtons();
+        // Clear ephemeral overlay on error
+        clearEphemeral();
         void processQueue();
         break;
       }
@@ -1099,6 +1363,18 @@ export function createQuickPanelLauncher(
     messagesScrollEl = scroll;
 
     messagesWrapEl.appendChild(scroll);
+
+    // Ephemeral overlay (for thoughts, tool calls, status) - inserted in scroll area
+    ephemeralOverlayEl = document.createElement('div');
+    ephemeralOverlayEl.className = 'qp-ephemeral-overlay';
+    ephemeralOverlayEl.dataset.visible = 'false';
+    // Add a dot element for the pulsing animation
+    const dot = document.createElement('span');
+    dot.className = 'qp-ephemeral-dot';
+    ephemeralOverlayEl.appendChild(dot);
+    const textSpan = document.createElement('span');
+    textSpan.className = 'qp-ephemeral-text';
+    ephemeralOverlayEl.appendChild(textSpan);
 
     // Input wrapper
     inputWrapEl = document.createElement('div');

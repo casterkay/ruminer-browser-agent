@@ -465,8 +465,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.deepseek.scanner.v1',
       name: 'DeepSeek – Import All',
-      description:
-        'Scans DeepSeek conversations via DOM and enqueues per-conversation ingestion runs (dialog only).',
+      description: 'Scans DeepSeek conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
       nodes: scannerNodes,
       edges: [
@@ -481,7 +480,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
     createBaseFlow(nowIso, {
       id: 'ruminer.deepseek.conversation_ingest.v1',
       name: 'DeepSeek – Import Current Conversation',
-      description: 'Imports a single DeepSeek conversation into EMOS (dialog only).',
+      description: 'Imports the DeepSeek conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',
       nodes: ingestNodes,
       edges: [

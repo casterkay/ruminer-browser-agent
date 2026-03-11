@@ -802,7 +802,9 @@ const currentOpenClawAgentId = computed(() => {
 function ensureOpenClawAgentOption(id: string): void {
   const trimmed = id.trim();
   if (!trimmed) return;
-  if (openclawAgents.value.some((a) => a.id === trimmed)) return;
+  // Find existing agent to preserve workspaceDir if already present
+  const existing = openclawAgents.value.find((a) => a.id === trimmed);
+  if (existing) return; // Already exists
   openclawAgents.value = [{ id: trimmed }, ...openclawAgents.value];
 }
 
@@ -812,7 +814,10 @@ function normalizeOpenClawAgents(list: OpenClawAgentDto[]): OpenClawAgentDto[] {
     const id = typeof entry?.id === 'string' ? entry.id.trim() : '';
     if (!id) continue;
     const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
-    map.set(id, name ? { id, name } : { id });
+    const workspaceDir = typeof entry?.workspaceDir === 'string' ? entry.workspaceDir.trim() : '';
+    const agent: OpenClawAgentDto = name ? { id, name } : { id };
+    if (workspaceDir) agent.workspaceDir = workspaceDir;
+    map.set(id, agent);
   }
   if (!map.has('main')) {
     map.set('main', { id: 'main', name: 'main' });
@@ -1652,25 +1657,28 @@ function injectToolRestrictions(
           'Ask the user to enable a tool in Ruminer → Tools before using it.',
         ].join('\n');
 
-  // Do NOT add extra "User request:" wrapper here; the base instruction may
-  // already be structured (e.g., WebEditorSelectionContext).
+  if (!('chrome_read_page' in disabledTools)) {
+    instruction = `If the user's message has any relevancy to the page at all, and you have not the current page content in your context, **USE THE \`chrome_read_page\` tool** to read it. **NEVER** ask for page screenshot or URL from the user before you have read the current page!\n\n${instruction}`;
+  }
   return `${restrictionText}\n\n${instruction}`;
 }
 
 function injectRuminateRagGuidance(instruction: string): string {
   const guidance = [
     'Ruminate mode (RAG):',
-    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user’s own past messages.",
+    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user's own past messages.",
     '- Always set `user_id: "me"`.',
     '- Use the retrieved memories to ground your response when relevant.',
     '',
-    'When you use any memory in your answer, provide citations by message IDs in exactly this format:',
+    'When you use any memory in your answer, provide citations in exactly this format:',
+    '```',
     'some text [^1]. some text [^1,2]...',
-    '',
-    '[^1]: message-id-1',
-    '[^2]: message-id-2',
-    '[^...]: message-id-...',
+    '---',
+    '[^1]: {sender}, {time}: {summary}',
+    '[^2]: {sender}, {time}: {summary}',
+    '```',
     '**(MESSAGE ENDS HERE!)**',
+    'Example: [^1]: user_123,2024-01-15T10:30:00: Discussed coffee choices',
   ].join('\n');
 
   return `${guidance}\n\n${instruction}`;

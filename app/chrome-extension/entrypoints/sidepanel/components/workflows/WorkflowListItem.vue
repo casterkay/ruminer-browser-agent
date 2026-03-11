@@ -9,6 +9,12 @@
       <!-- Title and description -->
       <div class="workflow-info">
         <div class="flex items-center gap-2">
+          <img
+            v-if="platformIcon"
+            :src="`/platform-icons/${platformIcon.file}`"
+            :alt="platformIcon.alt"
+            class="workflow-platform-icon mb-0.5"
+          />
           <div class="workflow-name" :style="nameStyle">{{ flow.name || 'Untitled' }}</div>
           <span v-if="props.isLaunching" class="workflow-status-badge workflow-status-launching">
             <span
@@ -39,47 +45,128 @@
         >
           {{ props.activeRunProgress }}
         </div>
-        <!-- Tags -->
-        <div v-if="hasTags" class="workflow-tags">
-          <span v-if="flow.meta?.domain" class="workflow-tag" :style="tagDomainStyle">
-            {{ flow.meta.domain }}
-          </span>
-          <span
-            v-for="tag in flow.meta?.tags || []"
-            :key="tag"
-            class="workflow-tag"
-            :style="tagStyle"
+        <!-- Chips row: schedule + tags -->
+        <div class="workflow-chips">
+          <!-- Schedule chip -->
+          <button
+            class="workflow-schedule-chip"
+            :class="{
+              'workflow-schedule-chip-active': scheduleEnabled,
+              'workflow-schedule-chip-disabled': isIngestor,
+            }"
+            :style="isIngestor ? scheduleChipDisabledStyle : scheduleChipStyle"
+            :disabled="isIngestor"
+            @click.stop="isIngestor ? null : toggleScheduleMenu()"
           >
-            {{ tag }}
-          </span>
-        </div>
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            <span>{{ scheduleChipLabel }}</span>
+            <svg
+              v-if="!isIngestor"
+              class="schedule-chevron"
+              :class="{ 'schedule-chevron-open': showScheduleMenu }"
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
 
-        <!-- Schedule (cron presets) -->
-        <div
-          class="mt-2 flex items-center gap-2 text-xs"
-          :style="{ color: 'var(--ac-text-subtle)' }"
-        >
-          <span class="flex-shrink-0">Schedule</span>
-          <select
-            class="px-2 py-1 rounded"
-            :style="scheduleSelectStyle"
-            :value="schedulePreset"
-            @change="onSchedulePresetChange(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="off">Off</option>
-            <option value="every6h">Every 6h</option>
-            <option value="daily2am">Daily 2am</option>
-            <option v-if="schedulePreset === 'custom'" value="custom" disabled>Custom</option>
-          </select>
-          <label class="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              class="workflow-checkbox"
-              :checked="scheduleEnabled"
-              @change="onScheduleEnabledChange(($event.target as HTMLInputElement).checked)"
-            />
-            <span>Enabled</span>
-          </label>
+            <!-- Schedule dropdown menu -->
+            <Transition name="menu-fade">
+              <div
+                v-if="showScheduleMenu && !isIngestor"
+                class="schedule-menu"
+                :style="menuStyle"
+                @click.stop
+              >
+                <button
+                  class="schedule-menu-item"
+                  :class="{ 'schedule-menu-item-active': schedulePreset === 'off' }"
+                  :style="schedulePreset === 'off' ? menuItemActiveStyle : menuItemStyle"
+                  @click.stop="onSchedulePresetChange('off')"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  <span>Off</span>
+                </button>
+                <button
+                  class="schedule-menu-item"
+                  :class="{ 'schedule-menu-item-active': schedulePreset === 'every6h' }"
+                  :style="schedulePreset === 'every6h' ? menuItemActiveStyle : menuItemStyle"
+                  @click.stop="onSchedulePresetChange('every6h')"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  <span>Every 6h</span>
+                </button>
+                <button
+                  class="schedule-menu-item"
+                  :class="{ 'schedule-menu-item-active': schedulePreset === 'daily2am' }"
+                  :style="schedulePreset === 'daily2am' ? menuItemActiveStyle : menuItemStyle"
+                  @click.stop="onSchedulePresetChange('daily2am')"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  <span>Daily 2am</span>
+                </button>
+              </div>
+            </Transition>
+          </button>
+
+          <!-- Tags -->
+          <template v-if="hasTags">
+            <span v-if="flow.meta?.domain" class="workflow-tag" :style="tagDomainStyle">
+              {{ flow.meta.domain }}
+            </span>
+            <span
+              v-for="tag in flow.meta?.tags || []"
+              :key="tag"
+              class="workflow-tag"
+              :style="tagStyle"
+            >
+              {{ tag }}
+            </span>
+          </template>
         </div>
       </div>
 
@@ -208,8 +295,6 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
-// TODO: add icons for domains (e.g. website favicon)
-
 interface FlowLite {
   id: string;
   name: string;
@@ -240,6 +325,7 @@ const emit = defineEmits<{
 
 const showActions = ref(false);
 const showMoreMenu = ref(false);
+const showScheduleMenu = ref(false);
 
 type SchedulePreset = 'off' | 'every6h' | 'daily2am' | 'custom';
 
@@ -259,7 +345,28 @@ function presetForCron(cron: string | undefined): SchedulePreset {
   return 'custom';
 }
 
+const scheduleChipLabel = computed(() => {
+  switch (schedulePreset.value) {
+    case 'off':
+      return 'Schedule: Off';
+    case 'every6h':
+      return 'Every 6h';
+    case 'daily2am':
+      return 'Daily 2am';
+    case 'custom':
+      return 'Custom';
+    default:
+      return 'Schedule';
+  }
+});
+
 function applyScheduleFromTrigger(): void {
+  // If trigger is disabled, always show 'off' regardless of cron value
+  if (props.scheduleTrigger?.enabled !== true) {
+    schedulePreset.value = 'off';
+    scheduleEnabled.value = false;
+    return;
+  }
   schedulePreset.value = presetForCron(props.scheduleTrigger?.cron);
   scheduleEnabled.value = props.scheduleTrigger?.enabled === true;
 }
@@ -299,21 +406,41 @@ function onSchedulePresetChange(nextPresetRaw: string): void {
   emitScheduleChange({ cron: CRON_PRESETS[nextPreset], enabled: true });
 }
 
-function onScheduleEnabledChange(enabled: boolean): void {
-  scheduleEnabled.value = enabled;
-
-  let cron: string | null = props.scheduleTrigger?.cron ?? null;
-  if (!cron && enabled) {
-    // Enabling from scratch: pick a reasonable default.
-    schedulePreset.value = 'daily2am';
-    cron = CRON_PRESETS.daily2am;
-  }
-
-  emitScheduleChange({ cron, enabled });
-}
-
 const hasTags = computed(() => {
   return props.flow.meta?.domain || (props.flow.meta?.tags?.length ?? 0) > 0;
+});
+
+const isIngestor = computed(() => {
+  const tags = props.flow.meta?.tags || [];
+  return tags.some((tag) => tag.toLowerCase() === 'ingestor');
+});
+
+// Platform icon detection from tags or domain
+const PLATFORM_ICONS: Record<string, { file: string; alt: string }> = {
+  chatgpt: { file: 'chatgpt.svg', alt: 'ChatGPT' },
+  gemini: { file: 'gemini.svg', alt: 'Gemini' },
+  claude: { file: 'claude.png', alt: 'Claude' },
+  deepseek: { file: 'deepseek.svg', alt: 'DeepSeek' },
+};
+
+const platformIcon = computed(() => {
+  const tags = props.flow.meta?.tags || [];
+  const domain = props.flow.meta?.domain?.toLowerCase();
+
+  // Check tags first
+  for (const tag of tags) {
+    const lowerTag = tag.toLowerCase();
+    if (PLATFORM_ICONS[lowerTag]) {
+      return PLATFORM_ICONS[lowerTag];
+    }
+  }
+
+  // Check domain
+  if (domain && PLATFORM_ICONS[domain]) {
+    return PLATFORM_ICONS[domain];
+  }
+
+  return null;
 });
 
 // Close menu when clicking outside
@@ -321,6 +448,13 @@ function handleClickOutside(e: MouseEvent) {
   if (showMoreMenu.value) {
     showMoreMenu.value = false;
   }
+  if (showScheduleMenu.value) {
+    showScheduleMenu.value = false;
+  }
+}
+
+function toggleScheduleMenu() {
+  showScheduleMenu.value = !showScheduleMenu.value;
 }
 
 onMounted(() => {
@@ -395,6 +529,25 @@ const scheduleSelectStyle = computed(() => ({
   border: '1px solid var(--ac-border, #e7e5e4)',
 }));
 
+const scheduleChipStyle = computed(() => ({
+  backgroundColor: scheduleEnabled.value ? 'rgba(217, 119, 87, 0.15)' : 'rgba(59, 130, 246, 0.12)',
+  color: scheduleEnabled.value ? 'var(--ac-accent, #d97757)' : 'var(--ac-primary, #3b82f6)',
+  borderRadius: '99px',
+}));
+
+const scheduleChipDisabledStyle = computed(() => ({
+  backgroundColor: 'var(--ac-surface-muted, #f2f0eb)',
+  color: 'var(--ac-text-disabled, #a8a8a8)',
+  borderRadius: '99px',
+  cursor: 'not-allowed',
+  opacity: 0.7,
+}));
+
+const menuItemActiveStyle = computed(() => ({
+  backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  color: 'var(--ac-primary, #3b82f6)',
+}));
+
 const menuStyle = computed(() => ({
   backgroundColor: 'var(--ac-surface, #ffffff)',
   border: 'var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4)',
@@ -458,6 +611,14 @@ const menuItemDangerStyle = computed(() => ({
   word-break: break-word;
 }
 
+.workflow-platform-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
 .workflow-desc {
   font-size: 13px;
   line-height: 1.4;
@@ -470,18 +631,97 @@ const menuItemDangerStyle = computed(() => ({
   overflow: hidden;
 }
 
+.workflow-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .workflow-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.workflow-tag {
-  padding: 2px 8px;
-  font-size: 11px;
+/* Schedule chip */
+.workflow-schedule-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
   font-weight: 500;
-  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 120ms) ease;
   white-space: nowrap;
+}
+
+.workflow-schedule-chip:hover {
+  filter: brightness(0.95);
+}
+
+.workflow-schedule-chip-active {
+  font-weight: 600;
+}
+
+.workflow-schedule-chip-disabled {
+  cursor: not-allowed;
+}
+
+.schedule-chevron {
+  transition: transform var(--ac-motion-fast, 120ms) ease;
+}
+
+.schedule-chevron-open {
+  transform: rotate(180deg);
+}
+
+/* Schedule dropdown menu */
+.schedule-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 140px;
+  padding: 4px;
+  z-index: 50;
+}
+
+.schedule-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: var(--ac-radius-button, 8px);
+  cursor: pointer;
+  transition: background-color var(--ac-motion-fast, 120ms) ease;
+  text-align: left;
+}
+
+.schedule-menu-item:hover {
+  background-color: var(--ac-hover-bg, #f5f5f4);
+}
+
+.schedule-menu-item-active {
+  font-weight: 500;
+}
+
+.workflow-tag {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 99px;
+  white-space: nowrap;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
 .workflow-actions {

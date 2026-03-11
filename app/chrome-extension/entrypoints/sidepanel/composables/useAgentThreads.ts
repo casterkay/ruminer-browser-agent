@@ -22,7 +22,7 @@ export type AgentThreadState =
   | 'cancelled';
 
 /** Tool kinds for presentation */
-export type ToolKind = 'grep' | 'read' | 'edit' | 'run' | 'plan' | 'generic';
+export type ToolKind = 'grep' | 'read' | 'edit' | 'run' | 'plan' | 'recall' | 'generic';
 
 /** Tool severity for styling */
 export type ToolSeverity = 'info' | 'success' | 'warning' | 'error';
@@ -180,7 +180,9 @@ function extractAfterPrefix(content: string, prefix: string): string | undefined
  */
 function summarizeOneLine(content: string): string {
   const line = content.split('\n')[0]?.trim() ?? '';
-  return line.length > 60 ? line.slice(0, 57) + '...' : line;
+  // Strip "Using tool: " prefix if present
+  const cleaned = line.replace(/^Using tool:\s*/i, '');
+  return cleaned.length > 60 ? cleaned.slice(0, 57) + '...' : cleaned;
 }
 
 /**
@@ -344,6 +346,27 @@ function presentTool(msg: AgentMessage): ToolPresentation {
       details,
       engine,
       severity: isError ? 'error' : phase === 'result' ? 'success' : 'info',
+      phase,
+      raw: { content: msg.content, metadata: meta },
+    };
+  }
+
+  // Rule 6a: EMOS memory tools (must be checked before generic search rule)
+  // Handles both direct names (emos_*) and MCP-prefixed names (mcp__*__emos_*)
+  const normalizedToolName = normalize(toolName);
+  if (normalizedToolName.startsWith('emos_') || /(?:^|__)emos_/.test(normalizedToolName)) {
+    const queryFromContent = extractAfterPrefix(msg.content, 'Searching:');
+    const displayPattern = pattern || queryFromContent?.trim();
+    const shortName = normalizedToolName.replace(/^.*?emos_/, 'emos_').replace(/_/g, ' ');
+    return {
+      kind: 'recall',
+      label: 'Recall',
+      title: displayPattern || titleCase(shortName.replace(/^emos /, '')),
+      pattern: displayPattern,
+      query: displayPattern,
+      details: phase === 'result' ? msg.content : undefined,
+      engine,
+      severity: isError ? 'error' : 'info',
       phase,
       raw: { content: msg.content, metadata: meta },
     };

@@ -3,26 +3,32 @@
     <!-- Content based on item kind -->
     <TimelineUserPromptStep v-if="item.kind === 'user_prompt'" :item="item" />
     <TimelineNarrativeStep v-else-if="item.kind === 'assistant_text'" :item="item" />
-    <TimelineToolCallStep v-else-if="item.kind === 'tool_use'" :item="item" />
-    <TimelineToolResultCardStep v-else-if="item.kind === 'tool_result'" :item="item" />
-    <TimelineStatusStep
-      v-else-if="item.kind === 'status'"
+    <TimelineToolCallStep
+      v-else-if="item.kind === 'tool_use'"
       :item="item"
-      :hide-icon="showLoadingIcon"
+      :result-item="resultItem"
     />
+    <!-- Only render tool_result card for standalone results (not paired with tool_use) -->
+    <TimelineToolResultCardStep
+      v-else-if="item.kind === 'tool_result' && !resultItem"
+      :item="item"
+    />
+    <TimelineStatusStep v-else-if="item.kind === 'status'" :item="item" />
   </div>
 </template>
 
 <script lang="ts" setup>
 import type { TimelineItem } from '../../composables/useAgentThreads';
-import TimelineUserPromptStep from './timeline/TimelineUserPromptStep.vue';
 import TimelineNarrativeStep from './timeline/TimelineNarrativeStep.vue';
+import TimelineStatusStep from './timeline/TimelineStatusStep.vue';
 import TimelineToolCallStep from './timeline/TimelineToolCallStep.vue';
 import TimelineToolResultCardStep from './timeline/TimelineToolResultCardStep.vue';
-import TimelineStatusStep from './timeline/TimelineStatusStep.vue';
+import TimelineUserPromptStep from './timeline/TimelineUserPromptStep.vue';
 
-const props = defineProps<{
+defineProps<{
   item: TimelineItem;
+  /** Paired tool_result item (for tool_use items with results) */
+  resultItem?: Extract<TimelineItem, { kind: 'tool_result' }>;
   /** Whether this is the last item in the timeline */
   isLast?: boolean;
 }>();
