@@ -302,8 +302,8 @@ Extend RR‑V3 tests in `app/chrome-extension/tests/record-replay-v3/`:
 ### C3) Implement ChatGPT built-in flows
 
 - Two FlowV3 definitions with stable IDs:
-  1. `ruminer.chatgpt.scanner.v1` (“ChatGPT – Import All”): `openTab(active:false)` → `script` (ISOLATED, backend API import) → `closeTab`
-  2. `ruminer.chatgpt.conversation_ingest.v1` (“ChatGPT – Import Current Tab”): `script` (ISOLATED, backend API import current conversation)
+  1. `chatgpt.conversation_scan.v1` (“ChatGPT – Import All”): `openTab(active:false)` → `script` (ISOLATED, backend API import) → `closeTab`
+  2. `chatgpt.conversation_ingest.v1` (“ChatGPT – Import Current Tab”): `script` (ISOLATED, backend API import current conversation)
 
 ### C4) Tests
 

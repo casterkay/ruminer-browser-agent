@@ -44,7 +44,7 @@ describe('ingest workflow rpc (builtin flow ensure failures)', () => {
     vi.clearAllMocks();
     (chrome.runtime.onMessage.addListener as any).mockClear?.();
 
-    const flowId = 'ruminer.chatgpt.conversation_ingest.v1';
+    const flowId = 'chatgpt.conversation_ingest.v1';
 
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
       if (
@@ -82,7 +82,7 @@ describe('ingest workflow rpc (builtin flow ensure failures)', () => {
 
     (ensureBuiltinFlows as any).mockRejectedValueOnce(new Error('boom'));
 
-    const flowId = 'ruminer.chatgpt.conversation_ingest.v1';
+    const flowId = 'chatgpt.conversation_ingest.v1';
     const conversationId = `c_builtins_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     const bad = (await callOnMessage(listener, {

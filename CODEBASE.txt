@@ -263,8 +263,13 @@ app/
 │   │   │   ├── 128.png
 │   │   │   ├── 48.png
 │   │   │   └── icon.svg
-│   │   └── libs
-│   │       └── ort.min.js
+│   │   ├── libs
+│   │   │   └── ort.min.js
+│   │   └── platform-icons
+│   │       ├── chatgpt.svg
+│   │       ├── claude.png
+│   │       ├── deepseek.svg
+│   │       └── gemini.svg
 │   ├── README.md
 │   ├── shared
 │   │   ├── element-picker
@@ -433,4 +438,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 310 files
+100 directories, 314 files

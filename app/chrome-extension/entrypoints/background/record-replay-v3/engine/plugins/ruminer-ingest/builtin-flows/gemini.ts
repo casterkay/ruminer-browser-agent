@@ -12,8 +12,8 @@ const GEMINI_DEFAULT_REQUIRED_TOOLS = [
 const GEMINI_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'gemini';
-  const FLOW_ID = 'ruminer.gemini.conversation_scan.v1';
-  const INGEST_FLOW_ID = 'ruminer.gemini.conversation_ingest.v1';
+  const FLOW_ID = 'gemini.conversation_scan.v1';
+  const INGEST_FLOW_ID = 'gemini.conversation_ingest.v1';
   const TAIL_SIZE = 6;
 
   const runId = typeof __rr_v3_runId === 'string' && __rr_v3_runId.trim() ? __rr_v3_runId.trim() : null;
@@ -451,7 +451,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
 
   return [
     createBaseFlow(nowIso, {
-      id: 'ruminer.gemini.conversation_scan.v1',
+      id: 'gemini.conversation_scan.v1',
       name: 'Gemini – Import All',
       description: 'Scans Gemini conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
@@ -466,7 +466,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
       policy: { runTimeoutMs: 600_000 },
     }),
     createBaseFlow(nowIso, {
-      id: 'ruminer.gemini.conversation_ingest.v1',
+      id: 'gemini.conversation_ingest.v1',
       name: 'Gemini – Import Current Conversation',
       description: 'Imports the Gemini conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',

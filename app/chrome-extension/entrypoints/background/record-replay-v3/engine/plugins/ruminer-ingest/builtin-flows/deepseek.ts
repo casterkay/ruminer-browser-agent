@@ -12,8 +12,8 @@ const DEEPSEEK_DEFAULT_REQUIRED_TOOLS = [
 const DEEPSEEK_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'deepseek';
-  const FLOW_ID = 'ruminer.deepseek.conversation_scan.v1';
-  const INGEST_FLOW_ID = 'ruminer.deepseek.conversation_ingest.v1';
+  const FLOW_ID = 'deepseek.conversation_scan.v1';
+  const INGEST_FLOW_ID = 'deepseek.conversation_ingest.v1';
   const TAIL_SIZE = 6;
 
   const runId = typeof __rr_v3_runId === 'string' && __rr_v3_runId.trim() ? __rr_v3_runId.trim() : null;
@@ -463,7 +463,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
 
   return [
     createBaseFlow(nowIso, {
-      id: 'ruminer.deepseek.conversation_scan.v1',
+      id: 'deepseek.conversation_scan.v1',
       name: 'DeepSeek – Import All',
       description: 'Scans DeepSeek conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
@@ -478,7 +478,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
       policy: { runTimeoutMs: 600_000 },
     }),
     createBaseFlow(nowIso, {
-      id: 'ruminer.deepseek.conversation_ingest.v1',
+      id: 'deepseek.conversation_ingest.v1',
       name: 'DeepSeek – Import Current Conversation',
       description: 'Imports the DeepSeek conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',

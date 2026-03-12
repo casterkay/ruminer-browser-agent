@@ -12,8 +12,8 @@ const CLAUDE_DEFAULT_REQUIRED_TOOLS = [
 const CLAUDE_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'claude';
-  const FLOW_ID = 'ruminer.claude.conversation_scan.v1';
-  const INGEST_FLOW_ID = 'ruminer.claude.conversation_ingest.v1';
+  const FLOW_ID = 'claude.conversation_scan.v1';
+  const INGEST_FLOW_ID = 'claude.conversation_ingest.v1';
   const TAIL_SIZE = 6;
 
   const runId = typeof __rr_v3_runId === 'string' && __rr_v3_runId.trim() ? __rr_v3_runId.trim() : null;
@@ -407,7 +407,7 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
 
   return [
     createBaseFlow(nowIso, {
-      id: 'ruminer.claude.conversation_scan.v1',
+      id: 'claude.conversation_scan.v1',
       name: 'Claude – Import All',
       description: 'Scans Claude conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',
@@ -422,7 +422,7 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
       policy: { runTimeoutMs: 600_000 },
     }),
     createBaseFlow(nowIso, {
-      id: 'ruminer.claude.conversation_ingest.v1',
+      id: 'claude.conversation_ingest.v1',
       name: 'Claude – Import Current Conversation',
       description: 'Imports the Claude conversation in the current tab into Ruminer.',
       entryNodeId: 'n.open_conv',

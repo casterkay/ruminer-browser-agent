@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { initIngestWorkflowRpc } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/ingest-workflow-rpc';
 import { STORAGE_KEYS } from '@/common/constants';
+import { initIngestWorkflowRpc } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/ingest-workflow-rpc';
 import { getConversationEntry } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/conversation-ledger';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 
@@ -354,7 +354,7 @@ describe('ingest workflow rpc', () => {
   });
 
   it('enqueueRuns best-effort dedupes against active queue items', async () => {
-    const flowId = 'ruminer.chatgpt.conversation_ingest.v1';
+    const flowId = 'chatgpt.conversation_ingest.v1';
     const conversationId = `c_dedupe_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     // Approve required tools so enqueueRun can queue the run in tests.
@@ -419,7 +419,7 @@ describe('ingest workflow rpc', () => {
   });
 
   it('enqueueRuns best-effort dedupes duplicates within the same request batch', async () => {
-    const flowId = 'ruminer.chatgpt.conversation_ingest.v1';
+    const flowId = 'chatgpt.conversation_ingest.v1';
     const conversationId = `c_batch_dedupe_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     // Approve required tools so enqueueRun can queue the run in tests.
