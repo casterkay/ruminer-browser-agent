@@ -104,6 +104,15 @@ async function getActiveTabUrl(): Promise<string | null> {
   }
 }
 
+async function getActiveTabId(): Promise<number | null> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return typeof tabs[0]?.id === 'number' && Number.isFinite(tabs[0].id) ? tabs[0].id : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseChatConversationId(url: string): string | null {
   if (!url) return null;
   try {
@@ -305,7 +314,8 @@ async function runFlow(flowId: string): Promise<void> {
     if (requiredTools.length === 0) {
       const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
       if (nextArgs === null) return;
-      const r = await workflows.runFlow(flowId, nextArgs);
+      const tabId = flowId.endsWith('.conversation_ingest.v1') ? await getActiveTabId() : null;
+      const r = await workflows.runFlow(flowId, nextArgs, { tabId });
       trackManualRun(r?.runId);
       return;
     }
@@ -317,7 +327,8 @@ async function runFlow(flowId: string): Promise<void> {
     if (existing?.approvedToolsHash === requiredToolsHash) {
       const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
       if (nextArgs === null) return;
-      const r = await workflows.runFlow(flowId, nextArgs);
+      const tabId = flowId.endsWith('.conversation_ingest.v1') ? await getActiveTabId() : null;
+      const r = await workflows.runFlow(flowId, nextArgs, { tabId });
       trackManualRun(r?.runId);
       return;
     }
@@ -326,7 +337,8 @@ async function runFlow(flowId: string): Promise<void> {
     if (existing && isToolListSuperset(prevTools, requiredTools)) {
       const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
       if (nextArgs === null) return;
-      const r = await workflows.runFlow(flowId, nextArgs);
+      const tabId = flowId.endsWith('.conversation_ingest.v1') ? await getActiveTabId() : null;
+      const r = await workflows.runFlow(flowId, nextArgs, { tabId });
       trackManualRun(r?.runId);
       return;
     }
@@ -356,7 +368,8 @@ async function runFlow(flowId: string): Promise<void> {
 
     const nextArgs = await maybeAddConversationUrlArg(flowId, flow, args);
     if (nextArgs === null) return;
-    const r = await workflows.runFlow(flowId, nextArgs);
+    const tabId = flowId.endsWith('.conversation_ingest.v1') ? await getActiveTabId() : null;
+    const r = await workflows.runFlow(flowId, nextArgs, { tabId });
     trackManualRun(r?.runId);
   } finally {
     const next = new Set(runningFlowIds.value);

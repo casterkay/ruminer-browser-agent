@@ -17,6 +17,7 @@ import type { DebugController, RunnerRegistry } from '../kernel/debug-controller
 import type { RunScheduler } from '../queue/scheduler';
 import type { QueueItemStatus } from '../queue/queue';
 import { enqueueRun } from '../queue/enqueue-run';
+import { ensureBuiltinFlows } from '../plugins/ruminer-ingest/builtin-flows';
 import type { TriggerManager } from '../triggers/trigger-manager';
 import {
   RR_V3_PORT_NAME,
@@ -206,6 +207,14 @@ export class RpcServer {
    * @description 委托给共享的 enqueueRun 服务
    */
   private async handleEnqueueRun(params: JsonObject | undefined): Promise<JsonValue> {
+    // Best-effort: keep code-shipped built-ins synced, even if the service worker stayed alive
+    // across extension updates (hot reload / long-lived SW).
+    try {
+      await ensureBuiltinFlows(this.storage);
+    } catch (e) {
+      console.warn('[RR-V3] ensureBuiltinFlows failed during enqueueRun:', e);
+    }
+
     const result = await enqueueRun(
       {
         storage: this.storage,
@@ -217,6 +226,7 @@ export class RpcServer {
       {
         flowId: params?.flowId as FlowId,
         startNodeId: params?.startNodeId as NodeId | undefined,
+        tabId: params?.tabId as number | undefined,
         priority: params?.priority as number | undefined,
         maxAttempts: params?.maxAttempts as number | undefined,
         args: params?.args as JsonObject | undefined,

@@ -591,10 +591,26 @@
               {{ resultModalRun.error.message }}
             </div>
 
+            <div
+              v-else-if="resultModalLatestNodeFailure"
+              class="mb-3 text-xs px-2 py-1 rounded"
+              :style="{
+                backgroundColor: 'var(--ac-danger-light, #fee2e2)',
+                color: 'var(--ac-danger, #ef4444)',
+                border: '1px solid var(--ac-border, #e5e5e5)',
+              }"
+            >
+              <div class="font-medium">Step failed</div>
+              <div class="mt-0.5">
+                {{ resultModalLatestNodeFailure.nodeId }}:
+                {{ resultModalLatestNodeFailure.message }}
+              </div>
+            </div>
+
             <!-- Ingestor result -->
             <div v-if="isIngestorResult" class="space-y-3">
               <div
-                v-if="!resultModalIngest && resultModalSessionId"
+                v-if="!resultModalIngest && resultModalSessionId && !resultModalLatestNodeFailure"
                 class="text-xs px-2 py-1 rounded"
                 :style="{
                   backgroundColor: 'var(--ac-surface-muted, #f5f5f4)',
@@ -1508,6 +1524,40 @@ const resultModalScannerConversations = computed(() =>
 const resultModalIngest = computed<any | null>(() =>
   findLatestIngestResult(resultModalEvents.value),
 );
+
+type NodeFailureLite = {
+  nodeId: string;
+  message: string;
+  code?: string;
+  decision?: string;
+  attempt?: number;
+};
+
+function extractNodeFailures(events: any[]): NodeFailureLite[] {
+  const out: NodeFailureLite[] = [];
+  for (const e of events) {
+    if (e?.type !== 'node.failed') continue;
+    const nodeId = typeof e?.nodeId === 'string' ? e.nodeId : '';
+    if (!nodeId) continue;
+    const err = e?.error;
+    const message = typeof err?.message === 'string' ? err.message : '';
+    if (!message) continue;
+    out.push({
+      nodeId,
+      message,
+      code: typeof err?.code === 'string' ? err.code : undefined,
+      decision: typeof e?.decision === 'string' ? e.decision : undefined,
+      attempt: typeof e?.attempt === 'number' ? e.attempt : undefined,
+    });
+  }
+  return out;
+}
+
+const resultModalNodeFailures = computed(() => extractNodeFailures(resultModalEvents.value));
+const resultModalLatestNodeFailure = computed(() => {
+  const list = resultModalNodeFailures.value;
+  return list.length > 0 ? list[list.length - 1] : null;
+});
 
 function ingestFieldText(value: unknown): string {
   return typeof value === 'string' ? value : '';

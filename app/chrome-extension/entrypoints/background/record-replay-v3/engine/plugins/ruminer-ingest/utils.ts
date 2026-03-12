@@ -10,6 +10,7 @@ interface ScriptArgs {
   script: string;
   input: unknown;
   vars: Record<string, JsonValue>;
+  runId?: string | null;
 }
 
 function stringifyError(error: unknown): string {
@@ -63,18 +64,26 @@ export async function runWorkflowScriptInTab(
       func: async (payload: ScriptArgs): Promise<ScriptExecutionResult> => {
         try {
           const runner = new Function(
+            '__rr_v3_runId',
             'input',
             'vars',
             'context',
             `"use strict";\n${payload.script}`,
-          ) as (input: unknown, vars: Record<string, unknown>, context: JsonObject) => unknown;
+          ) as (
+            __rr_v3_runId: string | null,
+            input: unknown,
+            vars: Record<string, unknown>,
+            context: JsonObject,
+          ) => unknown;
 
           const context: JsonObject = {
             url: window.location.href,
             title: document.title,
             timestamp: new Date().toISOString(),
           };
-          const value = await Promise.resolve(runner(payload.input, payload.vars, context));
+          const runId =
+            typeof payload.runId === 'string' && payload.runId.trim() ? payload.runId.trim() : null;
+          const value = await Promise.resolve(runner(runId, payload.input, payload.vars, context));
           return { ok: true, value };
         } catch (error) {
           return { ok: false, error: stringifyError(error) };

@@ -50,6 +50,8 @@ export interface EnqueueRunInput {
   flowId: FlowId;
   /** 起始节点 ID (可选，默认使用 Flow 的 entryNodeId) */
   startNodeId?: NodeId;
+  /** Bind run to a specific tab (manual triggers, etc.) */
+  tabId?: number;
   /** 优先级 (默认 0) */
   priority?: number;
   /** 最大尝试次数 (默认 1) */
@@ -109,6 +111,18 @@ function validateInt(
   return intValue;
 }
 
+function validateOptionalTabId(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('tabId must be a finite number');
+  }
+  const tabId = Math.floor(value);
+  if (tabId <= 0) {
+    throw new Error('tabId must be a positive integer');
+  }
+  return tabId;
+}
+
 /**
  * 计算 Run 在队列中的位置
  * @description 按调度顺序: priority DESC + createdAt ASC
@@ -160,6 +174,7 @@ export async function enqueueRun(
   // 参数校验
   const priority = validateInt(input.priority, 0, 'priority');
   const maxAttempts = validateInt(input.maxAttempts, 1, 'maxAttempts', { min: 1 });
+  const tabId = validateOptionalTabId(input.tabId);
 
   // 验证 Flow 存在
   const flow = await deps.storage.flows.get(flowId);
@@ -252,6 +267,7 @@ export async function enqueueRun(
     updatedAt: ts,
     attempt: 0,
     maxAttempts,
+    ...(tabId ? { tabId } : {}),
     args: input.args,
     trigger: input.trigger,
     debug: input.debug,
@@ -264,6 +280,7 @@ export async function enqueueRun(
   await deps.storage.queue.enqueue({
     id: runId,
     flowId,
+    ...(tabId ? { tabId } : {}),
     priority,
     maxAttempts,
     args: input.args,

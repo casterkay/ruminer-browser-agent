@@ -163,6 +163,40 @@ async function notify(title: string, message: string): Promise<void> {
 let fallbackStoragePort: ReturnType<typeof createStoragePort> | null = null;
 let fallbackEventsBus: StorageBackedEventsBus | null = null;
 let ensureBuiltinsOnce: Promise<void> | null = null;
+const warnedMissingRunId = new Set<string>();
+const warnedInferredRunId = new Set<string>();
+const warnedAppendRunLogFailure = new Set<string>();
+
+type SenderTabLite = { id?: number } | null | undefined;
+
+async function inferRunIdFromSenderTab(tab: SenderTabLite): Promise<string> {
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number' || !Number.isFinite(tabId)) return '';
+
+  try {
+    const rt = getV3Runtime();
+    const storage =
+      rt?.storage ?? fallbackStoragePort ?? (fallbackStoragePort = createStoragePort());
+    const runs = await storage.runs.list();
+
+    const candidates = runs
+      .filter((r) => r.tabId === tabId)
+      .filter((r) => r.status === 'queued' || r.status === 'running' || r.status === 'paused');
+
+    if (candidates.length === 0) return '';
+
+    candidates.sort((a, b) => {
+      const aT = (a.updatedAt ?? 0) || (a.startedAt ?? 0) || (a.createdAt ?? 0);
+      const bT = (b.updatedAt ?? 0) || (b.startedAt ?? 0) || (b.createdAt ?? 0);
+      return bT - aT;
+    });
+
+    const best = candidates[0];
+    return typeof best?.id === 'string' ? best.id.trim() : '';
+  } catch {
+    return '';
+  }
+}
 
 async function ensureBuiltins(
   storage: Pick<ReturnType<typeof createStoragePort>, 'flows'>,
@@ -207,8 +241,17 @@ async function appendRunLog(
       message,
       ...(data !== undefined ? { data: data as any } : {}),
     });
-  } catch {
-    // ignore
+  } catch (e) {
+    // Don’t spam logs; warn once per run.
+    if (!warnedAppendRunLogFailure.has(rid)) {
+      warnedAppendRunLogFailure.add(rid);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('[ingest-workflow-rpc] appendRunLog failed:', {
+        runId: rid,
+        message,
+        error: msg,
+      });
+    }
   }
 }
 
@@ -258,7 +301,11 @@ async function handleEnqueueRuns(req: EnqueueRunsRequest): Promise<unknown> {
     .filter((x) => Boolean(x.flowId));
 
   // Reject obvious self-enqueue / scanner-enqueue mistakes.
-  if (cleaned.some((x) => x.flowId.includes('.scanner.') || x.flowId.endsWith('.scanner.v1'))) {
+  if (
+    cleaned.some(
+      (x) => x.flowId.includes('.scanner.') || x.flowId.endsWith('.conversation_scan.v1'),
+    )
+  ) {
     return { ok: false, error: 'Refusing to enqueue scanner flows' };
   }
 
@@ -362,14 +409,60 @@ function ensurePlatform(value: unknown): IngestConversationRequest['platform'] |
   return null;
 }
 
-async function handleIngestConversation(req: IngestConversationRequest): Promise<unknown> {
+async function handleIngestConversation(
+  req: IngestConversationRequest,
+  sender?: chrome.runtime.MessageSender,
+): Promise<unknown> {
   const platform = ensurePlatform(req.platform);
   if (!platform) return { ok: false, error: 'Missing/invalid platform' };
 
   const conversationId = trimOrNull(req.conversationId);
   if (!conversationId) return { ok: false, error: 'Missing conversationId' };
 
-  const runId = toTrimmedString(req.runId);
+  const requestedRunId = toTrimmedString(req.runId);
+  let runId = requestedRunId;
+  let inferredRunId = false;
+  if (!runId) {
+    runId = await inferRunIdFromSenderTab(sender?.tab);
+    inferredRunId = Boolean(runId);
+
+    if (!runId) {
+      const key = `${platform}:${conversationId}`;
+      if (!warnedMissingRunId.has(key)) {
+        warnedMissingRunId.add(key);
+        console.warn('[ingest-workflow-rpc] Missing runId for ingestConversation message:', {
+          platform,
+          conversationId,
+          senderTabId: sender?.tab?.id,
+          senderUrl: sender?.url,
+        });
+      }
+    } else {
+      if (!warnedInferredRunId.has(runId)) {
+        warnedInferredRunId.add(runId);
+        console.warn('[ingest-workflow-rpc] Inferred missing runId from sender tab:', {
+          platform,
+          conversationId,
+          senderTabId: sender?.tab?.id,
+          runId,
+        });
+      }
+    }
+  }
+
+  try {
+    console.debug('[ingest-workflow-rpc] ingestConversation', {
+      runId: runId || null,
+      inferredRunId,
+      platform,
+      conversationId,
+      senderTabId: sender?.tab?.id,
+      senderUrl: sender?.url,
+      messageCount: Array.isArray(req.messages) ? req.messages.length : null,
+    });
+  } catch {
+    // ignore
+  }
 
   const settings = await getEmosSettings();
   if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
@@ -381,9 +474,13 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
   const sourceUrl = trimOrNull(req.conversationUrl);
 
   const messages = Array.isArray(req.messages) ? req.messages : [];
-  const normalizedMessages = messages
+  const normalizedMessages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    createTime: string | null;
+  }> = messages
     .map((m) => ({
-      role: m?.role === 'assistant' ? 'assistant' : 'user',
+      role: (m?.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
       content: normalizeContent(m?.content),
       createTime: trimOrNull(m?.createTime),
     }))
@@ -397,6 +494,7 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
         conversationTitle: groupName,
         conversationUrl: sourceUrl,
         sessionId: groupId,
+        ...(inferredRunId ? { inferredRunId: true } : {}),
         emos: {
           upserted: 0,
           skipped: 0,
@@ -496,6 +594,7 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
         conversationTitle: groupName,
         conversationUrl: sourceUrl,
         sessionId: groupId,
+        ...(inferredRunId ? { inferredRunId: true } : {}),
         emos: resultPayload,
         sessionSaveOk: false,
         sessionSaveError: errors[0] ?? 'Ingest failed',
@@ -511,6 +610,15 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
     };
   }
 
+  const emosResult = {
+    upserted,
+    skipped: startIndex,
+    failed: 0,
+    total: normalizedMessages.length,
+    startIndex,
+    errors: [],
+  };
+
   const nextOk: ConversationLedgerEntry = {
     group_id: groupId,
     platform,
@@ -524,19 +632,9 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
     last_ingested_at: nowIso,
     last_error: null,
   };
-  await upsertConversationEntry(nextOk);
-
-  const emosResult = {
-    upserted,
-    skipped: startIndex,
-    failed: 0,
-    total: normalizedMessages.length,
-    startIndex,
-    errors: [],
-  };
 
   // Persist ingested conversations as agent sessions in native-server (Imported Conversations project).
-  // If this fails, treat the workflow run as failed so the user sees the issue and can retry.
+  // Only mark ledger as "ingested" after session save succeeds to preserve retry semantics.
   let sessionSaveOk = false;
   let sessionSaveError: string | null = null;
   let sessionSaveResult: { projectId: string; sessionId: string; messageCount: number } | null =
@@ -583,6 +681,25 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
     sessionSaveError = e instanceof Error ? e.message : String(e);
   }
 
+  if (!sessionSaveOk) {
+    const nextFailed: ConversationLedgerEntry = {
+      group_id: groupId,
+      platform,
+      conversation_id: conversationId,
+      conversation_url: sourceUrl,
+      conversation_title: groupName,
+      status: 'failed',
+      message_hashes: existingHashes,
+      first_seen_at: existing?.first_seen_at ?? nowIso,
+      last_seen_at: nowIso,
+      last_ingested_at: existing?.last_ingested_at ?? null,
+      last_error: sessionSaveError || 'Failed to save session',
+    };
+    await upsertConversationEntry(nextFailed);
+  } else {
+    await upsertConversationEntry(nextOk);
+  }
+
   if (runId) {
     await appendRunLog(runId, sessionSaveOk ? 'info' : 'error', 'ruminer.ingest.result', {
       platform,
@@ -590,6 +707,7 @@ async function handleIngestConversation(req: IngestConversationRequest): Promise
       conversationTitle: groupName,
       conversationUrl: sourceUrl,
       sessionId: groupId,
+      ...(inferredRunId ? { inferredRunId: true } : {}),
       ...(sessionSaveResult ? { session: sessionSaveResult } : {}),
       emos: emosResult,
       sessionSaveOk,
@@ -625,7 +743,7 @@ function isSupportedWorkflowRpcRequest(message: unknown): message is SupportedWo
 }
 
 export function initIngestWorkflowRpc(): void {
-  chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (!isSupportedWorkflowRpcRequest(message)) {
       return false;
     }
@@ -658,7 +776,7 @@ export function initIngestWorkflowRpc(): void {
           return handleEnqueueRuns(req);
 
         case 'ruminer.ingest.ingestConversation':
-          return handleIngestConversation(req);
+          return handleIngestConversation(req, sender);
 
         default:
           return { ok: false, error: `Unknown message type: ${(req as any).type}` };

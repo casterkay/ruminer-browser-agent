@@ -26,6 +26,7 @@ export const extractListNodeDefinition: NodeDefinition<'ruminer.extract_list', E
         script: node.config.script,
         input,
         vars: ctx.vars,
+        runId: ctx.runId,
       });
 
       if (!scriptResult.ok) {

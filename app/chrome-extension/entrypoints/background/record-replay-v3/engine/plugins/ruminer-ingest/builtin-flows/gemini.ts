@@ -12,7 +12,7 @@ const GEMINI_DEFAULT_REQUIRED_TOOLS = [
 const GEMINI_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'gemini';
-  const FLOW_ID = 'ruminer.gemini.scanner.v1';
+  const FLOW_ID = 'ruminer.gemini.conversation_scan.v1';
   const INGEST_FLOW_ID = 'ruminer.gemini.conversation_ingest.v1';
   const TAIL_SIZE = 6;
 
@@ -409,7 +409,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
     {
       id: 'n.scan',
       kind: 'script',
-      name: 'Scan & enqueue (DOM)',
+      name: 'Scan & Enqueue',
       config: { world: 'ISOLATED', code: GEMINI_SCANNER_SCRIPT },
       ui: { x: 240, y: 0 },
     },
@@ -436,7 +436,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
     {
       id: 'n.ingest',
       kind: 'script',
-      name: 'Ingest conversation (DOM)',
+      name: 'Ingest Conversation',
       config: { world: 'ISOLATED', code: GEMINI_INGEST_SCRIPT },
       ui: { x: 240, y: 0 },
     },
@@ -451,7 +451,7 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
 
   return [
     createBaseFlow(nowIso, {
-      id: 'ruminer.gemini.scanner.v1',
+      id: 'ruminer.gemini.conversation_scan.v1',
       name: 'Gemini – Import All',
       description: 'Scans Gemini conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',

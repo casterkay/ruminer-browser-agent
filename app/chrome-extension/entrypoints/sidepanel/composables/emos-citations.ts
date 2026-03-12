@@ -117,8 +117,11 @@ function replaceInlineCitationsOutsideCode(line: string, refs: Map<string, strin
       // Get footnote contents for each key
       const contents = keys.map((k) => refs.get(k) ?? '');
       const keysAttr = escapeHtmlAttr(keys.join(','));
-      const contentsAttr = escapeHtmlAttr(contents.join('|||'));
-      return `<emos-cite keys="${keysAttr}" contents="${contentsAttr}"></emos-cite>`;
+      const messageIds = Array.from(
+        new Set(contents.map((c) => String(c || '').trim()).filter(Boolean)),
+      );
+      const messageIdsAttr = escapeHtmlAttr(messageIds.join(','));
+      return `<emos-cite keys="${keysAttr}" message-ids="${messageIdsAttr}"></emos-cite>`;
     });
 
     i = chunkEnd;

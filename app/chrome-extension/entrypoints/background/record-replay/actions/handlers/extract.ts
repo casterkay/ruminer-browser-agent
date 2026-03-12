@@ -25,9 +25,14 @@ async function executeExtraction(
     code?: string;
     world?: BrowserWorld;
   },
+  injectionContext?: { runId?: string },
 ): Promise<{ ok: true; value: JsonValue } | { ok: false; error: string }> {
   const frameIds = typeof frameId === 'number' ? [frameId] : undefined;
   const world = params.world === 'ISOLATED' ? 'ISOLATED' : 'MAIN';
+  const runId =
+    typeof injectionContext?.runId === 'string' && injectionContext.runId.trim()
+      ? injectionContext.runId.trim()
+      : null;
 
   try {
     if (mode === 'selector') {
@@ -87,11 +92,13 @@ async function executeExtraction(
     const injected = await chrome.scripting.executeScript({
       target: { tabId, frameIds } as chrome.scripting.InjectionTarget,
       world,
-      func: (code: string) => {
+      func: (code: string, __rr_v3_runId: string | null) => {
         try {
           // Create function and execute
-          const fn = new Function(code);
-          const result = fn();
+          const fn = new Function('__rr_v3_runId', code) as (
+            __rr_v3_runId: string | null,
+          ) => unknown;
+          const result = fn(__rr_v3_runId);
 
           // Handle promises
           if (result instanceof Promise) {
@@ -106,7 +113,7 @@ async function executeExtraction(
           return { success: false, error: e instanceof Error ? e.message : String(e) };
         }
       },
-      args: [params.code!],
+      args: [params.code!, runId],
     });
 
     const result = Array.isArray(injected) ? injected[0]?.result : undefined;
@@ -253,7 +260,9 @@ export const extractHandler: ActionHandler<'extract'> = {
             world: (resolved.resolved as { world?: BrowserWorld }).world,
           };
 
-    const result = await executeExtraction(tabId, ctx.frameId, resolved.mode, extractParams);
+    const result = await executeExtraction(tabId, ctx.frameId, resolved.mode, extractParams, {
+      runId: ctx.runId,
+    });
 
     if (!result.ok) {
       return failed('SCRIPT_FAILED', result.error);

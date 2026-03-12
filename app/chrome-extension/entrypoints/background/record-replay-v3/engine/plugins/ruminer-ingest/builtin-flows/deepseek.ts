@@ -12,7 +12,7 @@ const DEEPSEEK_DEFAULT_REQUIRED_TOOLS = [
 const DEEPSEEK_SCANNER_SCRIPT = `
 return (async () => {
   const PLATFORM = 'deepseek';
-  const FLOW_ID = 'ruminer.deepseek.scanner.v1';
+  const FLOW_ID = 'ruminer.deepseek.conversation_scan.v1';
   const INGEST_FLOW_ID = 'ruminer.deepseek.conversation_ingest.v1';
   const TAIL_SIZE = 6;
 
@@ -421,7 +421,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
     {
       id: 'n.scan',
       kind: 'script',
-      name: 'Scan & enqueue (DOM)',
+      name: 'Scan & Enqueue',
       config: { world: 'ISOLATED', code: DEEPSEEK_SCANNER_SCRIPT },
       ui: { x: 240, y: 0 },
     },
@@ -448,7 +448,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
     {
       id: 'n.ingest',
       kind: 'script',
-      name: 'Ingest conversation (DOM)',
+      name: 'Ingest Conversation',
       config: { world: 'ISOLATED', code: DEEPSEEK_INGEST_SCRIPT },
       ui: { x: 240, y: 0 },
     },
@@ -463,7 +463,7 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
 
   return [
     createBaseFlow(nowIso, {
-      id: 'ruminer.deepseek.scanner.v1',
+      id: 'ruminer.deepseek.conversation_scan.v1',
       name: 'DeepSeek – Import All',
       description: 'Scans DeepSeek conversations and enqueues conversation ingestion workflows.',
       entryNodeId: 'n.open_tab',

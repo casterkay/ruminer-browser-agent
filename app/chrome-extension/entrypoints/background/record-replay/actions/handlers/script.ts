@@ -211,6 +211,11 @@ export const scriptHandler: ActionHandler<'script'> = {
   run: async (ctx, action) => {
     const tabId = ctx.tabId;
     if (typeof tabId !== 'number') {
+      try {
+        ctx.log('script: no active tab found', 'error');
+      } catch {
+        // ignore
+      }
       return failed('TAB_NOT_FOUND', 'No active tab found for script action');
     }
 
@@ -220,6 +225,20 @@ export const scriptHandler: ActionHandler<'script'> = {
     // Resolve arguments
     const argsResult = resolveArgs(params.args, ctx.vars);
     if (!argsResult.ok) {
+      try {
+        ctx.log(`script: ${argsResult.error}`, 'error');
+      } catch {
+        // ignore
+      }
+      try {
+        console.warn('[Replay script] arg resolution failed:', {
+          runId: ctx.runId,
+          tabId,
+          error: argsResult.error,
+        });
+      } catch {
+        // ignore
+      }
       return failed('VALIDATION_ERROR', argsResult.error);
     }
 
@@ -234,6 +253,22 @@ export const scriptHandler: ActionHandler<'script'> = {
     );
 
     if (!result.ok) {
+      try {
+        ctx.log(`script: ${result.error}`, 'error');
+      } catch {
+        // ignore
+      }
+      try {
+        console.warn('[Replay script] execution failed:', {
+          runId: ctx.runId,
+          tabId,
+          frameId: ctx.frameId,
+          world,
+          error: result.error,
+        });
+      } catch {
+        // ignore
+      }
       return failed('SCRIPT_FAILED', result.error);
     }
 

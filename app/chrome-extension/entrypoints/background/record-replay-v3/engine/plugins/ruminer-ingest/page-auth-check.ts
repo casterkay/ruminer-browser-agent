@@ -40,6 +40,7 @@ export const pageAuthCheckNodeDefinition: NodeDefinition<
       script: node.config.script,
       input: null,
       vars: ctx.vars,
+      runId: ctx.runId,
     });
 
     if (!scriptResult.ok) {
