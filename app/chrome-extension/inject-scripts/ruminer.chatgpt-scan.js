@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'chatgpt';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.chatgpt-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -26,12 +26,41 @@
     return bytesToHex(digest);
   };
 
+  const stableJson = (value) => {
+    const seen = new Set();
+    const normalize = (v) => {
+      if (v === null) return null;
+      if (v === undefined) return undefined;
+      const t = typeof v;
+      if (t === 'string' || t === 'boolean') return v;
+      if (t === 'number') return Number.isFinite(v) ? v : null;
+      if (t !== 'object') return String(v);
+      if (seen.has(v)) throw new Error('stableJson: circular');
+      seen.add(v);
+      try {
+        if (Array.isArray(v)) return v.map((x) => normalize(x));
+        const keys = Object.keys(v).sort();
+        const out = {};
+        for (const k of keys) {
+          const nv = normalize(v[k]);
+          if (nv === undefined) continue;
+          out[k] = nv;
+        }
+        return out;
+      } finally {
+        seen.delete(v);
+      }
+    };
+    return JSON.stringify(normalize(value));
+  };
+
   const hashMessage = async (role, content) => {
-    const payload = JSON.stringify({
-      content: normalizeContent(content),
-      role: String(role || ''),
-    });
-    return sha256Hex(payload);
+    return sha256Hex(
+      stableJson({
+        role: String(role || ''),
+        content: normalizeContent(content),
+      }),
+    );
   };
 
   const safeJson = async (resp) => {
@@ -236,11 +265,10 @@
     return { items: out, nextOffset };
   }
 
-  async function getConversationTailHashes({ conversationId, conversationUrl, tailSize }) {
+  async function getConversationMessageHashes({ conversationId, conversationUrl, includeHashes }) {
     const id = String(conversationId || '').trim();
     if (!id) throw new Error('Missing conversationId');
-    const TAIL =
-      typeof tailSize === 'number' && Number.isFinite(tailSize) ? Math.floor(tailSize) : 6;
+    const INCLUDE = includeHashes === true;
 
     const accessToken = await getAccessToken();
     const accountId = await getTeamAccountId(accessToken);
@@ -251,13 +279,14 @@
       accountId,
     );
     const msgs = extractConversationMessages(conv);
-    const tail = msgs.slice(-Math.max(0, TAIL));
-
     const hashes = [];
-    for (const m of tail) hashes.push(await hashMessage(m.role, m.content));
+    for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
+    const fullDigest = await sha256Hex(stableJson(hashes));
     return {
       conversationId: id,
-      tailHashes: hashes,
+      messageCount: hashes.length,
+      fullDigest,
+      ...(INCLUDE ? { messageHashes: hashes } : {}),
       conversationUrl: String(conversationUrl || '') || null,
     };
   }
@@ -266,7 +295,7 @@
     platform: PLATFORM,
     version: VERSION,
     listConversations,
-    getConversationTailHashes,
+    getConversationMessageHashes,
   };
 
   try {

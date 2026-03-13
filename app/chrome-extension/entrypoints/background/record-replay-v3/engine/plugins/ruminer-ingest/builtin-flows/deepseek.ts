@@ -45,7 +45,6 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
       config: {
         platform: 'deepseek',
         limit: 100,
-        tailSize: 6,
       },
       ui: { x: 240, y: 0 },
     },

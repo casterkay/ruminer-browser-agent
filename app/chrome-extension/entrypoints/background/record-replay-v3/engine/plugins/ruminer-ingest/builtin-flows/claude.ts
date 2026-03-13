@@ -45,7 +45,6 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
       config: {
         platform: 'claude',
         limit: 100,
-        tailSize: 6,
       },
       ui: { x: 240, y: 0 },
     },

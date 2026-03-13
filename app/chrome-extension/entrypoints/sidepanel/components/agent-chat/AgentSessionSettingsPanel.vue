@@ -534,8 +534,8 @@ import type {
   OpenProjectTarget,
 } from 'chrome-mcp-shared';
 import { computed, ref, watch } from 'vue';
-import ILucideFolderOpen from '~icons/lucide/folder-open';
 import ILucideExternalLink from '~icons/lucide/external-link';
+import ILucideFolderOpen from '~icons/lucide/folder-open';
 import AgentOpenProjectMenu from './AgentOpenProjectMenu.vue';
 
 const openProjectMenuOpen = ref(false);
@@ -617,30 +617,20 @@ const isOpenClawEngine = computed(() => props.session?.engineName === 'openclaw'
 const isWorkspaceConfigurable = computed(() => props.session?.id === '__new__');
 
 const sourceUrl = computed(() => {
-  const raw = props.session?.source?.url;
+  const raw = props.session?.sourceUrl;
   return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
 });
 
 const sourcePlatform = computed(() => {
-  const raw = props.session?.source?.platform;
-  return raw === 'chatgpt' || raw === 'gemini' || raw === 'claude' || raw === 'deepseek'
-    ? raw
-    : null;
+  const sessionId = String(props.session?.id || '')
+    .trim()
+    .toLowerCase();
+  return sessionId.includes(':') ? sessionId.split(':')[0] : '';
 });
 
 const sourcePlatformName = computed(() => {
-  switch (sourcePlatform.value) {
-    case 'chatgpt':
-      return 'ChatGPT';
-    case 'gemini':
-      return 'Gemini';
-    case 'claude':
-      return 'Claude';
-    case 'deepseek':
-      return 'DeepSeek';
-    default:
-      return '';
-  }
+  const platform = sourcePlatform.value;
+  return platform.charAt(0).toUpperCase() + platform.slice(1);
 });
 
 const sourcePlatformIconFile = computed(() => {

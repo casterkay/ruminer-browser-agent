@@ -78,9 +78,9 @@ import {
   saveFlowApprovals,
   type FlowApprovalsStore,
 } from '@/common/flow-approvals';
-import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
 import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
-import { computed, onMounted, ref } from 'vue';
+import SystemSettingsForm from '@/entrypoints/shared/components/SystemSettingsForm.vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import AgentChat from './components/AgentChat.vue';
 import MemoryView from './components/memory/MemoryView.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
@@ -129,6 +129,8 @@ const chatBackend = useChatBackendPreference();
 const activeTab = ref<TabId>('chat');
 const onlyBound = ref(false);
 const openRunId = ref<string | null>(null);
+const activeTabId = ref<number | null>(null);
+const activeTabUrl = ref<string>('');
 const activeHostname = ref<string>('');
 
 const workflows = useWorkflowsV3({
@@ -166,6 +168,65 @@ function openChatSession(payload: { sessionId: string } | string): void {
   );
 }
 
+function safeParseUrl(url: string): URL | null {
+  try {
+    return url ? new URL(url) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hostMatchesDomain(activeHost: string, domain: string): boolean {
+  const host = String(activeHost || '')
+    .trim()
+    .toLowerCase();
+  const d = String(domain || '')
+    .trim()
+    .toLowerCase();
+  if (!host || !d) return false;
+  return host === d || host.endsWith(`.${d}`);
+}
+
+function normalizePath(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+function bindingMatchesActiveTab(binding: any): boolean {
+  const kind = typeof binding?.kind === 'string' ? binding.kind.trim().toLowerCase() : '';
+  const value = typeof binding?.value === 'string' ? binding.value.trim() : '';
+  if (!kind || !value) return false;
+
+  const activeUrlRaw = activeTabUrl.value.trim();
+  const activeHost = activeHostname.value.trim().toLowerCase();
+
+  if (kind === 'domain') {
+    return hostMatchesDomain(activeHost, value);
+  }
+
+  const activeUrl = safeParseUrl(activeUrlRaw);
+  if (!activeUrl) return false;
+
+  if (kind === 'path') {
+    const expected = normalizePath(value).toLowerCase();
+    return expected ? activeUrl.pathname.toLowerCase().startsWith(expected) : false;
+  }
+
+  if (kind === 'url') {
+    const expectedUrl = safeParseUrl(value);
+    if (expectedUrl) {
+      if (activeUrl.origin !== expectedUrl.origin) return false;
+      const expectedPath = expectedUrl.pathname || '/';
+      return activeUrl.pathname.startsWith(expectedPath);
+    }
+
+    return activeUrlRaw.toLowerCase().startsWith(value.toLowerCase());
+  }
+
+  return false;
+}
+
 const displayFlows = computed(() => {
   if (!onlyBound.value || !activeHostname.value) {
     return workflows.flows.value;
@@ -177,10 +238,7 @@ const displayFlows = computed(() => {
       return false;
     }
 
-    return bindings.some((binding) => {
-      const value = String(binding.value || '').toLowerCase();
-      return value.includes(activeHostname.value.toLowerCase());
-    });
+    return bindings.some((binding) => bindingMatchesActiveTab(binding));
   });
 });
 
@@ -607,6 +665,54 @@ async function deleteTrigger(triggerId: string): Promise<void> {
   await workflows.deleteTrigger(triggerId);
 }
 
+async function refreshActiveTabInfo(nextTabId?: number | null): Promise<void> {
+  const resolvedId =
+    typeof nextTabId === 'number' && Number.isFinite(nextTabId)
+      ? nextTabId
+      : await getActiveTabId();
+  activeTabId.value = resolvedId;
+
+  let urlString: string | null = null;
+  if (resolvedId !== null) {
+    const tab = await chrome.tabs.get(resolvedId).catch(() => null);
+    urlString = typeof tab?.url === 'string' && tab.url ? tab.url : null;
+  }
+
+  if (!urlString) {
+    urlString = await getActiveTabUrl();
+  }
+
+  activeTabUrl.value = urlString || '';
+
+  try {
+    const parsed = urlString ? new URL(urlString) : null;
+    activeHostname.value = parsed?.hostname || '';
+  } catch {
+    activeHostname.value = '';
+  }
+}
+
+function handleTabActivated(activeInfo: chrome.tabs.TabActiveInfo): void {
+  void refreshActiveTabInfo(activeInfo?.tabId ?? null);
+}
+
+function handleTabUpdated(
+  tabId: number,
+  changeInfo: chrome.tabs.TabChangeInfo,
+  tab: chrome.tabs.Tab,
+): void {
+  if (activeTabId.value === null || tabId !== activeTabId.value) return;
+  if (changeInfo.url || changeInfo.status === 'complete') {
+    void refreshActiveTabInfo(tabId);
+    return;
+  }
+
+  // Fallback: sometimes changeInfo.url is missing but tab.url updates.
+  if (typeof tab?.url === 'string' && tab.url && tab.url !== activeTabUrl.value) {
+    void refreshActiveTabInfo(tabId);
+  }
+}
+
 onMounted(async () => {
   await theme.initTheme();
 
@@ -616,13 +722,14 @@ onMounted(async () => {
     activeTab.value = tab;
   }
 
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const url = tabs[0]?.url ? new URL(tabs[0].url) : null;
-    activeHostname.value = url?.hostname || '';
-  } catch {
-    activeHostname.value = '';
-  }
+  await refreshActiveTabInfo();
+  chrome.tabs.onActivated.addListener(handleTabActivated);
+  chrome.tabs.onUpdated.addListener(handleTabUpdated);
+});
+
+onUnmounted(() => {
+  chrome.tabs.onActivated.removeListener(handleTabActivated);
+  chrome.tabs.onUpdated.removeListener(handleTabUpdated);
 });
 </script>
 

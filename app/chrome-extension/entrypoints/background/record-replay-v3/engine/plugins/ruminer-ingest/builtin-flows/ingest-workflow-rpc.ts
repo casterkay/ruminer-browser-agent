@@ -37,7 +37,6 @@ type WorkflowProgressRequest = {
 type LedgerGetConversationStatesRequest = {
   type: 'ruminer.ledger.getConversationStates';
   groupIds: string[];
-  tailSize: number;
 };
 
 type EnqueueRunsRequest = {
@@ -58,6 +57,7 @@ type IngestConversationRequest = {
     role: 'user' | 'assistant';
     content: string;
     createTime?: string | null;
+    messageId?: string | null;
   }>;
 };
 
@@ -263,14 +263,9 @@ async function handleGetConversationStates(
   req: LedgerGetConversationStatesRequest,
 ): Promise<unknown> {
   const groupIds = isStringList(req.groupIds) ? req.groupIds : [];
-  const tailSize =
-    typeof req.tailSize === 'number' && Number.isFinite(req.tailSize)
-      ? Math.floor(req.tailSize)
-      : 0;
 
   const states = await getConversationStates({
     groupIds,
-    tailSize: Math.max(0, tailSize),
   });
 
   return { ok: true, result: states };
@@ -403,8 +398,26 @@ function toGroupId(platform: string, conversationId: string): string {
   return `${platform}:${conversationId}`;
 }
 
-function messageId(platform: string, conversationId: string, index: number): string {
+function normalizePlatformMessageId(value: unknown): string | null {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return raw ? raw : null;
+}
+
+function buildEmosMessageId(
+  platform: string,
+  conversationId: string,
+  index: number,
+  platformMessageId: string | null,
+): string {
+  const pid = normalizePlatformMessageId(platformMessageId);
+  if (pid) {
+    return `${platform}:${pid}`;
+  }
   return `${platform}:${conversationId}:${index}`;
+}
+
+async function computeHashesDigest(hashes: string[]): Promise<string> {
+  return sha256Hex(stableJson(hashes));
 }
 
 function ensurePlatform(value: unknown): IngestConversationRequest['platform'] | null {
@@ -482,11 +495,13 @@ async function handleIngestConversation(
     role: 'user' | 'assistant';
     content: string;
     createTime: string | null;
+    messageId: string | null;
   }> = messages
     .map((m) => ({
       role: (m?.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
       content: normalizeContent(m?.content),
       createTime: trimOrNull(m?.createTime),
+      messageId: trimOrNull(m?.messageId),
     }))
     .filter((m) => Boolean(m.content));
 
@@ -518,7 +533,6 @@ async function handleIngestConversation(
 
   const existing = await getConversationEntry(groupId);
   const existingHashes = Array.isArray(existing?.message_hashes) ? existing!.message_hashes : [];
-  const existingStatus: ConversationLedgerStatus | null = existing?.status ?? null;
 
   const newHashes: string[] = [];
   for (const msg of normalizedMessages) {
@@ -527,8 +541,7 @@ async function handleIngestConversation(
     newHashes.push(await computeMessageHash({ role, content }));
   }
 
-  const startIndex =
-    existingStatus === 'failed' ? 0 : longestCommonPrefixLen(existingHashes, newHashes);
+  const startIndex = longestCommonPrefixLen(existingHashes, newHashes);
 
   let upserted = 0;
   let failed = 0;
@@ -546,7 +559,7 @@ async function handleIngestConversation(
         : base;
 
     const m: EmosSingleMessage = {
-      message_id: messageId(platform, conversationId, i),
+      message_id: buildEmosMessageId(platform, conversationId, i, raw.messageId),
       create_time: isoOrNow(raw.createTime),
       sender: sender.sender,
       sender_name: sender.sender_name,
@@ -563,10 +576,13 @@ async function handleIngestConversation(
     } catch (e) {
       failed += 1;
       errors.push(e instanceof Error ? e.message : String(e));
+      // Preserve monotonic, prefix-only progress semantics (avoids holes).
+      break;
     }
   }
 
   if (failed > 0) {
+    const progressedHashes = newHashes.slice(0, Math.min(newHashes.length, startIndex + upserted));
     const nextFailed: ConversationLedgerEntry = {
       group_id: groupId,
       platform,
@@ -574,7 +590,8 @@ async function handleIngestConversation(
       conversation_url: sourceUrl,
       conversation_title: groupName,
       status: 'failed',
-      message_hashes: existingHashes,
+      message_hashes: progressedHashes,
+      message_hashes_digest: await computeHashesDigest(progressedHashes),
       first_seen_at: existing?.first_seen_at ?? nowIso,
       last_seen_at: nowIso,
       last_ingested_at: existing?.last_ingested_at ?? null,
@@ -631,6 +648,7 @@ async function handleIngestConversation(
     conversation_title: groupName,
     status: 'ingested',
     message_hashes: newHashes,
+    message_hashes_digest: await computeHashesDigest(newHashes),
     first_seen_at: existing?.first_seen_at ?? nowIso,
     last_seen_at: nowIso,
     last_ingested_at: nowIso,
@@ -680,6 +698,18 @@ async function handleIngestConversation(
       sessionId: String(payload.sessionId || groupId),
       messageCount: Number(payload.messageCount || 0),
     };
+
+    // Notify UI to refresh sessions immediately (avoid minutes-long stale list).
+    try {
+      const maybePromise = chrome.runtime.sendMessage({
+        type: 'ruminer.agent.sessions.invalidate',
+      });
+      if (maybePromise && typeof (maybePromise as any).catch === 'function') {
+        (maybePromise as any).catch(() => undefined);
+      }
+    } catch {
+      // ignore
+    }
   } catch (e) {
     sessionSaveOk = false;
     sessionSaveError = e instanceof Error ? e.message : String(e);
@@ -693,10 +723,11 @@ async function handleIngestConversation(
       conversation_url: sourceUrl,
       conversation_title: groupName,
       status: 'failed',
-      message_hashes: existingHashes,
+      message_hashes: newHashes,
+      message_hashes_digest: await computeHashesDigest(newHashes),
       first_seen_at: existing?.first_seen_at ?? nowIso,
       last_seen_at: nowIso,
-      last_ingested_at: existing?.last_ingested_at ?? null,
+      last_ingested_at: nowIso,
       last_error: sessionSaveError || 'Failed to save session',
     };
     await upsertConversationEntry(nextFailed);
@@ -735,9 +766,7 @@ async function handleIngestConversation(
   };
 }
 
-export async function ruminerEnqueueRuns(
-  items: RuminerEnqueueRunItem[],
-): Promise<
+export async function ruminerEnqueueRuns(items: RuminerEnqueueRunItem[]): Promise<
   | {
       ok: true;
       result: { enqueued: number; skippedAsDuplicate: number; errors: string[]; runIds: string[] };

@@ -14,7 +14,6 @@ const TAB_ID_VAR = '__rr_v2__tabId';
 const scanAndEnqueueConfigSchema = z.object({
   platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
   limit: z.number().int().min(1).max(200).default(100),
-  tailSize: z.number().int().min(0).max(20).default(6),
 });
 
 type ScanAndEnqueueConfig = z.infer<typeof scanAndEnqueueConfigSchema>;
@@ -27,7 +26,11 @@ type ConversationListItem = {
 
 type ListResult = { items: ConversationListItem[]; nextOffset: number | null };
 
-type TailHashResult = { tailHashes: string[] };
+type ConversationDigestResult = {
+  messageCount: number;
+  fullDigest: string;
+  messageHashes?: string[];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -131,12 +134,12 @@ async function probeScanApi(tabId: number): Promise<Record<string, unknown> | nu
             hasList: Boolean(api && typeof api === 'object' && (api as any).listConversations),
             listType:
               api && typeof api === 'object' ? typeof (api as any).listConversations : 'none',
-            hasTail: Boolean(
-              api && typeof api === 'object' && (api as any).getConversationTailHashes,
+            hasMessageHashes: Boolean(
+              api && typeof api === 'object' && (api as any).getConversationMessageHashes,
             ),
-            tailType:
+            messageHashesType:
               api && typeof api === 'object'
-                ? typeof (api as any).getConversationTailHashes
+                ? typeof (api as any).getConversationMessageHashes
                 : 'none',
             keys,
           };
@@ -248,81 +251,99 @@ async function callListConversations(
   return { items, nextOffset };
 }
 
-async function callTailHashes(
+async function callConversationDigest(
   tabId: number,
   platform: RuminerIngestPlatform,
-  payload: { conversationId: string; conversationUrl: string; tailSize: number },
-): Promise<TailHashResult> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'ISOLATED',
-    func: async (args: {
-      platform: string;
-      conversationId: string;
-      conversationUrl: string;
-      tailSize: number;
-    }) => {
-      try {
-        const api = (window as any).__RUMINER_SCAN__;
-        if (!api) return { ok: false, error: '__RUMINER_SCAN__ not found on window' };
-        if (api.platform !== args.platform) {
-          return {
-            ok: false,
-            error: `__RUMINER_SCAN__ platform mismatch (expected=${args.platform}, got=${String(api.platform || '')})`,
-          };
+  payload: { conversationId: string; conversationUrl: string },
+): Promise<ConversationDigestResult> {
+  const MAX_ATTEMPTS = 2;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: async (args: { platform: string; conversationId: string; conversationUrl: string }) => {
+        try {
+          const api = (window as any).__RUMINER_SCAN__;
+          if (!api) return { ok: false, error: '__RUMINER_SCAN__ not found on window' };
+          if (api.platform !== args.platform) {
+            return {
+              ok: false,
+              error: `__RUMINER_SCAN__ platform mismatch (expected=${args.platform}, got=${String(api.platform || '')})`,
+            };
+          }
+          if (typeof api.getConversationMessageHashes !== 'function') {
+            return {
+              ok: false,
+              error: '__RUMINER_SCAN__.getConversationMessageHashes is not a function',
+            };
+          }
+          return await api.getConversationMessageHashes({
+            conversationId: args.conversationId,
+            conversationUrl: args.conversationUrl,
+          });
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
         }
-        if (typeof api.getConversationTailHashes !== 'function') {
-          return {
-            ok: false,
-            error: '__RUMINER_SCAN__.getConversationTailHashes is not a function',
-          };
-        }
-        return await api.getConversationTailHashes({
-          conversationId: args.conversationId,
-          conversationUrl: args.conversationUrl,
-          tailSize: args.tailSize,
-        });
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    },
-    args: [
-      {
-        platform,
-        conversationId: payload.conversationId,
-        conversationUrl: payload.conversationUrl,
-        tailSize: payload.tailSize,
       },
-    ],
-  });
+      args: [
+        {
+          platform,
+          conversationId: payload.conversationId,
+          conversationUrl: payload.conversationUrl,
+        },
+      ],
+    });
 
-  const rawResults = Array.isArray(results) ? results : [];
-  const firstFailure = rawResults
-    .map((r) => (r as any)?.result)
-    .find((x) => isRecord(x) && (x as any).ok === false);
-  if (isRecord(firstFailure) && typeof (firstFailure as any).error === 'string') {
-    throw new Error((firstFailure as any).error);
+    const rawResults = Array.isArray(results) ? results : [];
+    const firstFailure = rawResults
+      .map((r) => (r as any)?.result)
+      .find((x) => isRecord(x) && (x as any).ok === false);
+
+    if (isRecord(firstFailure) && typeof (firstFailure as any).error === 'string') {
+      const err = String((firstFailure as any).error || '');
+      const retryable =
+        err.includes('navigation_started') || err.includes('__RUMINER_SCAN__ not found on window');
+      if (retryable && attempt + 1 < MAX_ATTEMPTS) {
+        await waitForTabComplete(tabId, 15_000).catch(() => undefined);
+        await injectScanScript(tabId, platform).catch(() => undefined);
+        continue;
+      }
+      throw new Error(err);
+    }
+
+    const raw =
+      rawResults
+        .map((r) => (r as any)?.result)
+        .find((x) => isRecord(x) && (x as any).ok !== false) ?? null;
+
+    if (!isRecord(raw)) {
+      throw new Error('getConversationMessageHashes returned invalid result');
+    }
+
+    const fullDigest = typeof (raw as any).fullDigest === 'string' ? (raw as any).fullDigest : '';
+    const messageCountRaw = (raw as any).messageCount;
+    const messageCount =
+      typeof messageCountRaw === 'number' && Number.isFinite(messageCountRaw)
+        ? Math.floor(messageCountRaw)
+        : 0;
+    const messageHashesRaw = (raw as any).messageHashes;
+    const messageHashes = Array.isArray(messageHashesRaw)
+      ? messageHashesRaw.map((h: any) => String(h))
+      : undefined;
+
+    if (!fullDigest.trim() || messageCount < 0) {
+      throw new Error('getConversationMessageHashes returned invalid digest/count');
+    }
+
+    return {
+      fullDigest: fullDigest.trim(),
+      messageCount,
+      ...(messageHashes ? { messageHashes } : {}),
+    };
   }
 
-  const raw =
-    rawResults.map((r) => (r as any)?.result).find((x) => isRecord(x) && (x as any).ok !== false) ??
-    null;
-
-  if (!isRecord(raw)) {
-    throw new Error('getConversationTailHashes returned invalid result');
-  }
-
-  const tailHashesRaw = (raw as any).tailHashes;
-  const tailHashes = Array.isArray(tailHashesRaw) ? tailHashesRaw.map((h: any) => String(h)) : [];
-  return { tailHashes };
-}
-
-function hashesEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  throw new Error('getConversationMessageHashes retry attempts exhausted');
 }
 
 export const scanAndEnqueueNodeDefinition: NodeDefinition<
@@ -383,17 +404,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
     const flowId = ingestFlowId(platform);
     const limit = node.config.limit;
-    const tailSize = node.config.tailSize;
 
     let offset = 0;
     let scanned = 0;
     let enqueued = 0;
-    let sawMissing = false;
-    let unchangedStopAt: string | null = null;
-    let stopOnUnchanged = false;
 
     try {
-      while (!stopOnUnchanged) {
+      while (true) {
         let list: ListResult;
         try {
           list = await callListConversations(effectiveTabId, platform, { offset, limit });
@@ -415,7 +432,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         const groupIds = items.map((c) => `${platform}:${c.conversationId}`);
         let states: Record<string, any> = {};
         try {
-          states = await getConversationStates({ groupIds, tailSize });
+          states = await getConversationStates({ groupIds });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return toErrorResult(
@@ -439,7 +456,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               : { exists: false };
 
           if (!state.exists) {
-            sawMissing = true;
             toEnqueue.push({
               flowId,
               args: {
@@ -466,34 +482,34 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             continue;
           }
 
-          if (!sawMissing) {
-            let tail: TailHashResult;
-            try {
-              tail = await callTailHashes(effectiveTabId, platform, {
-                conversationId: c.conversationId,
-                conversationUrl: c.conversationUrl,
-                tailSize,
-              });
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan tail hash failed: ${msg}`, {
-                error: msg,
-                platform,
-                conversationId: c.conversationId,
-              });
-            }
+          let digest: ConversationDigestResult;
+          try {
+            digest = await callConversationDigest(effectiveTabId, platform, {
+              conversationId: c.conversationId,
+              conversationUrl: c.conversationUrl,
+            });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan message hash failed: ${msg}`, {
+              error: msg,
+              platform,
+              conversationId: c.conversationId,
+            });
+          }
 
-            const ledgerTail = Array.isArray(state.tailHashes)
-              ? state.tailHashes.map((h: any) => String(h))
-              : [];
-            const currentTail = Array.isArray(tail.tailHashes) ? tail.tailHashes : [];
-            const unchanged = hashesEqual(ledgerTail, currentTail);
-            if (unchanged) {
-              unchangedStopAt = c.conversationId;
-              stopOnUnchanged = true;
-              break;
-            }
+          const ledgerCount =
+            typeof state.messageCount === 'number' && Number.isFinite(state.messageCount)
+              ? Math.floor(state.messageCount)
+              : null;
+          const ledgerDigest = typeof state.fullDigest === 'string' ? state.fullDigest.trim() : '';
 
+          const unchanged =
+            ledgerCount !== null &&
+            ledgerDigest &&
+            ledgerCount === digest.messageCount &&
+            ledgerDigest === digest.fullDigest;
+
+          if (!unchanged) {
             toEnqueue.push({
               flowId,
               args: {
@@ -518,7 +534,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           enqueued += count;
         }
 
-        if (stopOnUnchanged) break;
         if (list.nextOffset === null) break;
         offset = list.nextOffset;
       }
@@ -533,8 +548,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         platform,
         scanned,
         enqueued,
-        sawMissing,
-        unchangedStopAt,
       });
     } catch {
       // ignore
@@ -545,7 +558,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       outputs: {
         scanned,
         enqueued,
-        ...(unchangedStopAt ? { unchangedStopAt } : {}),
       },
     };
   },

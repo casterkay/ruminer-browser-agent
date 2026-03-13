@@ -51,7 +51,6 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       config: {
         platform: 'chatgpt',
         limit: 100,
-        tailSize: 6,
       },
       ui: { x: 240, y: 0 },
     },

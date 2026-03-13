@@ -482,12 +482,7 @@ function buildEmosGroupId(): string {
 function buildEmosMessageId(messageId: string): string {
   const session = sessions.selectedSession.value;
   if (!session) return '';
-  // If messageId is long (e.g., a UUID), use shorter format without session ID
-  // to avoid overly long composite IDs like "platform:uuid:uuid"
-  if (messageId.length > 16) {
-    return `${session.engineName}:${messageId}`;
-  }
-  return `${session.engineName}:${session.id}:${messageId}`;
+  return `${session.engineName}:${messageId}`;
 }
 
 function shouldAutosaveToEmos(msg: AgentMessage): boolean {
@@ -1827,6 +1822,16 @@ function handleRecordingCompletedMessage(message: any): void {
   upsertRecordingContextItem(payload);
 }
 
+function handleSessionsInvalidateMessage(message: any): void {
+  if (message?.type !== 'ruminer.agent.sessions.invalidate') return;
+
+  void sessions.fetchAllSessions();
+  const selectedProjectId = projects.selectedProjectId.value;
+  if (selectedProjectId) {
+    void sessions.fetchSessions(selectedProjectId);
+  }
+}
+
 // Attachment handlers
 function handleAttachmentAdd(): void {
   // Create and click a hidden file input
@@ -2257,6 +2262,7 @@ onMounted(() => {
   chrome.tabs.onActivated.addListener(handleTabActivated);
   chrome.runtime.onMessage.addListener(handleMarkerSavedMessage);
   chrome.runtime.onMessage.addListener(handleRecordingCompletedMessage);
+  chrome.runtime.onMessage.addListener(handleSessionsInvalidateMessage);
   window.addEventListener(AGENT_CHAT_NAVIGATE_EVENT, handleNavigateSessionEvent);
   void fetchPageMarkers();
 });
@@ -2267,6 +2273,7 @@ onUnmounted(() => {
   chrome.tabs.onActivated.removeListener(handleTabActivated);
   chrome.runtime.onMessage.removeListener(handleMarkerSavedMessage);
   chrome.runtime.onMessage.removeListener(handleRecordingCompletedMessage);
+  chrome.runtime.onMessage.removeListener(handleSessionsInvalidateMessage);
   window.removeEventListener(AGENT_CHAT_NAVIGATE_EVENT, handleNavigateSessionEvent);
   emosSuggestions.clear();
   if (toastTimer) {

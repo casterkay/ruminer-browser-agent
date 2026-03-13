@@ -70,6 +70,7 @@ export interface RunSchedulerDeps {
  */
 export interface RunSchedulerState {
   started: boolean;
+  paused: boolean;
   ownerId: string;
   maxParallelRuns: number;
   activeRunIds: RunId[];
@@ -83,6 +84,12 @@ export interface RunScheduler {
   start(): void;
   /** Stop the scheduler */
   stop(): void;
+  /** Pause queue consumption (active runs continue) */
+  pause(): void;
+  /** Resume queue consumption */
+  resume(): void;
+  /** Whether queue consumption is paused */
+  isPaused(): boolean;
   /**
    * Trigger a scheduling pass.
    * Safe to call frequently; re-entrancy is coalesced.
@@ -166,6 +173,7 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
   );
 
   let started = false;
+  let paused = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let releaseKeepalive: (() => void) | null = null;
 
@@ -202,7 +210,7 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
     //
     // Note: `stop()` can be called while an async claim is in-flight. Guard the loop
     // with `started` to prevent claiming additional items after stop is requested.
-    while (started && activeRunIds.size < maxParallelRuns) {
+    while (started && !paused && activeRunIds.size < maxParallelRuns) {
       let claimed: RunQueueItem | null = null;
       try {
         claimed = await deps.queue.claimNext(deps.ownerId, t);
@@ -386,6 +394,20 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
     }
   }
 
+  function pause(): void {
+    paused = true;
+  }
+
+  function resume(): void {
+    if (!paused) return;
+    paused = false;
+    void kick();
+  }
+
+  function isPaused(): boolean {
+    return paused;
+  }
+
   function kick(): Promise<void> {
     if (!started) return Promise.resolve();
 
@@ -399,6 +421,7 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
   function getState(): RunSchedulerState {
     return {
       started,
+      paused,
       ownerId: deps.ownerId,
       maxParallelRuns,
       activeRunIds: Array.from(activeRunIds),
@@ -410,5 +433,5 @@ export function createRunScheduler(deps: RunSchedulerDeps): RunScheduler {
     activeRunIds.clear();
   }
 
-  return { start, stop, kick, getState, dispose };
+  return { start, stop, pause, resume, isPaused, kick, getState, dispose };
 }

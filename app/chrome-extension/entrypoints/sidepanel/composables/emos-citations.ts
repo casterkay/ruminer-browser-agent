@@ -178,6 +178,29 @@ function pickString(record: Record<string, unknown>, keys: string[]): string {
   return '';
 }
 
+function toDigitsTimestamp(value: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^\d{14}$/.test(raw)) return raw;
+
+  const parsed = Date.parse(raw);
+  if (Number.isFinite(parsed)) {
+    const d = new Date(parsed);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return [
+      String(d.getUTCFullYear()),
+      pad(d.getUTCMonth() + 1),
+      pad(d.getUTCDate()),
+      pad(d.getUTCHours()),
+      pad(d.getUTCMinutes()),
+      pad(d.getUTCSeconds()),
+    ].join('');
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 14 ? digits.slice(0, 14) : digits;
+}
+
 function collectEmosMemories(value: unknown, out: Record<string, unknown>[]): void {
   if (Array.isArray(value)) {
     for (const entry of value) collectEmosMemories(entry, out);
@@ -241,25 +264,30 @@ export function extractEmosCitationMemoriesFromToolResultText(text: string): Mem
 
   const normalized = rawItems
     .map((raw) => {
-      // Try to get message_id from standard fields
-      let message_id = pickString(raw, ['message_id', 'event_id', 'id', 'memory_id']);
+      const rawEventId = pickString(raw, ['event_id', 'id', 'memory_id', 'message_id']);
+      const explicitMessageId = pickString(raw, ['message_id']);
 
-      // If no message_id, generate one from user_id + timestamp (new EMOS API format)
-      if (!message_id) {
-        const user_id = pickString(raw, ['user_id']);
-        const timestamp = pickString(raw, ['timestamp']);
-        if (user_id && timestamp) {
-          message_id = `${user_id}:${timestamp}`;
-        } else {
-          return null;
-        }
-      }
+      const user_id = pickString(raw, ['user_id', 'sender']);
+      const tsRaw = pickString(raw, ['timestamp', 'create_time']);
+      const digitsTs = tsRaw ? toDigitsTimestamp(tsRaw) : '';
+
+      const message_id =
+        explicitMessageId ||
+        (rawEventId && user_id && digitsTs ? `emos:${user_id}:${digitsTs}` : '') ||
+        (user_id && digitsTs ? `emos:${user_id}:${digitsTs}` : '') ||
+        rawEventId;
+
+      if (!message_id) return null;
 
       const summary = pickString(raw, ['summary']);
       const content = summary || pickString(raw, ['content', 'text', 'excerpt']);
       if (!content) return null;
 
-      const item: MemoryItem = { message_id, content };
+      const item: MemoryItem = {
+        message_id,
+        ...(rawEventId ? { event_id: rawEventId } : {}),
+        content,
+      };
 
       const sender = pickString(raw, ['sender', 'user_id']);
       const sender_name = pickString(raw, ['sender_name']);

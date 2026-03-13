@@ -176,8 +176,11 @@ export default defineConfig({
       }) as any,
     ],
     build: {
-      // 我们的构建产物需要兼容到es6
-      target: 'es2015',
+      // IMPORTANT: executeScript({ func }) serializes the function source and runs it in the target
+      // page's JS context. If we downlevel async/await (e.g. es2015), the emitted function body
+      // references bundler helpers like `__async`, which do not exist in the target page context and
+      // will throw "ReferenceError: __async is not defined". Keep async/await native.
+      target: 'es2020',
       // 非生产环境下生成sourcemap
       sourcemap: env.mode !== 'production',
       // 禁用gzip 压缩大小报告，因为压缩大型文件可能会很慢

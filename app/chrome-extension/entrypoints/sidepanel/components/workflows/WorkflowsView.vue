@@ -112,10 +112,12 @@
                 type="button"
                 class="p-2 rounded transition-colors disabled:opacity-50"
                 :style="queueButtonStyle"
-                :disabled="queueProgress.running === 0 && queueProgress.paused === 0"
+                :disabled="queueProgress.running === 0 && queueProgress.queued === 0"
                 @click="toggleQueuePauseResume"
                 :title="
-                  queueProgress.running > 0 ? 'Pause all running runs' : 'Resume all paused runs'
+                  queueProgress.running > 0
+                    ? 'Pause queue processing (let active runs finish)'
+                    : 'Resume queue processing'
                 "
               >
                 <ILucidePause v-if="queueProgress.running > 0" class="w-4 h-4" />
@@ -125,8 +127,9 @@
                 type="button"
                 class="p-2 rounded transition-colors disabled:opacity-50"
                 :style="queueStopButtonStyle"
+                :disabled="queueProgress.queued === 0"
                 @click="$emit('stopQueue')"
-                title="Stop all queued/running/paused runs"
+                title="Clear all queued runs (let active runs finish)"
               >
                 <ILucideSquare class="w-4 h-4 fill-current" />
               </button>
@@ -1354,12 +1357,14 @@ const seenManualRunIds = ref<Set<string>>(new Set());
 
 function toggleQueuePauseResume(): void {
   const qp = props.queueProgress;
-  if (!qp || (qp.running === 0 && qp.paused === 0)) return;
+  if (!qp) return;
   if (qp.running > 0) {
     emit('pauseQueue');
     return;
   }
-  emit('resumeQueue');
+  if (qp.queued > 0) {
+    emit('resumeQueue');
+  }
 }
 
 const resultModalRun = computed(() => {
@@ -1680,6 +1685,7 @@ function closeResultModal(): void {
 function openChatSessionById(sessionId: string): void {
   const sid = String(sessionId || '').trim();
   if (!sid) return;
+  closeResultModal();
   emit('openChatSession', { sessionId: sid });
 }
 

@@ -107,6 +107,8 @@ export interface AgentSession {
   projectId: string;
   engineName: string;
   engineSessionId?: string;
+  /** Source URL if imported from a platform (derived from stored message metadata). */
+  sourceUrl?: string;
   name?: string;
   /** Preview text from first user message, for display in session list */
   preview?: string;
@@ -291,7 +293,9 @@ export async function getSession(sessionId: string): Promise<AgentSession | unde
     LIMIT 1`,
     [sessionId],
   );
-  return row ? rowToSession(row) : undefined;
+  if (!row) return undefined;
+  const session = rowToSession(row);
+  return addSourceUrlToSession(session);
 }
 
 /** Maximum length for preview text */
@@ -339,6 +343,16 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
           try {
             const parsed = JSON.parse(metadataJson) as Record<string, unknown>;
 
+            // Imported sessions: derive sourceUrl from stored message metadata (no schema change).
+            if (!session.sourceUrl) {
+              const source = typeof parsed.source === 'string' ? parsed.source : '';
+              const conversationUrl =
+                typeof parsed.conversationUrl === 'string' ? parsed.conversationUrl.trim() : '';
+              if (source === 'ruminer_ingest' && conversationUrl) {
+                session.sourceUrl = conversationUrl;
+              }
+            }
+
             // Type-safe extraction with validation
             const rawClientMeta = parsed.clientMeta;
             const rawDisplayText = parsed.displayText;
@@ -379,6 +393,37 @@ async function addPreviewsToSessions(rows: SessionRow[]): Promise<AgentSession[]
       return session;
     }),
   );
+}
+
+async function addSourceUrlToSession(session: AgentSession): Promise<AgentSession> {
+  if (session.sourceUrl) return session;
+
+  const db = getDb();
+  const row = db.get<{ metadata: string | null }>(
+    `SELECT metadata
+    FROM messages
+    WHERE session_id = ? AND metadata IS NOT NULL
+    ORDER BY created_at ASC
+    LIMIT 1`,
+    [session.id],
+  );
+
+  const metadataJson = row?.metadata ?? null;
+  if (!metadataJson) return session;
+
+  try {
+    const parsed = JSON.parse(metadataJson) as Record<string, unknown>;
+    const source = typeof parsed.source === 'string' ? parsed.source : '';
+    const conversationUrl =
+      typeof parsed.conversationUrl === 'string' ? parsed.conversationUrl.trim() : '';
+    if (source === 'ruminer_ingest' && conversationUrl) {
+      session.sourceUrl = conversationUrl;
+    }
+  } catch {
+    // ignore
+  }
+
+  return session;
 }
 
 /**

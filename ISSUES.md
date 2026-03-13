@@ -176,24 +176,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ---
 
-### P1.4 — “Import All” scanner can hijack the user’s active tab (scrolling/navigating it)
-
-- **Symptom**
-  - Scan workflows reuse `ctx.tabId` when it matches the platform host; DOM scan scripts scroll and may navigate conversations in-place.
-- **Impact**
-  - Breaks the user’s current browsing state; can also corrupt scan results.
-- **Relevant code**
-  - `app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/nodes/scan-and-enqueue.ts`
-    - `canReuseCurrent` branch.
-  - `app/chrome-extension/inject-scripts/ruminer.*-scan.js`
-    - `openConversationInPlace()` and scrolling logic.
-- **Fix direction**
-  - Always use a dedicated background tab for scanning (never the current active tab).
-  - Or gate reuse behind an explicit “allow using current tab” option defaulting to false.
-
----
-
-### P1.5 — AgentSessionsView doesn’t show ingested sessions immediately; appears minutes later
+### P1.4 — AgentSessionsView doesn’t show ingested sessions immediately; appears minutes later
 
 - **Symptom**
   - Ingest succeeds and “Open in Chat” works, but sessions don’t appear in AgentSessionsView for minutes.
@@ -215,36 +198,21 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ---
 
-### P1.6 — Record and surface conversation source URL (Session Info: Platform + link)
+### P1.5 — Record and surface conversation source URL (Session Info: Platform + link)
 
 - **Symptom**
   - Imported sessions don’t clearly show where they came from, and the source URL isn’t consistently recorded/surfaced.
 - **Impact**
   - Hard to audit imports and jump back to the original conversation.
 - **Fix direction**
-  - Persist provenance in the saved session object:
-    - `source.platform` (`chatgpt|claude|gemini|deepseek`)
-    - `source.url` (source conversation URL)
+  - Persist source URL in the saved session object:
+    - `source_url` (source conversation URL)
   - In UI, show a new row in “Session Info”:
-    - `Platform: {platform_icon} {platform_name} {external-link icon → opens source.url}`
+    - `Platform: {platform_icon} {platform_name} {external-link icon → opens source_url}`
 
 ---
 
 ## P2 — Correctness / Robustness issues from code review
-
-### P2.1 — `tailSize=0` bug in scan scripts (hashes entire conversation)
-
-- **Symptom**
-  - `tailSize=0` still results in computing hashes for the full message list because `slice(-0)` returns the whole array.
-- **Impact**
-  - Unexpected performance hit and incorrect “tail hash” semantics.
-- **Relevant code**
-  - `app/chrome-extension/inject-scripts/ruminer.*-scan.js`
-    - e.g. ChatGPT: `tail = msgs.slice(-Math.max(0, TAIL))`
-- **Fix direction**
-  - Handle `TAIL <= 0` explicitly: return `[]` without hashing.
-
----
 
 ### P2.2 — Scan scripts use `history.pushState` fallback for navigation (often doesn’t load conversation)
 
@@ -277,7 +245,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ---
 
-### P2.4 — Gemini ingest scrolls the wrong container (appears to scroll conversation list)
+### P2.4 — Gemini ingest scrolls the conversation list
 
 - **Symptom**
   - Gemini ingest workflow scrolls sidebar/history list instead of only the chat transcript.
@@ -288,8 +256,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 - **Relevant code**
   - `app/chrome-extension/inject-scripts/ruminer.gemini-ingest.js`
 - **Fix direction**
-  - Restrict scroller selection to the chat transcript container (`#chat-history`-scoped) and/or find the nearest scroll parent of `#chat-history`.
-  - Ingest should not scroll the conversation list; only scan should scroll the sidebar.
+  - Read `_ref/gemini-export/src/content/content_script.js` to see how it implements conversation export.
 
 ---
 
@@ -311,9 +278,5 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ## Notes / Follow-ups
 
-- Several injected scripts use fragile DOM selectors; for long-term robustness, prefer:
-  - stable `data-testid`/ARIA hooks,
-  - scoped transcript root selection,
-  - “anchor click navigation + wait for transcript marker”.
 - Consider unifying shared utilities (hashing, tab-wait) to avoid divergence:
   - `waitForTabComplete()` is duplicated in two nodes.

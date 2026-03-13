@@ -36,6 +36,9 @@ export type RpcMethod =
   | 'rr_v3.enqueueRun'
   | 'rr_v3.listQueue'
   | 'rr_v3.cancelQueueItem'
+  | 'rr_v3.pauseQueue'
+  | 'rr_v3.resumeQueue'
+  | 'rr_v3.clearQueued'
   // 控制方法
   | 'rr_v3.startRun'
   | 'rr_v3.cancelRun'

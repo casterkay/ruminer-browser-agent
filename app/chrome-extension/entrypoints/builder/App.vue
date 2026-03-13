@@ -123,7 +123,12 @@
           </button>
           <span class="status" :data-state="saveState">{{ saveLabel }}</span>
 
-          <button class="top-btn success" @click="save">
+          <button
+            class="top-btn success"
+            :disabled="isBuiltinFlow"
+            :title="isBuiltinFlow ? '内置工作流不可编辑' : '保存'"
+            @click="save"
+          >
             <svg
               width="14"
               height="14"
@@ -309,6 +314,11 @@ function toggleTheme() {
   } catch {}
 }
 const store = useBuilderStore();
+const isBootstrapping = ref(true);
+const isBuiltinFlow = computed(() => {
+  const tags = (store.flowLocal as any)?.meta?.tags;
+  return Array.isArray(tags) && tags.includes('builtin');
+});
 
 // V3 RPC client
 const rpc = useRRV3Rpc({
@@ -363,6 +373,9 @@ async function bootstrap() {
         warnings.forEach((w) => pushToast(w, 'warn'));
         store.initFromFlow(flowV2);
         title.value = flowV2.name || flowV2.id;
+        if (isBuiltinFlow.value) {
+          pushToast('该工作流为内置工作流：只读模式（不可保存修改）', 'warn');
+        }
 
         if (q.focus) {
           setTimeout(() => {
@@ -385,6 +398,8 @@ async function bootstrap() {
   } else if (q.new === '1') {
     initEmptyFlow();
   }
+
+  isBootstrapping.value = false;
 }
 
 /**
@@ -484,6 +499,11 @@ function applyRename() {
  */
 async function save(): Promise<FlowV3 | null> {
   try {
+    if (isBuiltinFlow.value) {
+      pushToast('内置工作流不可编辑/保存', 'warn');
+      return null;
+    }
+
     // Use exportFlowForSave to properly handle subflow editing:
     // - Flushes current canvas state back to flowLocal (including subflow edits)
     // - Returns deep copy with correct nodes/edges from flowLocal
@@ -847,6 +867,10 @@ function onKey(e: KeyboardEvent) {
     else store.undo();
   } else if (isMeta && e.key.toLowerCase?.() === 's') {
     e.preventDefault();
+    if (isBuiltinFlow.value) {
+      pushToast('内置工作流不可编辑/保存', 'warn');
+      return;
+    }
     save();
   }
 }
@@ -865,6 +889,8 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleAutoSave() {
+  if (isBootstrapping.value) return;
+  if (isBuiltinFlow.value) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {

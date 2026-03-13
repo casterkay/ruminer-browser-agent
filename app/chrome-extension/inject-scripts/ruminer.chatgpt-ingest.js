@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'chatgpt';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.chatgpt-ingest]';
 
   const existing = window.__RUMINER_INGEST__;
@@ -175,14 +175,14 @@
     while (nodeId && mapping[nodeId] && !visited.has(nodeId)) {
       visited.add(nodeId);
       const node = mapping[nodeId];
-      chain.push(node);
+      chain.push({ nodeId, node });
       nodeId = node && node.parent ? String(node.parent) : '';
     }
     chain.reverse();
 
     const out = [];
-    for (const node of chain) {
-      const msg = node && node.message ? node.message : null;
+    for (const item of chain) {
+      const msg = item && item.node && item.node.message ? item.node.message : null;
       const role = msg && msg.author && typeof msg.author.role === 'string' ? msg.author.role : '';
       if (role !== 'user' && role !== 'assistant') continue;
       const content = normalizeContent(extractContentText(msg && msg.content ? msg.content : null));
@@ -191,7 +191,7 @@
         msg && (msg.create_time ?? msg.createTime) != null
           ? String(msg.create_time ?? msg.createTime)
           : null;
-      out.push({ role, content, createTime: ct });
+      out.push({ role, content, createTime: ct, messageId: String(item.nodeId || '').trim() });
     }
     return out;
   };
@@ -213,7 +213,7 @@
   };
 
   async function extractConversation({ conversationUrl }) {
-    const rawUrl = String(location.href || conversationUrl || '').trim();
+    const rawUrl = String(conversationUrl || location.href || '').trim();
     if (!rawUrl) throw new Error('Missing conversation URL');
     const conversationId = parseConversationIdFromUrl(rawUrl);
     if (!conversationId) throw new Error('Failed to parse conversation id from URL');

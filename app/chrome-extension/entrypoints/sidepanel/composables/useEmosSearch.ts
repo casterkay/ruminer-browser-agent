@@ -7,6 +7,8 @@ import { computed, ref, type Ref } from 'vue';
 
 export interface MemoryItem {
   message_id: string;
+  /** Raw EverMemOS event/memory id, for delete operations. */
+  event_id?: string;
   content: string;
   sender?: string;
   sender_name?: string;
@@ -163,6 +165,29 @@ function capitalizeSenderId(value: string): string {
   return value[0].toUpperCase() + value.slice(1);
 }
 
+function toDigitsTimestamp(value: string): string {
+  const raw = toTrimmedString(value);
+  if (!raw) return '';
+  if (/^\d{14}$/.test(raw)) return raw;
+
+  const parsed = Date.parse(raw);
+  if (Number.isFinite(parsed)) {
+    const d = new Date(parsed);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return [
+      String(d.getUTCFullYear()),
+      pad(d.getUTCMonth() + 1),
+      pad(d.getUTCDate()),
+      pad(d.getUTCHours()),
+      pad(d.getUTCMinutes()),
+      pad(d.getUTCSeconds()),
+    ].join('');
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 14 ? digits.slice(0, 14) : digits;
+}
+
 function getRawSenderId(raw: any): string {
   const direct = toTrimmedString(raw?.sender) || toTrimmedString(raw?.user_id);
   if (direct) return direct;
@@ -181,18 +206,31 @@ function normalizeItem(raw: any): MemoryItem {
   const content =
     raw?.content ?? raw?.text ?? raw?.summary ?? raw?.memory ?? raw?.message ?? raw?.excerpt ?? '';
 
-  const messageId = String(
-    raw?.message_id ||
-      raw?.id ||
-      raw?.memory_id ||
-      (raw?.group_id && (raw?.timestamp || raw?.create_time)
-        ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
-        : null) ||
-      crypto.randomUUID(),
-  );
+  const rawEventId = toTrimmedString(raw?.message_id || raw?.event_id || raw?.id || raw?.memory_id);
+  const explicitMessageId = toTrimmedString(raw?.message_id);
+
+  const createTime =
+    typeof raw?.create_time === 'string'
+      ? raw.create_time
+      : typeof raw?.timestamp === 'string'
+        ? raw.timestamp
+        : undefined;
+
+  const userId = getRawSenderId(raw);
+  const digitsTs = createTime ? toDigitsTimestamp(createTime) : '';
+
+  const messageId =
+    explicitMessageId ||
+    (rawEventId && userId && digitsTs ? `emos:${userId}:${digitsTs}` : '') ||
+    (raw?.group_id && (raw?.timestamp || raw?.create_time)
+      ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
+      : '') ||
+    rawEventId ||
+    crypto.randomUUID();
 
   return {
     message_id: messageId,
+    ...(rawEventId ? { event_id: rawEventId } : {}),
     content: String(content || ''),
     sender: (() => {
       const senderId = getRawSenderId(raw);
@@ -205,12 +243,7 @@ function normalizeItem(raw: any): MemoryItem {
       return senderId ? capitalizeSenderId(senderId) : undefined;
     })(),
     role: typeof raw?.role === 'string' ? raw.role : undefined,
-    create_time:
-      typeof raw?.create_time === 'string'
-        ? raw.create_time
-        : typeof raw?.timestamp === 'string'
-          ? raw.timestamp
-          : undefined,
+    create_time: createTime,
     group_id: typeof raw?.group_id === 'string' ? raw.group_id : undefined,
     group_name:
       typeof raw?.group_name === 'string'
@@ -492,7 +525,7 @@ export function useEmosSearch(): UseEmosSearch {
       })();
 
       await emosDeleteMemory({
-        event_id: item.message_id,
+        event_id: item.event_id || item.message_id,
         user_id: userId || undefined,
         group_id: item.group_id,
       });

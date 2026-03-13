@@ -312,6 +312,62 @@ export class RpcServer {
   }
 
   /**
+   * Pause queue consumption (active runs continue).
+   */
+  private async handlePauseQueue(_params: JsonObject | undefined): Promise<JsonValue> {
+    if (!this.scheduler) {
+      throw new Error('Scheduler not configured');
+    }
+    this.scheduler.pause();
+    return { ok: true };
+  }
+
+  /**
+   * Resume queue consumption.
+   */
+  private async handleResumeQueue(_params: JsonObject | undefined): Promise<JsonValue> {
+    if (!this.scheduler) {
+      throw new Error('Scheduler not configured');
+    }
+    this.scheduler.resume();
+    return { ok: true };
+  }
+
+  /**
+   * Clear all queued (not yet running) runs.
+   * @note Leaves running/paused runs untouched.
+   */
+  private async handleClearQueued(params: JsonObject | undefined): Promise<JsonValue> {
+    const reason = (params?.reason as string | undefined) ?? 'Stopped by user';
+
+    if (!this.scheduler) {
+      throw new Error('Scheduler not configured');
+    }
+
+    const wasPaused = this.scheduler.isPaused();
+    this.scheduler.pause();
+
+    const queued = await this.storage.queue.list('queued');
+    const clearedRunIds: RunId[] = [];
+
+    for (const item of queued) {
+      try {
+        await this.handleCancelQueueItem({ runId: item.id, reason } as unknown as JsonObject);
+        clearedRunIds.push(item.id);
+      } catch (e) {
+        // Best-effort: ignore items that were claimed or removed concurrently.
+        console.warn('[RR-V3] clearQueued: cancelQueueItem failed:', e);
+      }
+    }
+
+    if (!wasPaused) {
+      this.scheduler.resume();
+    }
+
+    return { ok: true, cleared: clearedRunIds.length, clearedRunIds };
+  }
+
+  /**
    * 处理 RPC 请求
    */
   private async handleRequest(request: RpcRequest, conn: PortConnection): Promise<JsonValue> {
@@ -397,6 +453,18 @@ export class RpcServer {
 
       case 'rr_v3.cancelQueueItem': {
         return this.handleCancelQueueItem(params);
+      }
+
+      case 'rr_v3.pauseQueue': {
+        return this.handlePauseQueue(params);
+      }
+
+      case 'rr_v3.resumeQueue': {
+        return this.handleResumeQueue(params);
+      }
+
+      case 'rr_v3.clearQueued': {
+        return this.handleClearQueued(params);
       }
 
       case 'rr_v3.subscribe': {

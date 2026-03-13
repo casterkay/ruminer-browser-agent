@@ -306,7 +306,7 @@ describe('ingest workflow rpc', () => {
     // Keep last known-good hashes when failed
     expect(entry2?.message_hashes?.length).toBe(2);
 
-    // Next run should re-ingest whole conversation (startIndex=0) even though LCP would be 2.
+    // Next run should resume from LCP (no forced startIndex=0).
     fetchSpy.mockImplementation(async (url: any) => {
       const u = String(url || '');
       if (u.includes('/agent/emos/settings')) {
@@ -345,8 +345,8 @@ describe('ingest workflow rpc', () => {
       ],
     })) as any;
     expect(ok3.ok).toBe(true);
-    expect(ok3.result.startIndex).toBe(0);
-    expect(ok3.result.upserted).toBe(3);
+    expect(ok3.result.startIndex).toBe(2);
+    expect(ok3.result.upserted).toBe(1);
 
     const entry3 = await getConversationEntry(`chatgpt:${conversationId}`);
     expect(entry3?.status).toBe('ingested');

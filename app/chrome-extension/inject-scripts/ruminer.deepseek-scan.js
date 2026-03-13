@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'deepseek';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.deepseek-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -26,12 +26,41 @@
     return bytesToHex(digest);
   };
 
+  const stableJson = (value) => {
+    const seen = new Set();
+    const normalize = (v) => {
+      if (v === null) return null;
+      if (v === undefined) return undefined;
+      const t = typeof v;
+      if (t === 'string' || t === 'boolean') return v;
+      if (t === 'number') return Number.isFinite(v) ? v : null;
+      if (t !== 'object') return String(v);
+      if (seen.has(v)) throw new Error('stableJson: circular');
+      seen.add(v);
+      try {
+        if (Array.isArray(v)) return v.map((x) => normalize(x));
+        const keys = Object.keys(v).sort();
+        const out = {};
+        for (const k of keys) {
+          const nv = normalize(v[k]);
+          if (nv === undefined) continue;
+          out[k] = nv;
+        }
+        return out;
+      } finally {
+        seen.delete(v);
+      }
+    };
+    return JSON.stringify(normalize(value));
+  };
+
   const hashMessage = async (role, content) => {
-    const payload = JSON.stringify({
-      content: normalizeContent(content),
-      role: String(role || ''),
-    });
-    return sha256Hex(payload);
+    return sha256Hex(
+      stableJson({
+        role: String(role || ''),
+        content: normalizeContent(content),
+      }),
+    );
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
@@ -76,7 +105,12 @@
         const href = String(a.getAttribute('href') || '');
         if (!href) continue;
         if (!href.includes('chat') && !href.includes('c') && !href.includes('id=')) continue;
-        const url = new URL(href, location.origin);
+        let url;
+        try {
+          url = new URL(href, location.origin);
+        } catch {
+          continue;
+        }
         if (url.hostname !== location.hostname) continue;
         const id = parseConversationId(url.toString());
         if (!id) continue;
@@ -134,14 +168,19 @@
         return false;
       }
     });
-    if (a) a.click();
-    else history.pushState({}, '', url);
+    if (a) {
+      a.click();
+    } else {
+      location.assign(url);
+      return false;
+    }
 
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
       if (location.pathname === targetPath) return;
       await sleep(200);
     }
+    return true;
   };
 
   let cachedConversations = null;
@@ -160,20 +199,23 @@
     return { items: slice, nextOffset };
   }
 
-  async function getConversationTailHashes({ conversationId, conversationUrl, tailSize }) {
+  async function getConversationMessageHashes({ conversationId, conversationUrl, includeHashes }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const TAIL =
-      typeof tailSize === 'number' && Number.isFinite(tailSize) ? Math.floor(tailSize) : 6;
-    await openConversationInPlace(url);
+    const INCLUDE = includeHashes === true;
+    const opened = await openConversationInPlace(url);
+    if (opened === false) return { ok: false, error: 'navigation_started' };
     await sleep(400);
 
-    const msgs = extractMessagesFromDom().slice(-Math.max(0, TAIL));
+    const msgs = extractMessagesFromDom();
     const hashes = [];
     for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
+    const fullDigest = await sha256Hex(stableJson(hashes));
     return {
       conversationId: String(conversationId || '').trim() || parseConversationId(url) || null,
-      tailHashes: hashes,
+      messageCount: hashes.length,
+      fullDigest,
+      ...(INCLUDE ? { messageHashes: hashes } : {}),
     };
   }
 
@@ -181,7 +223,7 @@
     platform: PLATFORM,
     version: VERSION,
     listConversations,
-    getConversationTailHashes,
+    getConversationMessageHashes,
   };
 
   try {

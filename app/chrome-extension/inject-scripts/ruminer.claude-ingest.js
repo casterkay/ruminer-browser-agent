@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'claude';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.claude-ingest]';
 
   const existing = window.__RUMINER_INGEST__;
@@ -25,10 +25,67 @@
     }
   };
 
+  function isInTranscript(node) {
+    if (!node || typeof node.closest !== 'function') return false;
+    if (node.closest('nav, aside, header')) return false;
+    const main = document.querySelector('main, [role="main"]');
+    if (!main) return true;
+    return main.contains(node);
+  }
+
+  const findTranscriptRoot = () => {
+    const candidates = [
+      '[data-testid="chat"]',
+      '[data-testid="conversation"]',
+      '[data-testid="chat-container"]',
+      'main',
+      '[role="main"]',
+    ];
+
+    for (const sel of candidates) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      try {
+        if (el.querySelector('[data-message-author-role]')) return el;
+      } catch {
+        // ignore selector errors
+      }
+    }
+
+    return document.querySelector('main') || document.body;
+  };
+
+  const extractMessageContent = (node) => {
+    if (!node) return '';
+    const candidates = [
+      '[data-testid="message-content"]',
+      '.prose',
+      '[class*="prose"]',
+      '[class*="markdown"]',
+    ];
+    for (const sel of candidates) {
+      try {
+        const el = node.querySelector(sel);
+        if (el) {
+          const text = normalizeContent(el.innerText || el.textContent || '');
+          if (text) return text;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return normalizeContent(node.innerText || node.textContent || '');
+  };
+
   const extractMessagesFromDom = () => {
-    const nodes = Array.from(document.querySelectorAll('[data-message-author-role]'));
-    if (nodes.length > 0) {
-      return nodes
+    const root = findTranscriptRoot();
+
+    const roleNodes = Array.from(root.querySelectorAll('[data-message-author-role]')).filter((n) =>
+      isInTranscript(n),
+    );
+
+    if (roleNodes.length > 0) {
+      return roleNodes
         .map((n) => {
           const roleRaw = String(n.getAttribute('data-message-author-role') || '').toLowerCase();
           const role = roleRaw.includes('assistant')
@@ -37,27 +94,31 @@
               ? 'user'
               : null;
           if (!role) return null;
-          const content = normalizeContent(n.textContent || '');
+          const content = extractMessageContent(n);
           if (!content) return null;
           return { role, content };
         })
         .filter(Boolean);
     }
 
+    // Fallback: best-effort extraction when role attributes are unavailable.
     const userNodes = Array.from(
-      document.querySelectorAll('[data-testid*="user"], [data-testid*="human"]'),
+      root.querySelectorAll('[data-testid*="user"], [data-testid*="human"]'),
+    ).filter((n) => isInTranscript(n));
+    const assistantNodes = Array.from(root.querySelectorAll('[data-testid*="assistant"]')).filter(
+      (n) => isInTranscript(n),
     );
-    const assistantNodes = Array.from(
-      document.querySelectorAll('[data-testid*="assistant"], [data-testid*="claude"]'),
-    );
+
     const all = [];
     for (const n of userNodes) all.push({ node: n, role: 'user' });
     for (const n of assistantNodes) all.push({ node: n, role: 'assistant' });
+
     all.sort((a, b) =>
       a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
+
     return all
-      .map((x) => ({ role: x.role, content: normalizeContent(x.node.textContent || '') }))
+      .map((x) => ({ role: x.role, content: extractMessageContent(x.node) }))
       .filter((m) => m.content);
   };
 
@@ -74,7 +135,24 @@
     const conversationId = parseConversationId(rawUrl);
     if (!conversationId) throw new Error('Failed to parse conversation id from URL');
 
-    const messages = extractMessagesFromDom().map((m) => ({ role: m.role, content: m.content }));
+    const extracted = extractMessagesFromDom();
+    const messages = extracted.map((m) => ({ role: m.role, content: m.content }));
+
+    const userCount = messages.filter((m) => m.role === 'user').length;
+    const assistantCount = messages.filter((m) => m.role === 'assistant').length;
+    if (assistantCount === 0 && messages.length > 0) {
+      const diag = {
+        href: String(location.href || ''),
+        conversationId,
+        messageCount: messages.length,
+        userCount,
+        assistantCount,
+        hasRoleNodes: Boolean(document.querySelector('[data-message-author-role]')),
+      };
+      throw new Error(
+        `Claude ingest extracted 0 assistant messages (diag=${JSON.stringify(diag)})`,
+      );
+    }
 
     const titleNode = document.querySelector('h1') || document.querySelector('title');
     const conversationTitle = titleNode ? normalizeContent(titleNode.textContent || '') : null;

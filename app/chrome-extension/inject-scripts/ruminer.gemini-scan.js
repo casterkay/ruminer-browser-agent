@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.gemini-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -26,12 +26,41 @@
     return bytesToHex(digest);
   };
 
+  const stableJson = (value) => {
+    const seen = new Set();
+    const normalize = (v) => {
+      if (v === null) return null;
+      if (v === undefined) return undefined;
+      const t = typeof v;
+      if (t === 'string' || t === 'boolean') return v;
+      if (t === 'number') return Number.isFinite(v) ? v : null;
+      if (t !== 'object') return String(v);
+      if (seen.has(v)) throw new Error('stableJson: circular');
+      seen.add(v);
+      try {
+        if (Array.isArray(v)) return v.map((x) => normalize(x));
+        const keys = Object.keys(v).sort();
+        const out = {};
+        for (const k of keys) {
+          const nv = normalize(v[k]);
+          if (nv === undefined) continue;
+          out[k] = nv;
+        }
+        return out;
+      } finally {
+        seen.delete(v);
+      }
+    };
+    return JSON.stringify(normalize(value));
+  };
+
   const hashMessage = async (role, content) => {
-    const payload = JSON.stringify({
-      content: normalizeContent(content),
-      role: String(role || ''),
-    });
-    return sha256Hex(payload);
+    return sha256Hex(
+      stableJson({
+        role: String(role || ''),
+        content: normalizeContent(content),
+      }),
+    );
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
@@ -75,7 +104,12 @@
       for (const a of anchors) {
         const href = String(a.getAttribute('href') || '');
         if (!href.includes('/app/')) continue;
-        const url = new URL(href, location.origin);
+        let url;
+        try {
+          url = new URL(href, location.origin);
+        } catch {
+          continue;
+        }
         if (url.hostname !== location.hostname) continue;
         const id = parseConversationId(url.toString());
         if (!id) continue;
@@ -102,14 +136,37 @@
     return out;
   };
 
-  const extractTailMessages = async (tailSize) => {
+  const findTranscriptScroller = () => {
+    const root = document.querySelector('#chat-history');
+    if (!root) return document.scrollingElement || document.documentElement;
+    let current = root;
+    for (let i = 0; i < 20 && current; i++) {
+      const parent = current.parentElement;
+      if (!parent) break;
+      let style;
+      try {
+        style = getComputedStyle(parent);
+      } catch {
+        style = null;
+      }
+      const overflowY = style ? style.overflowY : '';
+      const scrollable =
+        overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay'
+          ? parent.scrollHeight > parent.clientHeight + 20
+          : false;
+      if (scrollable) return parent;
+      current = parent;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+
+  const extractConversationMessages = () => {
     const containers = Array.from(
       document.querySelectorAll('#chat-history .conversation-container'),
     );
-    const tailContainers = containers.slice(-Math.max(1, Math.ceil(tailSize / 2) + 2));
 
     const messages = [];
-    for (const c of tailContainers) {
+    for (const c of containers) {
       const userNode =
         c.querySelector('user-query .query-text-line') ||
         c.querySelector('user-query .query-text p') ||
@@ -125,7 +182,7 @@
       if (modelText) messages.push({ role: 'assistant', content: modelText });
     }
 
-    return messages.slice(-tailSize);
+    return messages;
   };
 
   const openConversationInPlace = async (url) => {
@@ -139,14 +196,19 @@
         return false;
       }
     });
-    if (a) a.click();
-    else history.pushState({}, '', url);
+    if (a) {
+      a.click();
+    } else {
+      location.assign(url);
+      return false;
+    }
 
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
       if (location.pathname === targetPath && document.querySelector('#chat-history')) return;
       await sleep(200);
     }
+    return true;
   };
 
   let cachedConversations = null;
@@ -165,21 +227,40 @@
     return { items: slice, nextOffset };
   }
 
-  async function getConversationTailHashes({ conversationId, conversationUrl, tailSize }) {
+  async function getConversationMessageHashes({ conversationId, conversationUrl, includeHashes }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const TAIL =
-      typeof tailSize === 'number' && Number.isFinite(tailSize) ? Math.floor(tailSize) : 6;
-    await openConversationInPlace(url);
+    const INCLUDE = includeHashes === true;
+    const opened = await openConversationInPlace(url);
+    if (opened === false) return { ok: false, error: 'navigation_started' };
     await sleep(400);
 
-    const msgs = await extractTailMessages(Math.max(0, TAIL));
+    // Best-effort: scroll down to materialize virtualized turns before extraction.
+    const scroller = findTranscriptScroller();
+    let stable = 0;
+    for (let i = 0; i < 80; i++) {
+      const beforeTop = scroller.scrollTop;
+      scroller.scrollTop = Math.min(
+        scroller.scrollHeight,
+        scroller.scrollTop + Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
+      );
+      await sleep(220);
+      const afterTop = scroller.scrollTop;
+      if (afterTop === beforeTop) stable += 1;
+      else stable = 0;
+      if (stable >= 5) break;
+    }
+
+    const msgs = extractConversationMessages();
     const hashes = [];
     for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
+    const fullDigest = await sha256Hex(stableJson(hashes));
 
     return {
       conversationId: String(conversationId || '').trim() || parseConversationId(url) || null,
-      tailHashes: hashes,
+      messageCount: hashes.length,
+      fullDigest,
+      ...(INCLUDE ? { messageHashes: hashes } : {}),
     };
   }
 
@@ -187,7 +268,7 @@
     platform: PLATFORM,
     version: VERSION,
     listConversations,
-    getConversationTailHashes,
+    getConversationMessageHashes,
   };
 
   try {

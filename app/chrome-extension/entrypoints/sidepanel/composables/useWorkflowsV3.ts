@@ -413,39 +413,36 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
   }
 
   async function pauseQueueWave(reason: string = 'Paused by user'): Promise<void> {
-    const items = queueItems.value;
-    const running = items.filter((i) => i.status === 'running').map((i) => String(i.id));
-    for (const runId of running) {
-      // Best-effort: pause what we can
-
-      await pauseRun(runId, reason);
+    try {
+      await rpc.request('rr_v3.pauseQueue', reason ? { reason } : undefined);
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to pause queue:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      await refreshQueue();
     }
-    await refreshQueue();
   }
 
   async function resumeQueueWave(): Promise<void> {
-    const items = queueItems.value;
-    const paused = items.filter((i) => i.status === 'paused').map((i) => String(i.id));
-    for (const runId of paused) {
-      await resumeRun(runId);
+    try {
+      await rpc.request('rr_v3.resumeQueue');
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to resume queue:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      await refreshQueue();
     }
-    await refreshQueue();
   }
 
   async function stopQueueWave(reason: string = 'Stopped by user'): Promise<void> {
-    const items = queueItems.value;
-    const queued = items.filter((i) => i.status === 'queued').map((i) => String(i.id));
-    const active = items
-      .filter((i) => i.status === 'running' || i.status === 'paused')
-      .map((i) => String(i.id));
-
-    for (const runId of queued) {
-      await cancelQueueItem(runId, reason);
+    try {
+      await rpc.request('rr_v3.clearQueued', reason ? { reason } : undefined);
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to clear queued runs:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      await Promise.all([refreshRuns(), refreshQueue()]);
     }
-    for (const runId of active) {
-      await cancelRun(runId, reason);
-    }
-    await Promise.all([refreshRuns(), refreshQueue()]);
   }
 
   const cronTriggerIdForFlow = (flowId: string): string => `cron:${flowId}`;

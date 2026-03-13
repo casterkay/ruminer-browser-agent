@@ -22,7 +22,12 @@ type InjectedSuccess = {
   conversationId: string;
   conversationTitle: string | null;
   conversationUrl: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; createTime?: string | null }>;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    createTime?: string | null;
+    messageId?: string | null;
+  }>;
 };
 
 type InjectedFailure = { ok: false; error: string };
@@ -233,6 +238,7 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: String(m.content || ''),
         ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
+        ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
       })),
     });
 

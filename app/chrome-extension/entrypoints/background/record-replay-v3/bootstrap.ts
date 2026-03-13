@@ -18,6 +18,7 @@ import {
 import { RR_ERROR_CODES, createRRError, type RRError } from './domain/errors';
 import type { RunId } from './domain/ids';
 import type { UnixMillis } from './domain/json';
+import type { FlowV3 } from './domain/flow';
 
 import type { StoragePort } from './engine/storage/storage-port';
 import { StorageBackedEventsBus, type EventsBus } from './engine/transport/events-bus';
@@ -106,12 +107,83 @@ async function tabExists(tabId: number): Promise<boolean> {
   }
 }
 
-async function createEphemeralTab(logger: Logger): Promise<number> {
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
+  const startTime = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const checkStatus = async () => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+
+        if (tab.status === 'complete') {
+          resolve();
+          return;
+        }
+
+        if (Date.now() - startTime > timeoutMs) {
+          reject(new Error(`Tab load timeout after ${timeoutMs}ms`));
+          return;
+        }
+
+        setTimeout(checkStatus, 100);
+      } catch (e) {
+        reject(e);
+      }
+    };
+
+    void checkStatus();
+  });
+}
+
+function inferEphemeralUrl(flow: FlowV3 | null): string | null {
+  const bindings = Array.isArray(flow?.meta?.bindings) ? flow!.meta!.bindings : [];
+
+  // Prefer explicit URL bindings.
+  for (const b of bindings) {
+    const kind = String((b as any)?.kind || '').trim();
+    const value = String((b as any)?.value || '').trim();
+    if (!kind || !value) continue;
+    if (kind === 'url') {
+      try {
+        const u = new URL(value);
+        if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Fall back to domain bindings.
+  for (const b of bindings) {
+    const kind = String((b as any)?.kind || '').trim();
+    const value = String((b as any)?.value || '').trim();
+    if (!kind || !value) continue;
+    if (kind === 'domain') {
+      try {
+        const u = new URL(`https://${value}/`);
+        return u.toString();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return null;
+}
+
+async function createEphemeralTab(logger: Logger, url?: string | null): Promise<number> {
+  const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false });
   if (tab.id === undefined) {
     throw new Error('chrome.tabs.create returned a tab without id');
   }
   logger.debug(`[RR-V3] Allocated ephemeral tab ${tab.id}`);
+  if (url) {
+    try {
+      await waitForTabComplete(tab.id, 15_000);
+    } catch (e) {
+      logger.debug(`[RR-V3] Ephemeral tab ${tab.id} did not reach complete in time:`, e);
+    }
+  }
   return tab.id;
 }
 
@@ -132,6 +204,7 @@ async function resolveRunTab(input: {
   queueTabId?: number;
   triggerTabId?: number;
   logger: Logger;
+  flow: FlowV3 | null;
 }): Promise<{ tabId: number; shouldClose: boolean }> {
   const candidates = [input.runTabId, input.queueTabId, input.triggerTabId].filter(
     (x): x is number => isFiniteNumber(x),
@@ -143,7 +216,8 @@ async function resolveRunTab(input: {
     }
   }
 
-  const tabId = await createEphemeralTab(input.logger);
+  const url = inferEphemeralUrl(input.flow);
+  const tabId = await createEphemeralTab(input.logger, url);
   return { tabId, shouldClose: true };
 }
 
@@ -264,6 +338,7 @@ function createDefaultRunExecutor(deps: {
       queueTabId: item.tabId,
       triggerTabId: item.trigger?.sourceTabId,
       logger: deps.logger,
+      flow,
     });
 
     // 4. 同步 attempt 到 RunRecord

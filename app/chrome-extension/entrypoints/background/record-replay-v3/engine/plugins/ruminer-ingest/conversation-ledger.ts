@@ -1,3 +1,7 @@
+import { stableJson } from '@/entrypoints/shared/utils/stable-json';
+
+import { sha256Hex } from './hash';
+
 export type ConversationLedgerStatus = 'ingested' | 'skipped' | 'failed';
 
 export interface ConversationLedgerEntry {
@@ -10,6 +14,8 @@ export interface ConversationLedgerEntry {
   status: ConversationLedgerStatus;
   /** Ordered list of sha256(stableJson({ role, content })) for each message index */
   message_hashes: string[];
+  /** sha256(stableJson(message_hashes)) - optional performance cache */
+  message_hashes_digest?: string | null;
   first_seen_at: string;
   last_seen_at: string;
   last_ingested_at: string | null;
@@ -18,13 +24,13 @@ export interface ConversationLedgerEntry {
 
 export interface ConversationStatesQuery {
   groupIds: string[];
-  tailSize: number;
 }
 
 export interface ConversationState {
   exists: boolean;
   status?: ConversationLedgerStatus;
-  tailHashes?: string[];
+  messageCount?: number;
+  fullDigest?: string;
 }
 
 const DB_NAME = 'ruminer_rr_v3';
@@ -110,9 +116,6 @@ export async function getConversationStates(
   const groupIds = Array.isArray(query.groupIds)
     ? query.groupIds.map((g) => String(g || '').trim()).filter(Boolean)
     : [];
-  const tailSizeRaw =
-    typeof query.tailSize === 'number' && Number.isFinite(query.tailSize) ? query.tailSize : 0;
-  const tailSize = Math.max(0, Math.floor(tailSizeRaw));
 
   if (groupIds.length === 0) return {};
 
@@ -123,13 +126,19 @@ export async function getConversationStates(
         if (!entry) return [gid, { exists: false } satisfies ConversationState] as const;
 
         const hashes = Array.isArray(entry.message_hashes) ? entry.message_hashes : [];
-        const tailHashes = tailSize > 0 ? hashes.slice(-tailSize) : [];
+        const messageCount = hashes.length;
+        const cachedDigest =
+          typeof entry.message_hashes_digest === 'string' && entry.message_hashes_digest.trim()
+            ? entry.message_hashes_digest.trim()
+            : '';
+        const fullDigest = cachedDigest || (await sha256Hex(stableJson(hashes)));
         return [
           gid,
           {
             exists: true,
             status: entry.status,
-            ...(tailSize > 0 ? { tailHashes } : {}),
+            messageCount,
+            fullDigest,
           } satisfies ConversationState,
         ] as const;
       }),

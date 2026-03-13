@@ -248,6 +248,13 @@ app/
 │   │   ├── props-agent.js
 │   │   ├── recorder.js
 │   │   ├── ruminer.chatgpt-ingest.js
+│   │   ├── ruminer.chatgpt-scan.js
+│   │   ├── ruminer.claude-ingest.js
+│   │   ├── ruminer.claude-scan.js
+│   │   ├── ruminer.deepseek-ingest.js
+│   │   ├── ruminer.deepseek-scan.js
+│   │   ├── ruminer.gemini-ingest.js
+│   │   ├── ruminer.gemini-scan.js
 │   │   ├── screenshot-helper.js
 │   │   ├── wait-helper.js
 │   │   ├── web-editor.js
@@ -438,4 +445,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 315 files
+99 directories, 322 files

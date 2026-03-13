@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-13.1';
+  const VERSION = '2026-03-13.2';
   const LOG = '[ruminer.gemini-ingest]';
 
   const existing = window.__RUMINER_INGEST__;
@@ -29,20 +29,51 @@
   };
 
   const findScroller = () => {
-    const candidates = [
-      '.chat-scrollable-container',
-      '.chat-history-scroll-container',
-      'chat-history-scroll-container',
-      'infinite-scroller',
-      '[data-test-id="chat-history-container"]',
-      'mat-sidenav-content',
-      '#chat-history',
-      'main',
-    ];
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (el && el.scrollHeight > el.clientHeight) return el;
+    const chatHistory =
+      document.querySelector('#chat-history') || document.querySelector('chat-history');
+
+    // Prefer a transcript-local scroller (never scroll the app shell / history list).
+    if (chatHistory) {
+      const preferredSelectors = [
+        '.chat-scrollable-container',
+        '.chat-history-scroll-container',
+        'chat-history-scroll-container',
+        'infinite-scroller',
+        '[data-test-id="chat-history-container"]',
+      ];
+      for (const sel of preferredSelectors) {
+        const el =
+          chatHistory.closest(sel) || chatHistory.querySelector(sel) || document.querySelector(sel);
+        if (el && el.contains(chatHistory)) return el;
+      }
+
+      let current = chatHistory;
+      for (let i = 0; i < 20 && current; i++) {
+        const parent = current.parentElement;
+        if (!parent) break;
+
+        // Explicitly avoid scrolling top-level containers that can scroll the conversation list.
+        if (parent.matches('mat-sidenav-content, main')) {
+          current = parent;
+          continue;
+        }
+
+        let style;
+        try {
+          style = getComputedStyle(parent);
+        } catch {
+          style = null;
+        }
+
+        const overflowY = style ? style.overflowY : '';
+        if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+          return parent;
+        }
+
+        current = parent;
+      }
     }
+
     return document.scrollingElement || document.documentElement;
   };
 
