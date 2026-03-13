@@ -2,14 +2,16 @@ import { z } from 'zod';
 
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
+import {
+  ruminerIngestConversation,
+  type RuminerIngestPlatform,
+} from '../builtin-flows/ingest-workflow-rpc';
 import { toErrorResult } from '../utils';
 
 const TAB_ID_VAR = '__rr_v2__tabId';
 
-// Path to the compiled inject script (WXT outputs unlisted scripts to extension root)
-const CHATGPT_INGEST_SCRIPT_PATH = 'inject-scripts/ruminer.chatgpt-ingest.js';
-
 const ingestCurrentConfigSchema = z.object({
+  platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
   conversationUrlVar: z.string().default('ruminerConversationUrl'),
   closeBackgroundTab: z.boolean().default(true),
 });
@@ -17,12 +19,10 @@ const ingestCurrentConfigSchema = z.object({
 type IngestCurrentConfig = z.infer<typeof ingestCurrentConfigSchema>;
 
 type InjectedSuccess = {
-  ok: true;
   conversationId: string;
   conversationTitle: string | null;
   conversationUrl: string;
-  messageCount: number;
-  ingest: unknown;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; createTime?: string | null }>;
 };
 
 type InjectedFailure = { ok: false; error: string };
@@ -34,7 +34,15 @@ function readNumberVar(vars: Record<string, unknown>, key: string): number | nul
   return typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : null;
 }
 
-const LOG_PREFIX = '[chatgpt.ingest_current]';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function ingestScriptPath(platform: RuminerIngestPlatform): string {
+  return `inject-scripts/ruminer.${platform}-ingest.js`;
+}
+
+const LOG_PREFIX = '[ruminer.ingest_current]';
 
 export const ingestCurrentNodeDefinition: NodeDefinition<
   'ruminer.ingest_current_conversation',
@@ -46,6 +54,7 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
     const vars = ctx.vars as unknown as Record<string, unknown>;
     const backgroundTabId = readNumberVar(vars, TAB_ID_VAR);
     const effectiveTabId = backgroundTabId ?? ctx.tabId;
+    const platform = node.config.platform;
 
     const rawUrlVar = node.config.conversationUrlVar ? String(node.config.conversationUrlVar) : '';
     const conversationUrlRaw =
@@ -59,6 +68,7 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
       ctxTabId: ctx.tabId,
       backgroundTabId,
       effectiveTabId,
+      platform,
       conversationUrl,
       conversationUrlVar: rawUrlVar,
     });
@@ -71,6 +81,7 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
         backgroundTabId,
         tabUrl: typeof tab?.url === 'string' ? tab.url : null,
         tabStatus: typeof tab?.status === 'string' ? tab.status : null,
+        platform,
         conversationUrl,
       });
     } catch {
@@ -80,28 +91,35 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
     let injectedResult: InjectedResult | null = null;
 
     try {
-      // Step 1: Inject the compiled script file
-      console.debug(`${LOG_PREFIX} injecting script file`, { path: CHATGPT_INGEST_SCRIPT_PATH });
+      // Step 1: Inject the platform script file
+      const scriptPath = ingestScriptPath(platform);
+      console.debug(`${LOG_PREFIX} injecting script file`, { path: scriptPath, platform });
       await chrome.scripting.executeScript({
         target: { tabId: effectiveTabId },
-        files: [CHATGPT_INGEST_SCRIPT_PATH],
+        files: [scriptPath],
         world: 'ISOLATED',
       });
 
-      // Step 2: Call the exposed ingestion function
-      console.debug(`${LOG_PREFIX} calling ingestion function`);
+      // Step 2: Call the exposed extractor
+      console.debug(`${LOG_PREFIX} calling extractor`, { platform });
       const results = await chrome.scripting.executeScript({
         target: { tabId: effectiveTabId },
         world: 'ISOLATED',
-        func: (payload: { runId: string; conversationUrl: string | null }) => {
-          const ingest = (window as any).__RUMINER_CHATGPT_INGEST__;
-          if (!ingest) {
-            return { ok: false, error: '__RUMINER_CHATGPT_INGEST__ not found on window' };
+        func: (payload: { platform: string; conversationUrl: string | null }) => {
+          const api = (window as any).__RUMINER_INGEST__;
+          if (!api) return { ok: false, error: '__RUMINER_INGEST__ not found on window' };
+          if (api.platform !== payload.platform) {
+            return {
+              ok: false,
+              error: `__RUMINER_INGEST__ platform mismatch (expected=${payload.platform}, got=${String(api.platform || '')})`,
+            };
           }
-          // Return a promise - executeScript will await it
-          return ingest(payload);
+          if (typeof api.extractConversation !== 'function') {
+            return { ok: false, error: '__RUMINER_INGEST__.extractConversation is not a function' };
+          }
+          return api.extractConversation({ conversationUrl: payload.conversationUrl });
         },
-        args: [{ runId: ctx.runId, conversationUrl }],
+        args: [{ platform, conversationUrl }],
       });
 
       if (!Array.isArray(results) || results.length === 0) {
@@ -111,8 +129,8 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
         injectedResult = (results[0] as any)?.result ?? null;
         console.debug(`${LOG_PREFIX} got result`, {
           hasResult: !!injectedResult,
-          ok: injectedResult?.ok,
-          error: injectedResult?.ok === false ? injectedResult.error : undefined,
+          ok: (injectedResult as any)?.ok,
+          error: (injectedResult as any)?.ok === false ? (injectedResult as any).error : undefined,
         });
       }
     } catch (e) {
@@ -128,7 +146,7 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
       }
       return toErrorResult(
         RR_ERROR_CODES.SCRIPT_FAILED,
-        `ChatGPT ingest injection failed: ${msg}`,
+        `Conversation ingest injection failed: ${msg}`,
         {
           error: msg,
         },
@@ -171,31 +189,71 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
       }
       return toErrorResult(
         RR_ERROR_CODES.SCRIPT_FAILED,
-        `ChatGPT ingest returned no result (tabId=${effectiveTabId}). Check page DevTools console for [chatgpt-ingest] logs.`,
+        `Conversation ingest returned no result (tabId=${effectiveTabId}). Check page DevTools console for [ruminer.*-ingest] logs.`,
       );
     }
 
-    if (!injectedResult.ok) {
-      const errorMsg = injectedResult.error;
+    if (isRecord(injectedResult) && (injectedResult as any).ok === false) {
+      const errorMsg = String((injectedResult as any).error || '');
       console.error(`${LOG_PREFIX} injected script returned failure`, { error: errorMsg });
       try {
         ctx.log('error', `${LOG_PREFIX} injected failure`, { effectiveTabId, error: errorMsg });
       } catch {
         // ignore
       }
-      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, errorMsg || 'ChatGPT ingest failed', {
-        error: errorMsg || 'ChatGPT ingest failed',
+      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, errorMsg || 'Conversation ingest failed', {
+        error: errorMsg || 'Conversation ingest failed',
       });
     }
 
+    if (!isRecord(injectedResult)) {
+      return toErrorResult(
+        RR_ERROR_CODES.SCRIPT_FAILED,
+        'Conversation ingest returned invalid result',
+      );
+    }
+
+    const extracted = injectedResult as unknown as InjectedSuccess;
+    const conversationId = String(extracted.conversationId || '').trim();
+    if (!conversationId) {
+      return toErrorResult(
+        RR_ERROR_CODES.SCRIPT_FAILED,
+        'Conversation ingest missing conversationId',
+      );
+    }
+    const messages = Array.isArray(extracted.messages) ? extracted.messages : [];
+
+    const ingestResp = await ruminerIngestConversation({
+      platform,
+      conversationId,
+      runId: ctx.runId,
+      conversationTitle: extracted.conversationTitle ?? null,
+      conversationUrl: extracted.conversationUrl ?? conversationUrl,
+      messages: messages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: String(m.content || ''),
+        ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
+      })),
+    });
+
+    if (!isRecord(ingestResp) || ingestResp.ok !== true) {
+      const err =
+        isRecord(ingestResp) && typeof ingestResp.error === 'string'
+          ? ingestResp.error
+          : 'Unknown ingest error';
+      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, err, { error: err });
+    }
+
     console.log(`${LOG_PREFIX} success`, {
-      conversationId: injectedResult.conversationId,
-      messageCount: injectedResult.messageCount,
+      platform,
+      conversationId,
+      messageCount: messages.length,
     });
     try {
       ctx.log('info', `${LOG_PREFIX} succeeded`, {
-        conversationId: injectedResult.conversationId,
-        messageCount: injectedResult.messageCount,
+        platform,
+        conversationId,
+        messageCount: messages.length,
       });
     } catch {
       // ignore
@@ -204,8 +262,8 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
     return {
       status: 'succeeded',
       outputs: {
-        conversationId: injectedResult.conversationId,
-        messageCount: injectedResult.messageCount,
+        conversationId,
+        messageCount: messages.length,
       },
     };
   },

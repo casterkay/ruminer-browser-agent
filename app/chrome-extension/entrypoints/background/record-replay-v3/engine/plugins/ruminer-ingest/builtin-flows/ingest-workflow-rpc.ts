@@ -45,6 +45,8 @@ type EnqueueRunsRequest = {
   items: Array<{ flowId: string; args: Record<string, unknown>; priority?: number }>;
 };
 
+export type RuminerEnqueueRunItem = EnqueueRunsRequest['items'][number];
+
 type IngestConversationRequest = {
   type: 'ruminer.ingest.ingestConversation';
   platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
@@ -58,6 +60,8 @@ type IngestConversationRequest = {
     createTime?: string | null;
   }>;
 };
+
+export type RuminerIngestPlatform = IngestConversationRequest['platform'];
 
 type SupportedWorkflowRpcRequest =
   | WorkflowNotifyRequest
@@ -729,6 +733,63 @@ async function handleIngestConversation(
     ok: true,
     result: { ...emosResult, ...(sessionSaveResult ? { session: sessionSaveResult } : {}) },
   };
+}
+
+export async function ruminerEnqueueRuns(
+  items: RuminerEnqueueRunItem[],
+): Promise<
+  | {
+      ok: true;
+      result: { enqueued: number; skippedAsDuplicate: number; errors: string[]; runIds: string[] };
+    }
+  | { ok: false; error: string }
+> {
+  const resp = await handleEnqueueRuns({
+    type: 'ruminer.rr_v3.enqueueRuns',
+    items: Array.isArray(items) ? items : [],
+  });
+
+  if (!isRecord(resp) || (resp as any).ok !== true) {
+    return {
+      ok: false,
+      error:
+        isRecord(resp) && typeof (resp as any).error === 'string'
+          ? (resp as any).error
+          : 'enqueueRuns failed',
+    };
+  }
+
+  const result = isRecord((resp as any).result) ? ((resp as any).result as any) : {};
+  return {
+    ok: true,
+    result: {
+      enqueued: typeof result.enqueued === 'number' ? result.enqueued : 0,
+      skippedAsDuplicate:
+        typeof result.skippedAsDuplicate === 'number' ? result.skippedAsDuplicate : 0,
+      errors: Array.isArray(result.errors) ? result.errors.map((e: any) => String(e)) : [],
+      runIds: Array.isArray(result.runIds) ? result.runIds.map((r: any) => String(r)) : [],
+    },
+  };
+}
+
+export async function ruminerIngestConversation(
+  input: Omit<IngestConversationRequest, 'type'>,
+  sender?: chrome.runtime.MessageSender,
+): Promise<unknown> {
+  return handleIngestConversation(
+    {
+      type: 'ruminer.ingest.ingestConversation',
+      platform: input.platform,
+      conversationId: input.conversationId,
+      ...(input.runId !== undefined ? { runId: input.runId } : {}),
+      ...(input.conversationTitle !== undefined
+        ? { conversationTitle: input.conversationTitle }
+        : {}),
+      ...(input.conversationUrl !== undefined ? { conversationUrl: input.conversationUrl } : {}),
+      messages: input.messages,
+    },
+    sender,
+  );
 }
 
 function isSupportedWorkflowRpcRequest(message: unknown): message is SupportedWorkflowRpcRequest {

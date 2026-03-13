@@ -60,7 +60,6 @@ app/
 │   │   │   ├── index.ts
 │   │   │   ├── keepalive-manager.ts
 │   │   │   ├── native-host.ts
-│   │   │   ├── openclaw
 │   │   │   ├── quick-panel
 │   │   │   │   ├── agent-handler.ts
 │   │   │   │   ├── commands.ts
@@ -248,6 +247,7 @@ app/
 │   │   ├── network-helper.js
 │   │   ├── props-agent.js
 │   │   ├── recorder.js
+│   │   ├── ruminer.chatgpt-ingest.js
 │   │   ├── screenshot-helper.js
 │   │   ├── wait-helper.js
 │   │   ├── web-editor.js
@@ -438,4 +438,4 @@ app/
         ├── package.json
         └── tools.ts
 
-100 directories, 314 files
+99 directories, 315 files

@@ -1,19 +1,38 @@
 /* eslint-disable */
-// ruminer.chatgpt-ingest.js
-// Injected into ChatGPT pages (ISOLATED world). Exposes `window.__RUMINER_INGEST__`.
+// ruminer.chatgpt-scan.js
+// Injected into ChatGPT pages (ISOLATED world). Exposes `window.__RUMINER_SCAN__`.
 
 (() => {
   const PLATFORM = 'chatgpt';
   const VERSION = '2026-03-13.1';
-  const LOG = '[ruminer.chatgpt-ingest]';
+  const LOG = '[ruminer.chatgpt-scan]';
 
-  const existing = window.__RUMINER_INGEST__;
+  const existing = window.__RUMINER_SCAN__;
   if (existing && existing.platform === PLATFORM && existing.version === VERSION) return;
 
   const normalizeContent = (s) =>
     String(s || '')
       .replace(/\r\n/g, '\n')
       .trim();
+
+  const bytesToHex = (buffer) =>
+    Array.from(new Uint8Array(buffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+  const sha256Hex = async (input) => {
+    const enc = new TextEncoder();
+    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
+    return bytesToHex(digest);
+  };
+
+  const hashMessage = async (role, content) => {
+    const payload = JSON.stringify({
+      content: normalizeContent(content),
+      role: String(role || ''),
+    });
+    return sha256Hex(payload);
+  };
 
   const safeJson = async (resp) => {
     try {
@@ -63,11 +82,11 @@
     const pageToken = getPageAccessToken();
     if (pageToken) return pageToken;
 
-    const sessionUrl = new URL('/api/auth/session', location.origin).toString();
-    const resp = await fetchWithTimeout(sessionUrl, { credentials: 'include' }, 15_000);
+    const url = new URL('/api/auth/session', location.origin).toString();
+    const resp = await fetchWithTimeout(url, { credentials: 'include' }, 15_000);
     if (!resp.ok) throw new Error('Not logged in to ChatGPT');
-    const payload = await safeJson(resp);
-    const token = payload && typeof payload.accessToken === 'string' ? payload.accessToken : '';
+    const session = await safeJson(resp);
+    const token = session && typeof session.accessToken === 'string' ? session.accessToken : '';
     if (!token.trim()) throw new Error('ChatGPT session missing access token');
     return token.trim();
   };
@@ -75,12 +94,9 @@
   const getTeamAccountId = async (accessToken) => {
     const workspaceId = getCookie('_account');
     if (!workspaceId) return null;
-    const checkUrl = new URL(
-      '/backend-api/accounts/check/v4-2023-04-27',
-      location.origin,
-    ).toString();
+    const url = new URL('/backend-api/accounts/check/v4-2023-04-27', location.origin).toString();
     const resp = await fetchWithTimeout(
-      checkUrl,
+      url,
       {
         headers: {
           Authorization: 'Bearer ' + accessToken,
@@ -94,8 +110,8 @@
     const payload = await safeJson(resp);
     try {
       const account = payload && payload.accounts && payload.accounts[workspaceId];
-      const aid = account && account.account && account.account.account_id;
-      return typeof aid === 'string' && aid.trim() ? aid.trim() : null;
+      const accountId = account && account.account && account.account.account_id;
+      return typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
     } catch {
       return null;
     }
@@ -187,62 +203,70 @@
       if (role !== 'user' && role !== 'assistant') continue;
       const content = normalizeContent(extractContentText(msg && msg.content ? msg.content : null));
       if (!content) continue;
-      const ct =
-        msg && (msg.create_time ?? msg.createTime) != null
-          ? String(msg.create_time ?? msg.createTime)
-          : null;
-      out.push({ role, content, createTime: ct });
+      out.push({ role, content });
     }
     return out;
   };
 
-  const parseConversationIdFromUrl = (rawUrl) => {
-    try {
-      const url = new URL(String(rawUrl || ''), location.origin);
-      const segments = String(url.pathname || '')
-        .split('/')
-        .filter(Boolean);
-      const markerIdx = segments.findIndex((s) => s === 'c' || s === 'chat');
-      if (markerIdx >= 0 && markerIdx + 1 < segments.length) {
-        return String(segments[markerIdx + 1] || '').trim();
-      }
-      return '';
-    } catch {
-      return '';
-    }
-  };
-
-  async function extractConversation({ conversationUrl }) {
-    const rawUrl = String(location.href || conversationUrl || '').trim();
-    if (!rawUrl) throw new Error('Missing conversation URL');
-    const conversationId = parseConversationIdFromUrl(rawUrl);
-    if (!conversationId) throw new Error('Failed to parse conversation id from URL');
+  async function listConversations({ offset, limit }) {
+    const LIMIT = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
+    const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
 
     const accessToken = await getAccessToken();
     const accountId = await getTeamAccountId(accessToken);
-    const conv = await fetchBackendApi(
-      '/conversation/' + encodeURIComponent(conversationId),
-      {},
+    const payload = await fetchBackendApi(
+      '/conversations',
+      { offset: OFF, limit: LIMIT, order: 'updated' },
       accessToken,
       accountId,
     );
 
-    const messages = extractConversationMessages(conv);
-    const title =
-      conv && typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : null;
+    const items = payload && Array.isArray(payload.items) ? payload.items : [];
+    const out = items
+      .map((it) => {
+        const id = String(it && it.id ? it.id : '').trim();
+        if (!id) return null;
+        const title = typeof it.title === 'string' && it.title.trim() ? it.title.trim() : null;
+        const url = new URL('/c/' + id, location.origin).toString();
+        return { conversationId: id, conversationUrl: url, conversationTitle: title };
+      })
+      .filter(Boolean);
 
+    const nextOffset = out.length > 0 ? OFF + out.length : null;
+    return { items: out, nextOffset };
+  }
+
+  async function getConversationTailHashes({ conversationId, conversationUrl, tailSize }) {
+    const id = String(conversationId || '').trim();
+    if (!id) throw new Error('Missing conversationId');
+    const TAIL =
+      typeof tailSize === 'number' && Number.isFinite(tailSize) ? Math.floor(tailSize) : 6;
+
+    const accessToken = await getAccessToken();
+    const accountId = await getTeamAccountId(accessToken);
+    const conv = await fetchBackendApi(
+      '/conversation/' + encodeURIComponent(id),
+      {},
+      accessToken,
+      accountId,
+    );
+    const msgs = extractConversationMessages(conv);
+    const tail = msgs.slice(-Math.max(0, TAIL));
+
+    const hashes = [];
+    for (const m of tail) hashes.push(await hashMessage(m.role, m.content));
     return {
-      conversationId,
-      conversationTitle: title,
-      conversationUrl: rawUrl,
-      messages,
+      conversationId: id,
+      tailHashes: hashes,
+      conversationUrl: String(conversationUrl || '') || null,
     };
   }
 
-  window.__RUMINER_INGEST__ = {
+  window.__RUMINER_SCAN__ = {
     platform: PLATFORM,
     version: VERSION,
-    extractConversation,
+    listConversations,
+    getConversationTailHashes,
   };
 
   try {

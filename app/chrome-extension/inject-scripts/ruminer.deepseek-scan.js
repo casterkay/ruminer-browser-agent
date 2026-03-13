@@ -1,0 +1,190 @@
+/* eslint-disable */
+// ruminer.deepseek-scan.js
+// Injected into chat.deepseek.com pages (ISOLATED world). Exposes `window.__RUMINER_SCAN__`.
+
+(() => {
+  const PLATFORM = 'deepseek';
+  const VERSION = '2026-03-13.1';
+  const LOG = '[ruminer.deepseek-scan]';
+
+  const existing = window.__RUMINER_SCAN__;
+  if (existing && existing.platform === PLATFORM && existing.version === VERSION) return;
+
+  const normalizeContent = (s) =>
+    String(s || '')
+      .replace(/\r\n/g, '\n')
+      .trim();
+
+  const bytesToHex = (buffer) =>
+    Array.from(new Uint8Array(buffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+  const sha256Hex = async (input) => {
+    const enc = new TextEncoder();
+    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
+    return bytesToHex(digest);
+  };
+
+  const hashMessage = async (role, content) => {
+    const payload = JSON.stringify({
+      content: normalizeContent(content),
+      role: String(role || ''),
+    });
+    return sha256Hex(payload);
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
+
+  const parseConversationId = (urlString) => {
+    try {
+      const u = new URL(String(urlString || ''), location.origin);
+      const p = String(u.pathname || '');
+      let m = p.match(/\/(?:chat|c)\/([^/?#]+)/i);
+      if (m) return String(m[1] || '').trim();
+      const sp = u.searchParams;
+      for (const key of ['conversationId', 'chatId', 'id']) {
+        const v = sp.get(key);
+        if (v && v.trim()) return v.trim();
+      }
+      const seg = p.split('/').filter(Boolean).pop();
+      return seg ? String(seg).trim() : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const findSidebarScroller = () => {
+    const candidates = ['nav', 'aside', '[data-testid*="sidebar"]', '[class*="sidebar"]'];
+    for (const sel of candidates) {
+      const el = document.querySelector(sel);
+      if (el && el.scrollHeight > el.clientHeight) return el;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+
+  const collectSidebarConversations = async () => {
+    const scroller = findSidebarScroller();
+    const seen = new Set();
+    const out = [];
+    let stable = 0;
+    let lastCount = 0;
+
+    for (let i = 0; i < 120; i++) {
+      const anchors = Array.from(document.querySelectorAll('a[href]'));
+      for (const a of anchors) {
+        const href = String(a.getAttribute('href') || '');
+        if (!href) continue;
+        if (!href.includes('chat') && !href.includes('c') && !href.includes('id=')) continue;
+        const url = new URL(href, location.origin);
+        if (url.hostname !== location.hostname) continue;
+        const id = parseConversationId(url.toString());
+        if (!id) continue;
+        if (seen.has(id)) continue;
+        const title = String(a.textContent || '').trim() || null;
+        seen.add(id);
+        out.push({ conversationId: id, conversationUrl: url.toString(), conversationTitle: title });
+      }
+
+      if (out.length === lastCount) stable += 1;
+      else stable = 0;
+      lastCount = out.length;
+
+      if (stable >= 5) break;
+      if (scroller) {
+        scroller.scrollTop = Math.min(
+          scroller.scrollHeight,
+          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
+        );
+      }
+      await sleep(200);
+    }
+
+    return out;
+  };
+
+  const compareDomOrder = (a, b) => {
+    if (a === b) return 0;
+    const pos = a.compareDocumentPosition(b);
+    return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+  };
+
+  const extractMessagesFromDom = () => {
+    const userQuestions = Array.from(document.querySelectorAll('.fbb737a4'));
+    const aiResponses = Array.from(
+      document.querySelectorAll('.ds-message .ds-markdown:not(.ds-think-content .ds-markdown)'),
+    );
+    const all = [];
+    for (const el of userQuestions) all.push({ el, role: 'user' });
+    for (const el of aiResponses) all.push({ el, role: 'assistant' });
+    all.sort((x, y) => compareDomOrder(x.el, y.el));
+    return all
+      .map((x) => ({ role: x.role, content: normalizeContent(x.el.textContent || '') }))
+      .filter((m) => m.content);
+  };
+
+  const openConversationInPlace = async (url) => {
+    const targetPath = new URL(url, location.origin).pathname;
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    const a = anchors.find((x) => {
+      try {
+        const u = new URL(String(x.getAttribute('href') || ''), location.origin);
+        return u.pathname === targetPath;
+      } catch {
+        return false;
+      }
+    });
+    if (a) a.click();
+    else history.pushState({}, '', url);
+
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if (location.pathname === targetPath) return;
+      await sleep(200);
+    }
+  };
+
+  let cachedConversations = null;
+  async function ensureCache() {
+    if (cachedConversations) return;
+    cachedConversations = await collectSidebarConversations();
+  }
+
+  async function listConversations({ offset, limit }) {
+    const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
+    const LIM = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
+    await ensureCache();
+    const all = Array.isArray(cachedConversations) ? cachedConversations : [];
+    const slice = all.slice(OFF, OFF + LIM);
+    const nextOffset = OFF + slice.length < all.length ? OFF + slice.length : null;
+    return { items: slice, nextOffset };
+  }
+
+  async function getConversationTailHashes({ conversationId, conversationUrl, tailSize }) {
+    const url = String(conversationUrl || '').trim();
+    if (!url) throw new Error('Missing conversationUrl');
+    const TAIL =
+      typeof tailSize === 'number' && Number.isFinite(tailSize) ? Math.floor(tailSize) : 6;
+    await openConversationInPlace(url);
+    await sleep(400);
+
+    const msgs = extractMessagesFromDom().slice(-Math.max(0, TAIL));
+    const hashes = [];
+    for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
+    return {
+      conversationId: String(conversationId || '').trim() || parseConversationId(url) || null,
+      tailHashes: hashes,
+    };
+  }
+
+  window.__RUMINER_SCAN__ = {
+    platform: PLATFORM,
+    version: VERSION,
+    listConversations,
+    getConversationTailHashes,
+  };
+
+  try {
+    console.debug(LOG, 'loaded');
+  } catch {}
+})();

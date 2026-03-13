@@ -389,6 +389,7 @@ export interface AgentSession {
   projectId: string;
   engineName: AgentCliPreference;
   engineSessionId?: string;
+  sourceUrl?: string; // if imported from a platform
   name?: string;
   preview?: string;
   previewMeta?: AgentSessionPreviewMeta;

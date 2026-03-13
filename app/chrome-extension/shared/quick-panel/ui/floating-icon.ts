@@ -542,7 +542,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     // Create tooltip
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'floating-icon-tooltip';
-    tooltipElement.textContent = 'Quick Chat (Hover) · Side Panel (Click)';
+    tooltipElement.textContent = 'Ruminer is Here, At Your Service!';
     iconElement.appendChild(tooltipElement);
 
     // Add event listeners

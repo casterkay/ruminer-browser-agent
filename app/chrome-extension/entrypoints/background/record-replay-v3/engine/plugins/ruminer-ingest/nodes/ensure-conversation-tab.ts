@@ -6,21 +6,22 @@ import { toErrorResult } from '../utils';
 
 const TAB_ID_VAR = '__rr_v2__tabId';
 
-const chatgptEnsureConversationTabConfigSchema = z.object({
+const ensureConversationTabConfigSchema = z.object({
   conversationUrlVar: z.string().default('ruminerConversationUrl'),
   active: z.boolean().default(false),
   waitForCompleteMs: z.number().int().min(0).max(60_000).default(15_000),
   skipIfAlreadyOnConversation: z.boolean().default(true),
 });
 
-type ChatgptEnsureConversationTabConfig = z.infer<typeof chatgptEnsureConversationTabConfigSchema>;
+type EnsureConversationTabConfig = z.infer<typeof ensureConversationTabConfigSchema>;
 
-function parseConversationId(urlString: string): string | null {
+function normalizeConversationKey(urlString: string): string | null {
   const raw = String(urlString || '').trim();
   if (!raw) return null;
   try {
     const u = new URL(raw);
-    return u.pathname.split('/').filter(Boolean).pop() || null;
+    // Ignore query/hash; normalize by origin+pathname.
+    return `${u.origin}${u.pathname}`;
   } catch {
     return null;
   }
@@ -86,10 +87,10 @@ async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<voi
 
 export const ensureConversationTabNodeDefinition: NodeDefinition<
   'ruminer.ensure_conversation_tab',
-  ChatgptEnsureConversationTabConfig
+  EnsureConversationTabConfig
 > = {
   kind: 'ruminer.ensure_conversation_tab',
-  schema: chatgptEnsureConversationTabConfigSchema,
+  schema: ensureConversationTabConfigSchema,
   async execute(ctx, node) {
     const vars = ctx.vars as unknown as Record<string, unknown>;
     const rawVar = node.config.conversationUrlVar ? String(node.config.conversationUrlVar) : '';
@@ -101,7 +102,7 @@ export const ensureConversationTabNodeDefinition: NodeDefinition<
     const currentUrl = typeof currentTab?.url === 'string' ? currentTab.url.trim() : '';
 
     try {
-      ctx.log('debug', 'chatgpt.ensure_tab: evaluate', {
+      ctx.log('debug', 'ruminer.ensure_tab: evaluate', {
         ctxTabId: ctx.tabId,
         currentUrl: currentUrl || null,
         desiredUrl,
@@ -111,13 +112,13 @@ export const ensureConversationTabNodeDefinition: NodeDefinition<
     }
 
     if (node.config.skipIfAlreadyOnConversation) {
-      const currentId = parseConversationId(currentUrl);
-      const desiredId = desiredUrl ? parseConversationId(desiredUrl) : null;
-      if (currentId && desiredId && currentId === desiredId) {
+      const currentKey = normalizeConversationKey(currentUrl);
+      const desiredKey = desiredUrl ? normalizeConversationKey(desiredUrl) : null;
+      if (currentKey && desiredKey && currentKey === desiredKey) {
         try {
-          ctx.log('info', 'chatgpt.ensure_tab: using current tab', {
+          ctx.log('info', 'ruminer.ensure_tab: using current tab', {
             tabId: ctx.tabId,
-            conversationId: currentId,
+            conversationKey: currentKey,
           });
         } catch {
           // ignore
@@ -129,7 +130,7 @@ export const ensureConversationTabNodeDefinition: NodeDefinition<
     // Manual/bare run: if we don't know which URL to open, just proceed on current tab.
     if (!desiredUrl) {
       try {
-        ctx.log('warn', 'chatgpt.ensure_tab: missing desiredUrl; using current tab', {
+        ctx.log('warn', 'ruminer.ensure_tab: missing desiredUrl; using current tab', {
           tabId: ctx.tabId,
           currentUrl: currentUrl || null,
         });
@@ -155,7 +156,7 @@ export const ensureConversationTabNodeDefinition: NodeDefinition<
     }
 
     try {
-      ctx.log('info', 'chatgpt.ensure_tab: opened background tab', { tabId, url: desiredUrl });
+      ctx.log('info', 'ruminer.ensure_tab: opened background tab', { tabId, url: desiredUrl });
     } catch {
       // ignore
     }

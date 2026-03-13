@@ -100,6 +100,27 @@
                   session.engineSessionId
                 }}</span>
               </div>
+              <div v-if="sourcePlatformName" class="flex justify-between items-center gap-2">
+                <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Platform</span>
+                <span class="flex items-center gap-1.5 min-w-0">
+                  <img
+                    v-if="sourcePlatformIconFile"
+                    :src="`/platform-icons/${sourcePlatformIconFile}`"
+                    :alt="sourcePlatformName"
+                    class="w-4 h-4 rounded-sm object-contain"
+                  />
+                  <span class="text-[10px] truncate max-w-[140px]">{{ sourcePlatformName }}</span>
+                  <button
+                    v-if="sourceUrl"
+                    class="p-1 ac-btn"
+                    :style="{ color: 'var(--ac-link, #3b82f6)' }"
+                    title="Open source conversation"
+                    @click="openSourceUrl"
+                  >
+                    <ILucideExternalLink class="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -514,6 +535,7 @@ import type {
 } from 'chrome-mcp-shared';
 import { computed, ref, watch } from 'vue';
 import ILucideFolderOpen from '~icons/lucide/folder-open';
+import ILucideExternalLink from '~icons/lucide/external-link';
 import AgentOpenProjectMenu from './AgentOpenProjectMenu.vue';
 
 const openProjectMenuOpen = ref(false);
@@ -593,6 +615,48 @@ const isClaudeEngine = computed(() => props.session?.engineName === 'claude');
 const isCodexEngine = computed(() => props.session?.engineName === 'codex');
 const isOpenClawEngine = computed(() => props.session?.engineName === 'openclaw');
 const isWorkspaceConfigurable = computed(() => props.session?.id === '__new__');
+
+const sourceUrl = computed(() => {
+  const raw = props.session?.source?.url;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+});
+
+const sourcePlatform = computed(() => {
+  const raw = props.session?.source?.platform;
+  return raw === 'chatgpt' || raw === 'gemini' || raw === 'claude' || raw === 'deepseek'
+    ? raw
+    : null;
+});
+
+const sourcePlatformName = computed(() => {
+  switch (sourcePlatform.value) {
+    case 'chatgpt':
+      return 'ChatGPT';
+    case 'gemini':
+      return 'Gemini';
+    case 'claude':
+      return 'Claude';
+    case 'deepseek':
+      return 'DeepSeek';
+    default:
+      return '';
+  }
+});
+
+const sourcePlatformIconFile = computed(() => {
+  switch (sourcePlatform.value) {
+    case 'chatgpt':
+      return 'chatgpt.svg';
+    case 'gemini':
+      return 'gemini.svg';
+    case 'claude':
+      return 'claude.png';
+    case 'deepseek':
+      return 'deepseek.svg';
+    default:
+      return null;
+  }
+});
 
 const sectionCardStyle = computed(() => ({
   backgroundColor: 'var(--ac-surface-inset, #f5f5f5)',
@@ -739,6 +803,12 @@ function getEngineColor(engineName: string): string {
 
 function handleClose(): void {
   emit('close');
+}
+
+function openSourceUrl(): void {
+  const url = sourceUrl.value;
+  if (!url) return;
+  void chrome.tabs.create({ url });
 }
 
 function handleSave(): void {

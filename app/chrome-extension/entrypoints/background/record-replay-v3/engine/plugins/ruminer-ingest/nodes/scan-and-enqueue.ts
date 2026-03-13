@@ -2,544 +2,550 @@ import { z } from 'zod';
 
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
+import {
+  ruminerEnqueueRuns,
+  type RuminerIngestPlatform,
+} from '../builtin-flows/ingest-workflow-rpc';
+import { getConversationStates } from '../conversation-ledger';
 import { toErrorResult } from '../utils';
 
 const TAB_ID_VAR = '__rr_v2__tabId';
 
 const scanAndEnqueueConfigSchema = z.object({
+  platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
   limit: z.number().int().min(1).max(200).default(100),
   tailSize: z.number().int().min(0).max(20).default(6),
 });
 
-type scanAndEnqueueConfig = z.infer<typeof scanAndEnqueueConfigSchema>;
+type ScanAndEnqueueConfig = z.infer<typeof scanAndEnqueueConfigSchema>;
 
-type InjectedSuccess = {
-  ok: true;
-  scanned: number;
-  enqueued: number;
-  sawMissing: boolean;
-  unchangedStopAt: string | null;
-  durationMs: number;
+type ConversationListItem = {
+  conversationId: string;
+  conversationUrl: string;
+  conversationTitle: string | null;
 };
 
-type InjectedFailure = { ok: false; error: string };
-type InjectedResult = InjectedSuccess | InjectedFailure;
+type ListResult = { items: ConversationListItem[]; nextOffset: number | null };
+
+type TailHashResult = { tailHashes: string[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
 
 function readNumberVar(vars: Record<string, unknown>, key: string): number | null {
   const v = vars[key];
   return typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : null;
 }
 
+function platformBaseUrl(platform: RuminerIngestPlatform): string {
+  switch (platform) {
+    case 'chatgpt':
+      return 'https://chatgpt.com/';
+    case 'claude':
+      return 'https://claude.ai/';
+    case 'deepseek':
+      return 'https://chat.deepseek.com/';
+    case 'gemini':
+      return 'https://gemini.google.com/app';
+    default:
+      return 'about:blank';
+  }
+}
+
+async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
+  const ms = Math.max(0, Math.floor(timeoutMs));
+  if (ms === 0) return;
+
+  await new Promise<void>((resolve, reject) => {
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const finish = (err?: Error) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      if (pollTimer) clearInterval(pollTimer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+      if (err) reject(err);
+      else resolve();
+    };
+
+    const onUpdated = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId !== tabId) return;
+      if (changeInfo.status !== 'complete') return;
+      finish();
+    };
+
+    const onRemoved = (removedTabId: number) => {
+      if (removedTabId !== tabId) return;
+      finish(new Error(`Tab ${tabId} was closed while waiting for load`));
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+
+    timer = setTimeout(() => finish(new Error(`Timed out waiting for tab ${tabId} to load`)), ms);
+
+    const checkStatus = async () => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab?.status === 'complete') finish();
+      } catch {
+        finish(new Error(`Tab ${tabId} not found`));
+      }
+    };
+
+    pollTimer = setInterval(() => void checkStatus(), 250);
+    void checkStatus();
+  });
+}
+
+function scanScriptPath(platform: RuminerIngestPlatform): string {
+  return `inject-scripts/ruminer.${platform}-scan.js`;
+}
+
+function ingestFlowId(platform: RuminerIngestPlatform): string {
+  return `${platform}.conversation_ingest.v1`;
+}
+
+async function probeScanApi(tabId: number): Promise<Record<string, unknown> | null> {
+  try {
+    const probe = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: () => {
+        try {
+          const api = (window as any).__RUMINER_SCAN__;
+          const apiType = typeof api;
+          const keys = api && typeof api === 'object' ? Object.keys(api).slice(0, 20) : [];
+          return {
+            ok: true,
+            href: String(location.href || ''),
+            hasApi: Boolean(api),
+            apiType,
+            apiPlatform: api && typeof api === 'object' ? String((api as any).platform || '') : '',
+            apiVersion: api && typeof api === 'object' ? String((api as any).version || '') : '',
+            hasList: Boolean(api && typeof api === 'object' && (api as any).listConversations),
+            listType:
+              api && typeof api === 'object' ? typeof (api as any).listConversations : 'none',
+            hasTail: Boolean(
+              api && typeof api === 'object' && (api as any).getConversationTailHashes,
+            ),
+            tailType:
+              api && typeof api === 'object'
+                ? typeof (api as any).getConversationTailHashes
+                : 'none',
+            keys,
+          };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+    });
+
+    const p0 = Array.isArray(probe) ? (probe[0] as any)?.result : null;
+    return isRecord(p0) ? p0 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function injectScanScript(tabId: number, platform: RuminerIngestPlatform): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: [scanScriptPath(platform)],
+    world: 'ISOLATED',
+  });
+}
+
+async function callListConversations(
+  tabId: number,
+  platform: RuminerIngestPlatform,
+  payload: { offset: number; limit: number },
+): Promise<ListResult> {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'ISOLATED',
+    func: async (args: { platform: string; offset: number; limit: number }) => {
+      try {
+        const api = (window as any).__RUMINER_SCAN__;
+        if (!api) return { ok: false, error: '__RUMINER_SCAN__ not found on window' };
+        if (api.platform !== args.platform) {
+          return {
+            ok: false,
+            error: `__RUMINER_SCAN__ platform mismatch (expected=${args.platform}, got=${String(api.platform || '')})`,
+          };
+        }
+        if (typeof api.listConversations !== 'function') {
+          return { ok: false, error: '__RUMINER_SCAN__.listConversations is not a function' };
+        }
+        return await api.listConversations({ offset: args.offset, limit: args.limit });
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    args: [{ platform, offset: payload.offset, limit: payload.limit }],
+  });
+
+  const rawResults = Array.isArray(results) ? results : [];
+  const candidates = rawResults.map((r) => (r as any)?.result);
+
+  const firstFailure = candidates.find((x) => isRecord(x) && (x as any).ok === false);
+  if (isRecord(firstFailure) && typeof (firstFailure as any).error === 'string') {
+    throw new Error((firstFailure as any).error);
+  }
+
+  const raw =
+    candidates.find((x) => !(isRecord(x) && (x as any).ok === false) && x !== undefined) ?? null;
+
+  if (raw === null || raw === undefined) {
+    const p0 = await probeScanApi(tabId);
+    throw new Error(
+      `listConversations returned invalid result (probe=${isRecord(p0) ? JSON.stringify(p0) : 'null'})`,
+    );
+  }
+
+  // Compatibility: allow returning either `{ items, nextOffset }` or an array of items.
+  const normalized = Array.isArray(raw)
+    ? { items: raw, nextOffset: raw.length > 0 ? payload.offset + raw.length : null }
+    : raw;
+
+  if (!isRecord(normalized)) {
+    const p0 = await probeScanApi(tabId);
+    throw new Error(
+      `listConversations returned non-object result (type=${typeof raw}, probe=${isRecord(p0) ? JSON.stringify(p0) : 'null'})`,
+    );
+  }
+
+  const itemsRaw = Array.isArray((normalized as any).items)
+    ? (normalized as any).items
+    : Array.isArray((normalized as any).conversations)
+      ? (normalized as any).conversations
+      : [];
+  const nextOffsetRaw = (normalized as any).nextOffset;
+  const nextOffset =
+    typeof nextOffsetRaw === 'number' && Number.isFinite(nextOffsetRaw)
+      ? Math.floor(nextOffsetRaw)
+      : null;
+
+  const items: ConversationListItem[] = itemsRaw
+    .map((it: any) => {
+      const conversationId = typeof it?.conversationId === 'string' ? it.conversationId.trim() : '';
+      const conversationUrl =
+        typeof it?.conversationUrl === 'string' ? it.conversationUrl.trim() : '';
+      if (!conversationId || !conversationUrl) return null;
+      const conversationTitle =
+        typeof it?.conversationTitle === 'string' && it.conversationTitle.trim()
+          ? it.conversationTitle.trim()
+          : null;
+      return { conversationId, conversationUrl, conversationTitle };
+    })
+    .filter(Boolean) as ConversationListItem[];
+
+  return { items, nextOffset };
+}
+
+async function callTailHashes(
+  tabId: number,
+  platform: RuminerIngestPlatform,
+  payload: { conversationId: string; conversationUrl: string; tailSize: number },
+): Promise<TailHashResult> {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'ISOLATED',
+    func: async (args: {
+      platform: string;
+      conversationId: string;
+      conversationUrl: string;
+      tailSize: number;
+    }) => {
+      try {
+        const api = (window as any).__RUMINER_SCAN__;
+        if (!api) return { ok: false, error: '__RUMINER_SCAN__ not found on window' };
+        if (api.platform !== args.platform) {
+          return {
+            ok: false,
+            error: `__RUMINER_SCAN__ platform mismatch (expected=${args.platform}, got=${String(api.platform || '')})`,
+          };
+        }
+        if (typeof api.getConversationTailHashes !== 'function') {
+          return {
+            ok: false,
+            error: '__RUMINER_SCAN__.getConversationTailHashes is not a function',
+          };
+        }
+        return await api.getConversationTailHashes({
+          conversationId: args.conversationId,
+          conversationUrl: args.conversationUrl,
+          tailSize: args.tailSize,
+        });
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    args: [
+      {
+        platform,
+        conversationId: payload.conversationId,
+        conversationUrl: payload.conversationUrl,
+        tailSize: payload.tailSize,
+      },
+    ],
+  });
+
+  const rawResults = Array.isArray(results) ? results : [];
+  const firstFailure = rawResults
+    .map((r) => (r as any)?.result)
+    .find((x) => isRecord(x) && (x as any).ok === false);
+  if (isRecord(firstFailure) && typeof (firstFailure as any).error === 'string') {
+    throw new Error((firstFailure as any).error);
+  }
+
+  const raw =
+    rawResults.map((r) => (r as any)?.result).find((x) => isRecord(x) && (x as any).ok !== false) ??
+    null;
+
+  if (!isRecord(raw)) {
+    throw new Error('getConversationTailHashes returned invalid result');
+  }
+
+  const tailHashesRaw = (raw as any).tailHashes;
+  const tailHashes = Array.isArray(tailHashesRaw) ? tailHashesRaw.map((h: any) => String(h)) : [];
+  return { tailHashes };
+}
+
+function hashesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export const scanAndEnqueueNodeDefinition: NodeDefinition<
   'ruminer.scan_and_enqueue_conversations',
-  scanAndEnqueueConfig
+  ScanAndEnqueueConfig
 > = {
   kind: 'ruminer.scan_and_enqueue_conversations',
   schema: scanAndEnqueueConfigSchema,
   async execute(ctx, node) {
+    const platform = node.config.platform;
     const vars = ctx.vars as unknown as Record<string, unknown>;
     const backgroundTabId = readNumberVar(vars, TAB_ID_VAR);
-    const effectiveTabId = backgroundTabId ?? ctx.tabId;
-
-    let injectedResult: InjectedResult | null = null;
+    let effectiveTabId: number | null = null;
+    let createdBackgroundTabId: number | null = null;
 
     try {
-      const injected = await chrome.scripting.executeScript({
-        target: { tabId: effectiveTabId },
-        world: 'ISOLATED',
-        func: async (payload: {
-          runId: string;
-          limit: number;
-          tailSize: number;
-        }): Promise<InjectedResult> => {
-          try {
-            const PLATFORM = 'chatgpt';
-            const FLOW_ID = 'chatgpt.conversation_scan.v1';
-            const INGEST_FLOW_ID = 'chatgpt.conversation_ingest.v1';
-            const LIMIT = typeof payload.limit === 'number' ? payload.limit : 100;
-            const TAIL_SIZE = typeof payload.tailSize === 'number' ? payload.tailSize : 6;
-
-            const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
-            if (!runId) throw new Error('Missing runId');
-
-            const sendMessageWithTimeout = <T>(msg: unknown, timeoutMs: number): Promise<T> => {
-              return new Promise((resolve, reject) => {
-                const timer = setTimeout(
-                  () => {
-                    reject(new Error(`chrome.runtime.sendMessage timed out after ${timeoutMs}ms`));
-                  },
-                  Math.max(1_000, Math.floor(timeoutMs)),
-                );
-
-                try {
-                  chrome.runtime.sendMessage(msg as any, (resp: any) => {
-                    clearTimeout(timer);
-                    const err = chrome.runtime.lastError?.message;
-                    if (err) {
-                      reject(new Error(err));
-                      return;
-                    }
-                    resolve(resp as T);
-                  });
-                } catch (e) {
-                  clearTimeout(timer);
-                  reject(e);
-                }
-              });
-            };
-
-            const notify = (title: string, message: string) => {
-              try {
-                chrome.runtime.sendMessage({
-                  type: 'ruminer.workflow.notify',
-                  title,
-                  message,
-                } as any);
-              } catch {
-                // ignore
-              }
-            };
-
-            const progress = (data: unknown) => {
-              try {
-                chrome.runtime.sendMessage({
-                  type: 'ruminer.workflow.progress',
-                  runId,
-                  flowId: FLOW_ID,
-                  payload: data,
-                } as any);
-              } catch {
-                // ignore
-              }
-            };
-
-            const safeJson = async (response: Response) => {
-              try {
-                return await response.json();
-              } catch {
-                return null;
-              }
-            };
-
-            const getAccessToken = async (): Promise<string> => {
-              const url = new URL('/api/auth/session', location.origin).toString();
-              const resp = await fetch(url, { credentials: 'include' });
-              if (!resp.ok) throw new Error('Not logged in to ChatGPT');
-              const session = await safeJson(resp);
-              const token =
-                session && typeof session.accessToken === 'string' ? session.accessToken : '';
-              if (!token.trim()) throw new Error('ChatGPT session missing access token');
-              return token.trim();
-            };
-
-            const getCookie = (key: string): string => {
-              try {
-                const m = document.cookie.match('(^|;)\\s*' + key + '\\s*=\\s*([^;]+)');
-                return m ? String(m.pop() || '') : '';
-              } catch {
-                return '';
-              }
-            };
-
-            const getTeamAccountId = async (accessToken: string): Promise<string | null> => {
-              const workspaceId = getCookie('_account');
-              if (!workspaceId) return null;
-              const url = new URL(
-                '/backend-api/accounts/check/v4-2023-04-27',
-                location.origin,
-              ).toString();
-              const resp = await fetch(url, {
-                headers: {
-                  Authorization: 'Bearer ' + accessToken,
-                  'X-Authorization': 'Bearer ' + accessToken,
-                },
-                credentials: 'include',
-              });
-              if (!resp.ok) return null;
-              const payload = await safeJson(resp);
-              try {
-                const account = payload && payload.accounts && payload.accounts[workspaceId];
-                const accountId = account && account.account && account.account.account_id;
-                return typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
-              } catch {
-                return null;
-              }
-            };
-
-            const fetchBackendApi = async (
-              path: string,
-              query: Record<string, unknown>,
-              accessToken: string,
-              accountId: string | null,
-            ): Promise<any> => {
-              const url = new URL('/backend-api' + path, location.origin);
-              for (const [k, v] of Object.entries(query || {})) {
-                if (v === undefined || v === null) continue;
-                url.searchParams.set(k, String(v));
-              }
-
-              const headers: Record<string, string> = {
-                Authorization: 'Bearer ' + accessToken,
-                'X-Authorization': 'Bearer ' + accessToken,
-              };
-              if (accountId) headers['Chatgpt-Account-Id'] = accountId;
-
-              const resp = await fetch(url.toString(), { headers, credentials: 'include' });
-              if (!resp.ok) {
-                const body = await safeJson(resp);
-                const msg =
-                  body && (body.detail || body.error) ? String(body.detail || body.error) : '';
-                throw new Error(
-                  'ChatGPT backend API failed (' +
-                    resp.status +
-                    '): ' +
-                    (msg || resp.statusText || 'request failed'),
-                );
-              }
-              return safeJson(resp);
-            };
-
-            const listConversations = async (
-              offset: number,
-              accessToken: string,
-              accountId: string | null,
-            ): Promise<any> => {
-              return fetchBackendApi(
-                '/conversations',
-                { offset, limit: LIMIT, order: 'updated' },
-                accessToken,
-                accountId,
-              );
-            };
-
-            const fetchConversation = async (
-              id: string,
-              accessToken: string,
-              accountId: string | null,
-            ): Promise<any> => {
-              return fetchBackendApi(
-                '/conversation/' + encodeURIComponent(id),
-                {},
-                accessToken,
-                accountId,
-              );
-            };
-
-            const extractContentText = (content: any): string => {
-              if (!content || typeof content !== 'object') return '';
-              const t = content.content_type;
-              if (t === 'text') {
-                const parts = Array.isArray(content.parts) ? content.parts : [];
-                return parts.filter((p: any) => typeof p === 'string').join('');
-              }
-              if (t === 'code') return typeof content.text === 'string' ? content.text : '';
-              if (t === 'execution_output')
-                return typeof content.text === 'string' ? content.text : '';
-              if (t === 'multimodal_text') {
-                const parts = Array.isArray(content.parts) ? content.parts : [];
-                return parts
-                  .map((p: any) => {
-                    if (typeof p === 'string') return p;
-                    if (p && typeof p === 'object' && typeof p.text === 'string') return p.text;
-                    return '';
-                  })
-                  .join('');
-              }
-              if (t === 'tether_quote') {
-                const bits: string[] = [];
-                if (typeof content.title === 'string') bits.push(content.title);
-                if (typeof content.text === 'string') bits.push(content.text);
-                if (typeof content.url === 'string') bits.push(content.url);
-                return bits.join('\\n');
-              }
-              return '';
-            };
-
-            const extractConversationMessages = (conversation: any) => {
-              const mapping = conversation && conversation.mapping ? conversation.mapping : null;
-              const current =
-                conversation && conversation.current_node ? conversation.current_node : null;
-              if (!mapping || typeof mapping !== 'object' || !current) return [];
-
-              const chain: any[] = [];
-              const visited = new Set<string>();
-              let nodeId = String(current);
-              while (nodeId && (mapping as any)[nodeId] && !visited.has(nodeId)) {
-                visited.add(nodeId);
-                const node = (mapping as any)[nodeId];
-                chain.push(node);
-                const parent = node && node.parent ? String(node.parent) : '';
-                nodeId = parent || '';
-              }
-              chain.reverse();
-
-              const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-              for (const node of chain) {
-                const msg = node && node.message ? node.message : null;
-                const role =
-                  msg && typeof msg.author === 'object' && typeof msg.author.role === 'string'
-                    ? msg.author.role
-                    : '';
-                if (role !== 'user' && role !== 'assistant') continue;
-                const content = extractContentText(msg && msg.content ? msg.content : null)
-                  .replace(/\\r\\n/g, '\\n')
-                  .trim();
-                if (!content) continue;
-                out.push({ role, content });
-              }
-              return out;
-            };
-
-            const bytesToHex = (buffer: ArrayBuffer) =>
-              Array.from(new Uint8Array(buffer))
-                .map((b) => b.toString(16).padStart(2, '0'))
-                .join('');
-
-            const sha256Hex = async (input: string) => {
-              const enc = new TextEncoder();
-              const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
-              return bytesToHex(digest);
-            };
-
-            const hashMessage = async (role: string, content: string) => {
-              return sha256Hex(
-                JSON.stringify({
-                  content: String(content || '')
-                    .replace(/\\r\\n/g, '\\n')
-                    .trim(),
-                  role,
-                }),
-              );
-            };
-
-            const tailHashes = async (messages: Array<{ role: string; content: string }>) => {
-              const tail = messages.slice(-TAIL_SIZE);
-              const out: string[] = [];
-              for (const m of tail) out.push(await hashMessage(m.role, m.content));
-              return out;
-            };
-
-            const getConversationStates = async (groupIds: string[]) => {
-              const resp = await sendMessageWithTimeout<any>(
-                {
-                  type: 'ruminer.ledger.getConversationStates',
-                  groupIds,
-                  tailSize: TAIL_SIZE,
-                },
-                60_000,
-              );
-              if (!resp || !resp.ok) {
-                const err =
-                  resp && resp.error ? String(resp.error) : 'ledger.getConversationStates failed';
-                throw new Error(err);
-              }
-              return resp.result || {};
-            };
-
-            const enqueueRuns = async (items: any[]) => {
-              const resp = await sendMessageWithTimeout<any>(
-                { type: 'ruminer.rr_v3.enqueueRuns', items },
-                60_000,
-              );
-              if (!resp || !resp.ok) {
-                const err = resp && resp.error ? String(resp.error) : 'enqueueRuns failed';
-                throw new Error(err);
-              }
-              return resp.result || {};
-            };
-
-            const startedAt = Date.now();
-            const accessToken = await getAccessToken();
-            const accountId = await getTeamAccountId(accessToken);
-
-            let sawMissing = false;
-            let stopOnUnchanged = false;
-            let unchangedStopAt: string | null = null;
-
-            let scanned = 0;
-            let enqueued = 0;
-
-            progress({ kind: 'chatgpt.scanner.started', limit: LIMIT, tailSize: TAIL_SIZE });
-
-            let offset = 0;
-            while (!stopOnUnchanged) {
-              const list = await listConversations(offset, accessToken, accountId);
-              const items = list && Array.isArray(list.items) ? list.items : [];
-              if (items.length === 0) break;
-
-              const rows = items
-                .map((it: any) => {
-                  const id = String(it && it.id ? it.id : '').trim();
-                  if (!id) return null;
-                  const title = typeof it.title === 'string' ? it.title : null;
-                  const url = 'https://chatgpt.com/c/' + id;
-                  return { id, title, url, groupId: PLATFORM + ':' + id };
-                })
-                .filter(Boolean) as Array<{
-                id: string;
-                title: string | null;
-                url: string;
-                groupId: string;
-              }>;
-
-              const groupIds = rows.map((r) => r.groupId);
-              const states = await getConversationStates(groupIds);
-
-              const toEnqueue: any[] = [];
-
-              for (const row of rows) {
-                scanned += 1;
-                const state =
-                  states && states[row.groupId] ? states[row.groupId] : { exists: false };
-
-                if (!state.exists) {
-                  sawMissing = true;
-                  toEnqueue.push({
-                    flowId: INGEST_FLOW_ID,
-                    args: {
-                      ruminerPlatform: PLATFORM,
-                      ruminerConversationId: row.id,
-                      ruminerConversationUrl: row.url,
-                      ...(row.title ? { ruminerConversationTitle: row.title } : {}),
-                    },
-                  });
-                  continue;
-                }
-
-                if (state.status === 'skipped') continue;
-
-                if (state.status === 'failed') {
-                  toEnqueue.push({
-                    flowId: INGEST_FLOW_ID,
-                    args: {
-                      ruminerPlatform: PLATFORM,
-                      ruminerConversationId: row.id,
-                      ruminerConversationUrl: row.url,
-                      ...(row.title ? { ruminerConversationTitle: row.title } : {}),
-                    },
-                  });
-                  continue;
-                }
-
-                if (!sawMissing) {
-                  const conv = await fetchConversation(row.id, accessToken, accountId);
-                  const msgs = extractConversationMessages(conv);
-                  const currentTail = await tailHashes(msgs);
-                  const ledgerTail = Array.isArray(state.tailHashes) ? state.tailHashes : [];
-                  const unchanged =
-                    ledgerTail.length === currentTail.length &&
-                    ledgerTail.every((h: string, i: number) => h === currentTail[i]);
-
-                  if (unchanged) {
-                    stopOnUnchanged = true;
-                    unchangedStopAt = row.id;
-                    break;
-                  }
-
-                  toEnqueue.push({
-                    flowId: INGEST_FLOW_ID,
-                    args: {
-                      ruminerPlatform: PLATFORM,
-                      ruminerConversationId: row.id,
-                      ruminerConversationUrl: row.url,
-                      ...(row.title ? { ruminerConversationTitle: row.title } : {}),
-                    },
-                  });
-                }
-              }
-
-              if (toEnqueue.length > 0) {
-                progress({
-                  kind: 'chatgpt.scanner.enqueued',
-                  conversations: toEnqueue.map((item) => {
-                    const args = item && item.args ? item.args : {};
-                    const cid = String(args.ruminerConversationId || '').trim();
-                    return {
-                      platform: PLATFORM,
-                      sessionId: PLATFORM + ':' + cid,
-                      conversationId: cid,
-                      title: args.ruminerConversationTitle || null,
-                      url: args.ruminerConversationUrl || null,
-                    };
-                  }),
-                });
-                const r = await enqueueRuns(toEnqueue);
-                enqueued += Number(r.enqueued || 0);
-              }
-
-              progress({
-                kind: 'chatgpt.scanner.page',
-                offset,
-                scanned,
-                enqueued,
-                sawMissing,
-                stopOnUnchanged,
-                ...(unchangedStopAt ? { unchangedStopAt } : {}),
-              });
-
-              if (stopOnUnchanged) break;
-              offset += items.length;
-            }
-
-            const durationMs = Date.now() - startedAt;
-            notify(
-              'ChatGPT – Import All',
-              'enqueued ' +
-                enqueued +
-                ', scanned ' +
-                scanned +
-                (unchangedStopAt ? ', stopped at unchanged ' + unchangedStopAt : '') +
-                ' (' +
-                durationMs +
-                'ms)',
-            );
-
-            progress({
-              kind: 'chatgpt.scanner.finished',
-              scanned,
-              enqueued,
-              sawMissing,
-              unchangedStopAt,
-              durationMs,
-            });
-
-            return { ok: true, scanned, enqueued, sawMissing, unchangedStopAt, durationMs };
-          } catch (e) {
-            return { ok: false, error: e instanceof Error ? e.message : String(e) };
-          }
-        },
-        args: [{ runId: ctx.runId, limit: node.config.limit, tailSize: node.config.tailSize }],
-      });
-
-      injectedResult = (
-        Array.isArray(injected) ? injected[0]?.result : null
-      ) as InjectedResult | null;
+      // Scanning should never run on ctx.tabId because it can scroll/navigate the user's active tab.
+      if (backgroundTabId) {
+        effectiveTabId = backgroundTabId;
+      } else {
+        const url = platformBaseUrl(platform);
+        const tab = await chrome.tabs.create({ url, active: false });
+        if (tab.id === undefined) {
+          return toErrorResult(RR_ERROR_CODES.TAB_NOT_FOUND, 'Failed to open background tab', {
+            platform,
+            url,
+          });
+        }
+        createdBackgroundTabId = tab.id;
+        effectiveTabId = tab.id;
+        await waitForTabComplete(tab.id, 15_000);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `ChatGPT scan injection failed: ${msg}`, {
+      return toErrorResult(RR_ERROR_CODES.NAVIGATION_FAILED, `Failed to prepare scan tab: ${msg}`, {
         error: msg,
+        platform,
       });
     }
 
-    if (!injectedResult) {
-      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, 'ChatGPT scan returned no result');
+    if (!effectiveTabId) {
+      return toErrorResult(RR_ERROR_CODES.TAB_NOT_FOUND, 'Failed to resolve scan tab', {
+        platform,
+        ctxTabId: ctx.tabId,
+        backgroundTabId,
+      });
     }
 
-    if (!injectedResult.ok) {
-      return toErrorResult(
-        RR_ERROR_CODES.SCRIPT_FAILED,
-        injectedResult.error || 'ChatGPT scan failed',
-        {
-          error: injectedResult.error || 'ChatGPT scan failed',
-        },
-      );
+    try {
+      await injectScanScript(effectiveTabId, platform);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan script inject failed: ${msg}`, {
+        error: msg,
+        platform,
+      });
+    }
+
+    const flowId = ingestFlowId(platform);
+    const limit = node.config.limit;
+    const tailSize = node.config.tailSize;
+
+    let offset = 0;
+    let scanned = 0;
+    let enqueued = 0;
+    let sawMissing = false;
+    let unchangedStopAt: string | null = null;
+    let stopOnUnchanged = false;
+
+    try {
+      while (!stopOnUnchanged) {
+        let list: ListResult;
+        try {
+          list = await callListConversations(effectiveTabId, platform, { offset, limit });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return toErrorResult(
+            RR_ERROR_CODES.SCRIPT_FAILED,
+            `Scan listConversations failed: ${msg}`,
+            {
+              error: msg,
+              platform,
+            },
+          );
+        }
+
+        const items = list.items;
+        if (items.length === 0) break;
+
+        const groupIds = items.map((c) => `${platform}:${c.conversationId}`);
+        let states: Record<string, any> = {};
+        try {
+          states = await getConversationStates({ groupIds, tailSize });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return toErrorResult(
+            RR_ERROR_CODES.INTERNAL,
+            `Failed to read conversation ledger: ${msg}`,
+            {
+              error: msg,
+              platform,
+            },
+          );
+        }
+
+        const toEnqueue: Array<{ flowId: string; args: Record<string, unknown> }> = [];
+
+        for (const c of items) {
+          scanned += 1;
+          const groupId = `${platform}:${c.conversationId}`;
+          const state =
+            isRecord(states) && isRecord(states[groupId])
+              ? (states[groupId] as any)
+              : { exists: false };
+
+          if (!state.exists) {
+            sawMissing = true;
+            toEnqueue.push({
+              flowId,
+              args: {
+                ruminerPlatform: platform,
+                ruminerConversationId: c.conversationId,
+                ruminerConversationUrl: c.conversationUrl,
+                ...(c.conversationTitle ? { ruminerConversationTitle: c.conversationTitle } : {}),
+              },
+            });
+            continue;
+          }
+
+          if (state.status === 'skipped') continue;
+          if (state.status === 'failed') {
+            toEnqueue.push({
+              flowId,
+              args: {
+                ruminerPlatform: platform,
+                ruminerConversationId: c.conversationId,
+                ruminerConversationUrl: c.conversationUrl,
+                ...(c.conversationTitle ? { ruminerConversationTitle: c.conversationTitle } : {}),
+              },
+            });
+            continue;
+          }
+
+          if (!sawMissing) {
+            let tail: TailHashResult;
+            try {
+              tail = await callTailHashes(effectiveTabId, platform, {
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+                tailSize,
+              });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan tail hash failed: ${msg}`, {
+                error: msg,
+                platform,
+                conversationId: c.conversationId,
+              });
+            }
+
+            const ledgerTail = Array.isArray(state.tailHashes)
+              ? state.tailHashes.map((h: any) => String(h))
+              : [];
+            const currentTail = Array.isArray(tail.tailHashes) ? tail.tailHashes : [];
+            const unchanged = hashesEqual(ledgerTail, currentTail);
+            if (unchanged) {
+              unchangedStopAt = c.conversationId;
+              stopOnUnchanged = true;
+              break;
+            }
+
+            toEnqueue.push({
+              flowId,
+              args: {
+                ruminerPlatform: platform,
+                ruminerConversationId: c.conversationId,
+                ruminerConversationUrl: c.conversationUrl,
+                ...(c.conversationTitle ? { ruminerConversationTitle: c.conversationTitle } : {}),
+              },
+            });
+          }
+        }
+
+        if (toEnqueue.length > 0) {
+          const resp = await ruminerEnqueueRuns(toEnqueue as any);
+          if (!isRecord(resp) || resp.ok !== true) {
+            const err =
+              isRecord(resp) && typeof resp.error === 'string' ? resp.error : 'enqueueRuns failed';
+            return toErrorResult(RR_ERROR_CODES.INTERNAL, err, { error: err, platform });
+          }
+          const r = isRecord(resp.result) ? (resp.result as any) : {};
+          const count = typeof r.enqueued === 'number' ? r.enqueued : 0;
+          enqueued += count;
+        }
+
+        if (stopOnUnchanged) break;
+        if (list.nextOffset === null) break;
+        offset = list.nextOffset;
+      }
+    } finally {
+      if (createdBackgroundTabId && createdBackgroundTabId !== ctx.tabId) {
+        await chrome.tabs.remove(createdBackgroundTabId).catch(() => {});
+      }
+    }
+
+    try {
+      ctx.log('info', 'ruminer.scan_and_enqueue: finished', {
+        platform,
+        scanned,
+        enqueued,
+        sawMissing,
+        unchangedStopAt,
+      });
+    } catch {
+      // ignore
     }
 
     return {
       status: 'succeeded',
       outputs: {
-        scanned: injectedResult.scanned,
-        enqueued: injectedResult.enqueued,
+        scanned,
+        enqueued,
+        ...(unchangedStopAt ? { unchangedStopAt } : {}),
       },
     };
   },

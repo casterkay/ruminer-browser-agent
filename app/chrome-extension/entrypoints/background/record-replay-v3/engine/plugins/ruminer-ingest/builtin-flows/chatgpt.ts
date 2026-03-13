@@ -49,6 +49,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       kind: 'ruminer.scan_and_enqueue_conversations',
       name: 'Scan & Enqueue',
       config: {
+        platform: 'chatgpt',
         limit: 100,
         tailSize: 6,
       },
@@ -81,6 +82,7 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       kind: 'ruminer.ingest_current_conversation',
       name: 'Ingest Conversation',
       config: {
+        platform: 'chatgpt',
         conversationUrlVar: 'ruminerConversationUrl',
         closeBackgroundTab: true,
       },
