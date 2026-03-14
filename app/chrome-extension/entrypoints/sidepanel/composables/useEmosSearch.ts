@@ -51,7 +51,7 @@ type CachedSearchResult = {
 };
 
 const EMOS_SEARCH_CACHE_TTL_MS = 30_000;
-const EMOS_SEARCH_CACHE_MAX_ENTRIES = 40;
+const EMOS_SEARCH_CACHE_MAX_ENTRIES = 50;
 const emosSearchCache = new Map<string, CachedSearchResult | Promise<CachedSearchResult>>();
 let lastEmosSettingsSignature = '';
 
@@ -444,7 +444,7 @@ export function useEmosSearch(): UseEmosSearch {
 
       const body: Record<string, unknown> = {
         query: filters.query || '',
-        limit: 50,
+        limit: 10,
       };
 
       if (filters.startDate) {
