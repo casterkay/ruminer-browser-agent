@@ -84,6 +84,14 @@ export type AgentCliPreference = 'openclaw' | 'claude' | 'codex' | 'cursor' | 'q
 
 export interface AgentActRequest {
   instruction: string;
+  /**
+   * Persistence mode for this act request.
+   *
+   * - 'persisted' (default): persist messages + resume state to DB (sessions/messages).
+   * - 'ephemeral': do not persist messages or session resume state to DB.
+   *   Intended for Quick Panel per-page in-memory sessions.
+   */
+  persistence?: 'ephemeral' | 'persisted';
   cliPreference?: AgentCliPreference;
   model?: string;
   attachments?: AgentAttachment[];

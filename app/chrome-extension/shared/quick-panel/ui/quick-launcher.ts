@@ -57,6 +57,10 @@ export interface QuickPanelLauncherManager {
   isExpanded: () => boolean;
   /** Current active sessionId (if any). */
   getActiveSessionId: () => string | null;
+  /** Whether the active session is a per-page Quick Chat session (ephemeral/persistable). */
+  isQuickSession: () => boolean;
+  /** Export full transcript (chronological). */
+  exportTranscript: () => AgentMessage[];
   /** Update engine/session branding. */
   setBranding: (branding: QuickPanelLauncherBranding) => void;
   /** Dispose DOM and listeners. */
@@ -66,6 +70,12 @@ export interface QuickPanelLauncherManager {
 interface QueuedMessage {
   id: string;
   text: string;
+}
+
+function createQuickSessionId(): string {
+  const uuid = (globalThis as any)?.crypto?.randomUUID?.();
+  if (typeof uuid === 'string' && uuid.trim()) return uuid.trim();
+  return `qp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 // ============================================================
@@ -711,6 +721,7 @@ export function createQuickPanelLauncher(
   let expanded = false;
   let hoverWithin = false;
   let activeSessionId: string | null = null;
+  let activeSessionIsQuick = true;
   let branding: QuickPanelLauncherBranding = {};
 
   let requestState:
@@ -863,29 +874,7 @@ export function createQuickPanelLauncher(
   let lastActivationAt = 0;
 
   async function ensureActiveSession(): Promise<void> {
-    if (activeSessionId && historyLoaded) return;
-
-    if (activeSessionId && !historyLoaded) {
-      try {
-        const opened = await options.agentBridge.openSession({
-          sessionId: activeSessionId,
-          reason: 'open',
-        });
-        if (opened.success) {
-          branding = {
-            ...branding,
-            sessionName: opened.sessionName,
-            engineDisplayName: opened.engineDisplayName,
-            brandIconUrl: opened.brandIconUrl,
-          };
-          if (Array.isArray(opened.recentMessages)) setHistory(opened.recentMessages);
-          historyLoaded = true;
-          return;
-        }
-      } catch {
-        // ignore; fall through to normal activation
-      }
-    }
+    if (activeSessionId) return;
 
     const now = Date.now();
     if (activationInFlight) return activationInFlight;
@@ -895,11 +884,21 @@ export function createQuickPanelLauncher(
     lastActivationAt = now;
 
     activationInFlight = (async () => {
-      const result = await options.agentBridge.activateSession({ reason: 'expand' });
+      // Generate a per-page ephemeral session id (in-memory).
+      const id = createQuickSessionId();
+      activeSessionId = id;
+      activeSessionIsQuick = true;
+
+      const result = await options.agentBridge.activateSession({
+        reason: 'expand',
+        sessionId: id,
+      });
       if (!result.success) return;
 
-      const sessionChanged = activeSessionId !== result.sessionId;
-      activeSessionId = result.sessionId;
+      if (result.sessionId && result.sessionId !== activeSessionId) {
+        activeSessionId = result.sessionId;
+      }
+
       branding = {
         ...branding,
         sessionName: result.sessionName,
@@ -907,10 +906,8 @@ export function createQuickPanelLauncher(
         brandIconUrl: result.brandIconUrl,
       };
 
-      if (Array.isArray(result.recentMessages)) {
-        if (sessionChanged || !historyLoaded) {
-          setHistory(result.recentMessages);
-        }
+      if (Array.isArray(result.recentMessages) && result.recentMessages.length > 0) {
+        setHistory(result.recentMessages);
       }
     })().finally(() => {
       activationInFlight = null;
@@ -994,11 +991,8 @@ export function createQuickPanelLauncher(
   }
 
   function trimMessages(): void {
-    while (messageOrder.length > maxRecentMessages) {
-      const id = messageOrder.shift();
-      if (!id) continue;
-      messageById.delete(id);
-    }
+    // UI shows only recent messages, but we keep full transcript in memory
+    // so it can be persisted later when user explicitly enables persistence.
   }
 
   function renderMessages(): void {
@@ -1016,8 +1010,10 @@ export function createQuickPanelLauncher(
       }
     }
 
-    // Render messages in chronological order, inserting ephemeral after last user message
-    for (let i = 0; i < messageOrder.length; i++) {
+    const startIndex = Math.max(0, messageOrder.length - maxRecentMessages);
+
+    // Render recent messages in chronological order, inserting ephemeral after last user message
+    for (let i = startIndex; i < messageOrder.length; i++) {
       const id = messageOrder[i];
       const msg = messageById.get(id);
       if (!msg) continue;
@@ -1202,6 +1198,14 @@ export function createQuickPanelLauncher(
 
   async function sendInstruction(instruction: string): Promise<void> {
     await ensureActiveSession();
+    if (!activeSessionId) {
+      requestState = 'error';
+      setBusyUi(false);
+      updateStatus();
+      updateButtons();
+      void processQueue();
+      return;
+    }
 
     requestState = 'starting';
     setBusyUi(true);
@@ -1209,6 +1213,8 @@ export function createQuickPanelLauncher(
     updateButtons();
 
     const result = await options.agentBridge.sendToAI({
+      sessionId: activeSessionId,
+      isQuickSession: activeSessionIsQuick,
       instruction,
       context: getContext(),
     });
@@ -1222,7 +1228,10 @@ export function createQuickPanelLauncher(
       return;
     }
 
-    activeSessionId = result.sessionId;
+    if (result.sessionId && result.sessionId !== activeSessionId) {
+      activeSessionId = result.sessionId;
+    }
+
     currentRequestId = result.requestId;
 
     // Subscribe to streaming events for this request
@@ -1526,6 +1535,7 @@ export function createQuickPanelLauncher(
     if (!result.success) return { success: false, error: result.error || 'Failed to open session' };
 
     activeSessionId = result.sessionId;
+    activeSessionIsQuick = false;
     branding = {
       ...branding,
       sessionName: result.sessionName,
@@ -1545,22 +1555,30 @@ export function createQuickPanelLauncher(
     if (disposed) return { success: false, error: 'Launcher is disposed' };
     mount();
 
+    // Reset local state and start a fresh per-page ephemeral session.
+    const id = createQuickSessionId();
+    activeSessionId = id;
+    activeSessionIsQuick = true;
+    setHistory([]);
+
     const result = await options.agentBridge.activateSession({
       reason: 'shortcut',
       forceNew: true,
+      sessionId: id,
     });
-    if (!result.success)
-      return { success: false, error: result.error || 'Failed to create session' };
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to create quick chat' };
+    }
 
-    activeSessionId = result.sessionId;
     branding = {
       ...branding,
       sessionName: result.sessionName,
       engineDisplayName: result.engineDisplayName,
       brandIconUrl: result.brandIconUrl,
     };
-    if (Array.isArray(result.recentMessages)) setHistory(result.recentMessages);
-    else setHistory([]);
+    if (Array.isArray(result.recentMessages) && result.recentMessages.length > 0) {
+      setHistory(result.recentMessages);
+    }
 
     expand({ focus: newOptions?.focus });
     return { success: true };
@@ -1588,6 +1606,23 @@ export function createQuickPanelLauncher(
 
   function getActiveSessionId(): string | null {
     return activeSessionId;
+  }
+
+  function isQuickSession(): boolean {
+    return activeSessionIsQuick;
+  }
+
+  function exportTranscript(): AgentMessage[] {
+    const out: AgentMessage[] = [];
+    for (const id of messageOrder) {
+      const msg = messageById.get(id);
+      if (!msg) continue;
+      if (!shouldShowMessage(msg)) continue;
+      // Only export final snapshots (skip transient deltas if any slipped in).
+      if (msg.isStreaming && !msg.isFinal) continue;
+      out.push(msg);
+    }
+    return out;
   }
 
   function dispose(): void {
@@ -1633,6 +1668,8 @@ export function createQuickPanelLauncher(
     toggle,
     isExpanded,
     getActiveSessionId,
+    isQuickSession,
+    exportTranscript,
     setBranding,
     dispose,
   };

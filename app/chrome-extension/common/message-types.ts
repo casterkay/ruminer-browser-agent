@@ -91,6 +91,7 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_ACTIVATE_SESSION: 'quick_panel_activate_session',
   QUICK_PANEL_OPEN_SESSION: 'quick_panel_open_session',
   QUICK_PANEL_DELETE_SESSION: 'quick_panel_delete_session',
+  QUICK_PANEL_PERSIST_SESSION: 'quick_panel_persist_session',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
@@ -250,6 +251,15 @@ export interface QuickPanelAIContext {
  * Payload for sending a message to AI via Quick Panel.
  */
 export interface QuickPanelSendToAIPayload {
+  /** Quick Panel ephemeral session id (per page). */
+  sessionId: string;
+  /**
+   * Whether this sessionId represents a per-page Quick Chat session (ephemeral/persistable).
+   * When false (e.g. opening a normal Agent session), Quick Panel should always persist messages.
+   *
+   * Default: true
+   */
+  isQuickSession?: boolean;
   /** The user's instruction/question for the AI */
   instruction: string;
   /** Optional contextual information from the page */
@@ -286,6 +296,8 @@ export type QuickPanelGetBrandingResponse =
  * (within a time threshold) or create a new one named "Quick Session N".
  */
 export interface QuickPanelActivateSessionPayload {
+  /** Quick Panel ephemeral session id (per page). */
+  sessionId: string;
   /** Optional reason for telemetry/debugging. */
   reason?: 'expand' | 'send' | 'shortcut';
   /** When true, always create a new session. */
@@ -294,7 +306,7 @@ export interface QuickPanelActivateSessionPayload {
 
 export interface QuickPanelActivateSessionMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_ACTIVATE_SESSION;
-  payload?: QuickPanelActivateSessionPayload;
+  payload: QuickPanelActivateSessionPayload;
 }
 
 export type QuickPanelActivateSessionResponse =
@@ -343,6 +355,29 @@ export interface QuickPanelDeleteSessionMessage {
 }
 
 export type QuickPanelDeleteSessionResponse = { success: true } | { success: false; error: string };
+
+export interface QuickPanelPersistSessionPayload {
+  sessionId: string;
+  /**
+   * Optional session name to persist as sessions.name.
+   * If omitted, backend will generate a reasonable default.
+   */
+  name?: string;
+  /**
+   * Full transcript to backfill into DB when persisting.
+   * This should be final snapshots only (no streaming deltas).
+   */
+  messages: AgentMessage[];
+}
+
+export interface QuickPanelPersistSessionMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_PERSIST_SESSION;
+  payload: QuickPanelPersistSessionPayload;
+}
+
+export type QuickPanelPersistSessionResponse =
+  | { success: true; sessionId: string }
+  | { success: false; error: string };
 
 /**
  * Payload for cancelling an active AI request.

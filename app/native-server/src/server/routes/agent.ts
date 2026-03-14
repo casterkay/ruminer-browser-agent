@@ -39,6 +39,10 @@ import {
 import { attachmentService } from '../../agent/attachment-service';
 import { AgentChatService } from '../../agent/chat-service';
 import { openDirectoryPicker } from '../../agent/directory-picker';
+import {
+  clearEphemeralSessionState,
+  getEphemeralSessionState,
+} from '../../agent/ephemeral-session-store';
 import { getEmosSettings, updateEmosSettings } from '../../agent/emos/settings-service';
 import type { EngineName } from '../../agent/engines/types';
 import {
@@ -81,7 +85,12 @@ import {
 } from '../../agent/session-service';
 import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/storage';
 import { AgentStreamManager } from '../../agent/stream-manager';
-import type { AgentActRequest, AgentActResponse, RealtimeEvent } from '../../agent/types';
+import type {
+  AgentActRequest,
+  AgentActResponse,
+  AgentMessage,
+  RealtimeEvent,
+} from '../../agent/types';
 import { getUiSettings, updateUiSettings } from '../../agent/ui/settings-service';
 import { ERROR_MESSAGES, HTTP_STATUS } from '../../constant';
 
@@ -925,6 +934,8 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         }
 
         const session = await createSession(projectId, body.engineName, {
+          id: body.id,
+          engineSessionId: body.engineSessionId,
           name: body.name,
           model: body.model,
           permissionMode: body.permissionMode,
@@ -937,6 +948,120 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         const message = error instanceof Error ? error.message : String(error);
         fastify.log.error({ err: error }, 'Failed to create session');
         return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+        });
+      }
+    },
+  );
+
+  /**
+   * Materialize an in-memory (ephemeral) Quick Panel session into a persisted DB session.
+   *
+   * Creates a session with id=sessionId using the ephemeral context captured during chat
+   * (projectId, engineName, claude resume id), then bulk upserts the provided transcript.
+   */
+  fastify.post(
+    '/agent/ephemeral-sessions/:sessionId/persist',
+    async (
+      request: FastifyRequest<{
+        Params: { sessionId: string };
+        Body: {
+          name?: string;
+          messages?: AgentMessage[];
+          /**
+           * Fallback context when native-server ephemeral state was lost (e.g. restart).
+           * When provided, the server will still create a session and persist transcript.
+           */
+          projectId?: string;
+          engineName?: EngineName;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { sessionId } = request.params;
+      const id = typeof sessionId === 'string' ? sessionId.trim() : '';
+      if (!id) {
+        return reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'sessionId is required' });
+      }
+
+      const state = getEphemeralSessionState(id);
+      const fallbackProjectId =
+        typeof request.body?.projectId === 'string' ? request.body.projectId.trim() : '';
+      const fallbackEngineName = request.body?.engineName;
+
+      const projectId = state?.projectId || fallbackProjectId;
+      const engineName = (state?.engineName || fallbackEngineName) as EngineName | undefined;
+
+      if (!projectId || !engineName) {
+        return reply.status(HTTP_STATUS.BAD_REQUEST).send({
+          error:
+            'Ephemeral session state is missing. Provide projectId and engineName to persist transcript.',
+        });
+      }
+
+      try {
+        const existing = await getSession(id);
+        const desiredName = typeof request.body?.name === 'string' ? request.body.name.trim() : '';
+
+        if (!existing) {
+          await createSession(projectId, engineName, {
+            id,
+            name: desiredName || `Quick Chat (${engineName})`,
+            engineSessionId: state?.claudeSessionId,
+          });
+        } else {
+          const patch: UpdateSessionInput = {};
+          if (desiredName && !existing.name) patch.name = desiredName;
+          if (engineName === 'claude' && state?.claudeSessionId && !existing.engineSessionId) {
+            patch.engineSessionId = state.claudeSessionId;
+          }
+          if (Object.keys(patch).length > 0) {
+            await updateSession(id, patch);
+          }
+        }
+
+        const messages = Array.isArray(request.body?.messages) ? request.body.messages : [];
+        for (const msg of messages) {
+          if (!msg || typeof msg !== 'object') continue;
+          const msgId = typeof msg.id === 'string' ? msg.id.trim() : '';
+          const role = typeof msg.role === 'string' ? msg.role : '';
+          const content = typeof msg.content === 'string' ? msg.content : '';
+          const messageType = msg.messageType;
+          const createdAt = typeof msg.createdAt === 'string' ? msg.createdAt : '';
+          if (!msgId || !role || !content || !createdAt) continue;
+          if (
+            messageType !== 'chat' &&
+            messageType !== 'tool_use' &&
+            messageType !== 'tool_result'
+          ) {
+            continue;
+          }
+
+          await createStoredMessage({
+            id: msgId,
+            projectId,
+            sessionId: id,
+            role: role as any,
+            messageType: messageType as any,
+            content,
+            metadata:
+              msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)
+                ? (msg.metadata as any)
+                : undefined,
+            cliSource: typeof msg.cliSource === 'string' ? msg.cliSource : engineName,
+            requestId: typeof msg.requestId === 'string' ? msg.requestId : undefined,
+            createdAt,
+          });
+        }
+
+        if (state) clearEphemeralSessionState(id);
+        const session = await getSession(id);
+        return reply.status(HTTP_STATUS.OK).send({ success: true, session });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fastify.log.error({ err: error }, 'Failed to persist ephemeral session');
+        return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          success: false,
           error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
         });
       }
@@ -1015,6 +1140,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
 
       try {
         await deleteSession(sessionId);
+        clearEphemeralSessionState(sessionId);
         return reply.status(HTTP_STATUS.NO_CONTENT).send();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

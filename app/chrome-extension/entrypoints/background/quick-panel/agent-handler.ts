@@ -31,6 +31,8 @@ import {
   type QuickPanelGetBrandingResponse,
   type QuickPanelOpenSessionMessage,
   type QuickPanelOpenSessionResponse,
+  type QuickPanelPersistSessionMessage,
+  type QuickPanelPersistSessionResponse,
   type QuickPanelSendToAIMessage,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -48,14 +50,7 @@ const KEEPALIVE_TAG = 'quick-panel-ai';
 const STORAGE_KEY_SELECTED_SESSION = 'agent-selected-session-id';
 const STORAGE_KEY_SELECTED_PROJECT = 'agent-selected-project-id';
 
-/** Quick Panel session bookkeeping (owned by Quick Panel). */
-const STORAGE_KEY_QP_LAST_SESSION_ID = 'quick-panel-last-session-id';
-const STORAGE_KEY_QP_LAST_ACTIVE_AT = 'quick-panel-last-active-at';
-const STORAGE_KEY_QP_SESSION_COUNTER = 'quick-panel-session-counter';
 const STORAGE_KEY_QP_PERSIST_ENABLED = 'quick-panel-persist-enabled';
-
-/** Resume previous Quick Panel session if last active within this threshold. */
-const QUICK_PANEL_SESSION_RESUME_THRESHOLD_MS = 30 * 60 * 1000;
 
 /** Number of messages to return to the launcher on expand. */
 const QUICK_PANEL_RECENT_MESSAGES_LIMIT = 12;
@@ -90,6 +85,10 @@ const SSE_TIMEOUT = Symbol('SSE_TIMEOUT');
 interface ActiveRequest {
   readonly requestId: string;
   readonly sessionId: string;
+  readonly projectId: string;
+  readonly persistence: 'ephemeral' | 'persisted';
+  readonly dbSessionId?: string;
+  readonly cliPreference?: string;
   readonly instruction: string;
   readonly tabId: number;
   readonly windowId?: number;
@@ -344,12 +343,14 @@ async function createSessionForProject(params: {
   projectId: string;
   engineName: string;
   name: string;
+  id?: string;
 }): Promise<{ id: string; name?: string; engineName?: string } | null> {
   const url = `http://127.0.0.1:${params.port}/agent/projects/${encodeURIComponent(params.projectId)}/sessions`;
   const result = await fetchJson<any>(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      id: typeof params.id === 'string' ? params.id : undefined,
       engineName: params.engineName,
       name: params.name,
     }),
@@ -541,8 +542,16 @@ async function postActRequest(request: ActiveRequest): Promise<void> {
 
   const payload: AgentActRequest = {
     instruction: request.instruction,
-    // Ensures session-level config is loaded (engine, model, options, project binding)
-    dbSessionId: request.sessionId,
+    persistence: request.persistence,
+    // Ensures project/workspace is available even for ephemeral requests.
+    // When dbSessionId is present, server can derive projectId from session.
+    projectId: request.dbSessionId ? undefined : request.projectId,
+    // Load session-level config when available (engine, model, options, project binding).
+    dbSessionId: request.dbSessionId,
+    // Choose engine for ephemeral requests (and as a fallback when session config isn't available).
+    // IMPORTANT: when dbSessionId is present, server validates cliPreference matches session.engineName.
+    // Quick Panel's selected engine may differ from this session, so omit to avoid false mismatches.
+    cliPreference: request.dbSessionId ? undefined : (request.cliPreference as any),
     // Enables SSE-first flow and requestId filtering on session-scoped streams
     requestId: request.requestId,
   };
@@ -610,30 +619,6 @@ async function startRequest(request: ActiveRequest): Promise<void> {
     // Guard: check if cancelled during ENSURE_NATIVE
     if (!isRequestStillActive(request)) return;
 
-    // Validate session still exists
-    const sessionValid = await validateSession(request.port, request.sessionId);
-
-    // Guard: check if cancelled during validation
-    if (!isRequestStillActive(request)) return;
-
-    if (!sessionValid) {
-      forwardEventToQuickPanel(
-        request,
-        createErrorEvent(
-          request.sessionId,
-          request.requestId,
-          'Selected Agent session is not available. Please open AgentChat and select a valid session.',
-        ),
-      );
-      // Open sidepanel without deep-linking to invalid session
-      openAgentChatSidepanel(request.tabId, request.windowId).catch(() => {});
-      cleanupRequest(request.requestId, 'session_invalid');
-      return;
-    }
-
-    // Best-effort: open sidepanel deep-linked to current session
-    openAgentChatSidepanel(request.tabId, request.windowId, request.sessionId).catch(() => {});
-
     // Start SSE subscription BEFORE sending act request to avoid missing early events
     const sse = createSseSubscription(request);
 
@@ -678,6 +663,13 @@ async function startRequest(request: ActiveRequest): Promise<void> {
     if (!activeRequests.has(request.requestId)) return;
 
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${LOG_PREFIX} startRequest failed:`, {
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      persistence: request.persistence,
+      dbSessionId: request.dbSessionId,
+      error: msg,
+    });
     forwardEventToQuickPanel(request, createErrorEvent(request.sessionId, request.requestId, msg));
     cleanupRequest(request.requestId, 'start_failed');
   }
@@ -703,43 +695,90 @@ async function handleSendToAI(
     return { success: false, error: 'Quick Panel request must originate from a tab.' };
   }
 
+  const clientSessionId = normalizeString(message?.payload?.sessionId).trim();
+  if (!clientSessionId) {
+    return { success: false, error: 'sessionId is required' };
+  }
+  const isQuickSession = message?.payload?.isQuickSession !== false;
+
   const instruction = normalizeString(message?.payload?.instruction).trim();
   if (!instruction) {
     return { success: false, error: 'instruction is required' };
   }
 
-  // Read server port and selected session from storage
+  // Read server port and selected project/session from storage (sidepanel-owned).
   const stored = await chrome.storage.local.get([
     STORAGE_KEYS.NATIVE_SERVER_PORT,
     STORAGE_KEY_SELECTED_SESSION,
+    STORAGE_KEY_SELECTED_PROJECT,
     STORAGE_KEY_QP_PERSIST_ENABLED,
   ]);
 
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
-  const sessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+  const selectedSessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+  const selectedProjectId = normalizeString(stored?.[STORAGE_KEY_SELECTED_PROJECT]).trim();
   const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
 
-  if (!sessionId) {
-    // No session selected: open sidepanel for user to select/create one
+  if (!selectedProjectId) {
     openAgentChatSidepanel(tabId, windowId).catch(() => {});
     return {
       success: false,
       error:
-        'No Agent session selected. Please open AgentChat, select or create a session, then try again.',
+        'No Agent project selected. Please open AgentChat and select/create a project, then try again.',
     };
   }
 
-  // Update Quick Panel "last active" bookkeeping (used for resume threshold) only when persisted.
-  if (persistEnabled) {
-    try {
-      await chrome.storage.local.set({
-        [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionId,
-        [STORAGE_KEY_QP_LAST_ACTIVE_AT]: Date.now(),
+  const engineInfo = selectedSessionId ? await fetchSessionInfo(port, selectedSessionId) : null;
+  const engineName =
+    normalizeString(engineInfo?.engineName).trim() || QUICK_PANEL_DEFAULT_ENGINE_NAME;
+
+  let effectiveSessionId = clientSessionId;
+  let sessionExists = await validateSession(port, effectiveSessionId);
+  if (!isQuickSession && !sessionExists) {
+    return { success: false, error: 'Session not found' };
+  }
+
+  // Persisted mode: ensure DB session exists for this quick session id.
+  // For non-quick sessions, persistence is always on and sessions must already exist.
+  const shouldPersist = !isQuickSession || persistEnabled;
+  if (isQuickSession && shouldPersist && !sessionExists) {
+    // Try materializing from ephemeral server-side state first (captures claude resume state).
+    const persistUrl = `http://127.0.0.1:${port}/agent/ephemeral-sessions/${encodeURIComponent(effectiveSessionId)}/persist`;
+    const materialize = await fetchJson<any>(persistUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    if (materialize.ok) {
+      const persistedSessionId = normalizeString(materialize.data?.session?.id).trim();
+      if (persistedSessionId) {
+        effectiveSessionId = persistedSessionId;
+      }
+      sessionExists = true;
+    } else {
+      const created = await createSessionForProject({
+        port,
+        projectId: selectedProjectId,
+        engineName,
+        name: `Quick Chat (${engineName})`,
+        id: effectiveSessionId,
       });
-    } catch {
-      // ignore
+      if (created?.id) {
+        effectiveSessionId = created.id;
+        sessionExists = true;
+      } else {
+        sessionExists = false;
+      }
     }
   }
+
+  if (isQuickSession && shouldPersist && !sessionExists) {
+    return { success: false, error: 'Failed to create persisted Quick Chat session.' };
+  }
+
+  const persistence: 'ephemeral' | 'persisted' = shouldPersist ? 'persisted' : 'ephemeral';
+  const dbSessionId = shouldPersist && sessionExists ? effectiveSessionId : undefined;
 
   // Create request state
   const requestId = createRequestId();
@@ -764,7 +803,11 @@ async function handleSendToAI(
 
   const request: ActiveRequest = {
     requestId,
-    sessionId,
+    sessionId: effectiveSessionId,
+    projectId: selectedProjectId,
+    persistence,
+    dbSessionId,
+    cliPreference: engineName,
     instruction,
     tabId,
     windowId: typeof windowId === 'number' ? windowId : undefined,
@@ -781,12 +824,16 @@ async function handleSendToAI(
   // Start the request asynchronously (don't await)
   void startRequest(request);
 
-  return { success: true, requestId, sessionId };
+  return { success: true, requestId, sessionId: effectiveSessionId };
 }
 
 /**
  * Handle QUICK_PANEL_ACTIVATE_SESSION message.
- * Resumes the previous Quick Panel session (within threshold) or creates a new "Quick Session N".
+ * Ensures Quick Panel has enough context to run:
+ * - selected project exists
+ * - (optional) create a persisted DB session if persistence is enabled
+ *
+ * IMPORTANT: When persistence is disabled, this must NOT create DB sessions.
  */
 async function handleActivateSession(
   message: QuickPanelActivateSessionMessage,
@@ -799,88 +846,22 @@ async function handleActivateSession(
     return { success: false, error: 'Quick Panel request must originate from a tab.' };
   }
 
-  const forceNew = message?.payload?.forceNew === true;
+  const clientSessionId = normalizeString(message?.payload?.sessionId).trim();
+  if (!clientSessionId) return { success: false, error: 'sessionId is required' };
 
   const stored = await chrome.storage.local.get([
     STORAGE_KEYS.NATIVE_SERVER_PORT,
     STORAGE_KEY_SELECTED_SESSION,
     STORAGE_KEY_SELECTED_PROJECT,
-    STORAGE_KEY_QP_LAST_SESSION_ID,
-    STORAGE_KEY_QP_LAST_ACTIVE_AT,
-    STORAGE_KEY_QP_SESSION_COUNTER,
     STORAGE_KEY_QP_PERSIST_ENABLED,
   ]);
 
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
   const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
-
-  const now = Date.now();
-  const lastSessionId = normalizeString(stored?.[STORAGE_KEY_QP_LAST_SESSION_ID]).trim();
-  const lastActiveAtRaw = stored?.[STORAGE_KEY_QP_LAST_ACTIVE_AT];
-  const lastActiveAt =
-    typeof lastActiveAtRaw === 'number'
-      ? lastActiveAtRaw
-      : typeof lastActiveAtRaw === 'string'
-        ? Number(lastActiveAtRaw)
-        : Number.NaN;
-
-  const resumeEligible =
-    persistEnabled &&
-    !forceNew &&
-    !!lastSessionId &&
-    Number.isFinite(lastActiveAt) &&
-    now - lastActiveAt < QUICK_PANEL_SESSION_RESUME_THRESHOLD_MS;
-
-  // 1) Try resume
-  if (resumeEligible) {
-    const ok = await validateSession(port, lastSessionId);
-    if (ok) {
-      const sessionInfo = await fetchSessionInfo(port, lastSessionId);
-      if (sessionInfo?.id) {
-        try {
-          const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id };
-          if (persistEnabled) {
-            patch[STORAGE_KEY_QP_LAST_SESSION_ID] = sessionInfo.id;
-            patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = now;
-          }
-          await chrome.storage.local.set(patch as any);
-        } catch {
-          // ignore
-        }
-
-        const recentMessages = await fetchRecentSessionMessages(
-          port,
-          sessionInfo.id,
-          QUICK_PANEL_RECENT_MESSAGES_LIMIT,
-        );
-
-        const engineName = normalizeString(sessionInfo.engineName).trim();
-        const brandIconUrl = engineName ? await resolveEngineIconUrl(engineName) : '';
-
-        return {
-          success: true,
-          sessionId: sessionInfo.id,
-          sessionName: sessionInfo.name || 'Quick Session',
-          reused: true,
-          engineName,
-          engineDisplayName: toEngineDisplayName(engineName),
-          brandIconUrl,
-          recentMessages,
-        };
-      }
-    }
-  }
-
-  // 2) Create new quick session
   const selectedProjectId = normalizeString(stored?.[STORAGE_KEY_SELECTED_PROJECT]).trim();
-  let projectId = selectedProjectId;
+  const selectedSessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
 
-  if (!projectId) {
-    const projects = await listProjects(port);
-    projectId = projects[0]?.id || '';
-  }
-
-  if (!projectId) {
+  if (!selectedProjectId) {
     openAgentChatSidepanel(tabId, typeof windowId === 'number' ? windowId : undefined).catch(
       () => {},
     );
@@ -890,71 +871,57 @@ async function handleActivateSession(
     };
   }
 
-  // Pick an engine (prefer current selected session engine if available)
-  const selectedSessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
-  let engineName = '';
-  if (selectedSessionId) {
-    const info = await fetchSessionInfo(port, selectedSessionId);
-    engineName = normalizeString(info?.engineName).trim();
-  }
-  if (!engineName) engineName = QUICK_PANEL_DEFAULT_ENGINE_NAME;
+  const selectedSessionInfo = selectedSessionId
+    ? await fetchSessionInfo(port, selectedSessionId)
+    : null;
+  const engineName =
+    normalizeString(selectedSessionInfo?.engineName).trim() || QUICK_PANEL_DEFAULT_ENGINE_NAME;
+  const brandIconUrl = engineName ? await resolveEngineIconUrl(engineName) : '';
 
-  const counterRaw = stored?.[STORAGE_KEY_QP_SESSION_COUNTER];
-  const counter =
-    typeof counterRaw === 'number'
-      ? counterRaw
-      : typeof counterRaw === 'string'
-        ? Number(counterRaw)
-        : Number.NaN;
-  const nextN = Number.isFinite(counter) && counter > 0 ? Math.floor(counter) : 1;
-  const name = `Quick Session ${nextN}`;
+  let effectiveSessionId = clientSessionId;
 
-  let created = await createSessionForProject({ port, projectId, engineName, name });
-  if (!created && engineName !== QUICK_PANEL_DEFAULT_ENGINE_NAME) {
-    created = await createSessionForProject({
-      port,
-      projectId,
-      engineName: QUICK_PANEL_DEFAULT_ENGINE_NAME,
-      name,
-    });
-  }
+  // If persistence is enabled, ensure this quick session exists in DB.
+  if (persistEnabled) {
+    const exists = await validateSession(port, effectiveSessionId);
+    if (!exists) {
+      // Best-effort: materialize from ephemeral server-side state first.
+      const persistUrl = `http://127.0.0.1:${port}/agent/ephemeral-sessions/${encodeURIComponent(effectiveSessionId)}/persist`;
+      const materialize = await fetchJson<any>(persistUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [] }),
+      });
 
-  if (!created?.id) {
-    return { success: false, error: 'Failed to create a Quick Session.' };
-  }
-
-  try {
-    const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: created.id };
-    if (persistEnabled) {
-      patch[STORAGE_KEY_QP_LAST_SESSION_ID] = created.id;
-      patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = now;
-      patch[STORAGE_KEY_QP_SESSION_COUNTER] = nextN + 1;
+      if (materialize.ok) {
+        const persistedSessionId = normalizeString(materialize.data?.session?.id).trim();
+        if (persistedSessionId) {
+          effectiveSessionId = persistedSessionId;
+        }
+      } else {
+        const created = await createSessionForProject({
+          port,
+          projectId: selectedProjectId,
+          engineName,
+          name: `Quick Chat (${engineName})`,
+          id: effectiveSessionId,
+        });
+        if (!created?.id) {
+          return { success: false, error: 'Failed to create persisted Quick Chat session.' };
+        }
+        effectiveSessionId = created.id;
+      }
     }
-    await chrome.storage.local.set(patch as any);
-  } catch {
-    // ignore
   }
-
-  const recentMessages = await fetchRecentSessionMessages(
-    port,
-    created.id,
-    QUICK_PANEL_RECENT_MESSAGES_LIMIT,
-  );
-
-  const createdEngineName = normalizeString(created.engineName).trim() || engineName;
-  const createdBrandIconUrl = createdEngineName
-    ? await resolveEngineIconUrl(createdEngineName)
-    : '';
 
   return {
     success: true,
-    sessionId: created.id,
-    sessionName: created.name || name,
-    reused: false,
-    engineName: createdEngineName,
-    engineDisplayName: toEngineDisplayName(createdEngineName),
-    brandIconUrl: createdBrandIconUrl,
-    recentMessages,
+    sessionId: effectiveSessionId,
+    sessionName: 'Quick Chat',
+    reused: true,
+    engineName,
+    engineDisplayName: toEngineDisplayName(engineName),
+    brandIconUrl,
+    recentMessages: [],
   };
 }
 
@@ -970,27 +937,12 @@ async function handleOpenSession(
     return { success: false, error: 'sessionId is required' };
   }
 
-  const stored = await chrome.storage.local.get([
-    STORAGE_KEYS.NATIVE_SERVER_PORT,
-    STORAGE_KEY_QP_PERSIST_ENABLED,
-  ]);
+  const stored = await chrome.storage.local.get([STORAGE_KEYS.NATIVE_SERVER_PORT]);
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
-  const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
 
   const sessionInfo = await fetchSessionInfo(port, sessionId);
   if (!sessionInfo?.id) {
     return { success: false, error: 'Session not found' };
-  }
-
-  try {
-    const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id };
-    if (persistEnabled) {
-      patch[STORAGE_KEY_QP_LAST_SESSION_ID] = sessionInfo.id;
-      patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = Date.now();
-    }
-    await chrome.storage.local.set(patch as any);
-  } catch {
-    // ignore
   }
 
   const recentMessages = await fetchRecentSessionMessages(
@@ -1023,11 +975,7 @@ async function handleDeleteSession(
   const sessionId = normalizeString(message?.payload?.sessionId).trim();
   if (!sessionId) return { success: false, error: 'sessionId is required' };
 
-  const stored = await chrome.storage.local.get([
-    STORAGE_KEYS.NATIVE_SERVER_PORT,
-    STORAGE_KEY_SELECTED_SESSION,
-    STORAGE_KEY_QP_LAST_SESSION_ID,
-  ]);
+  const stored = await chrome.storage.local.get([STORAGE_KEYS.NATIVE_SERVER_PORT]);
 
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
 
@@ -1043,20 +991,60 @@ async function handleDeleteSession(
     return { success: false, error: msg || 'Failed to delete session' };
   }
 
-  try {
-    const selected = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
-    const last = normalizeString(stored?.[STORAGE_KEY_QP_LAST_SESSION_ID]).trim();
-    const keysToRemove: string[] = [];
-    if (selected === sessionId) keysToRemove.push(STORAGE_KEY_SELECTED_SESSION);
-    if (last === sessionId) {
-      keysToRemove.push(STORAGE_KEY_QP_LAST_SESSION_ID, STORAGE_KEY_QP_LAST_ACTIVE_AT);
-    }
-    if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
-  } catch {
-    // ignore
-  }
-
   return { success: true };
+}
+
+/**
+ * Handle QUICK_PANEL_PERSIST_SESSION message.
+ * Materializes an ephemeral Quick Panel session into a persisted DB session and backfills transcript.
+ */
+async function handlePersistSession(
+  message: QuickPanelPersistSessionMessage,
+): Promise<QuickPanelPersistSessionResponse> {
+  const sessionId = normalizeString(message?.payload?.sessionId).trim();
+  if (!sessionId) return { success: false, error: 'sessionId is required' };
+
+  const messages = Array.isArray(message?.payload?.messages) ? message.payload.messages : [];
+  const name = normalizeString(message?.payload?.name).trim();
+
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEYS.NATIVE_SERVER_PORT,
+    STORAGE_KEY_SELECTED_PROJECT,
+    STORAGE_KEY_SELECTED_SESSION,
+  ]);
+  const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+  const selectedProjectId = normalizeString(stored?.[STORAGE_KEY_SELECTED_PROJECT]).trim();
+  const selectedSessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+
+  const selectedSessionInfo = selectedSessionId
+    ? await fetchSessionInfo(port, selectedSessionId)
+    : null;
+  const engineName =
+    normalizeString(selectedSessionInfo?.engineName).trim() || QUICK_PANEL_DEFAULT_ENGINE_NAME;
+
+  try {
+    const url = `http://127.0.0.1:${port}/agent/ephemeral-sessions/${encodeURIComponent(sessionId)}/persist`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name || undefined,
+        messages,
+        projectId: selectedProjectId || undefined,
+        engineName,
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      return { success: false, error: text || `HTTP ${resp.status}` };
+    }
+
+    return { success: true, sessionId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg || 'Failed to persist session' };
+  }
 }
 
 /**
@@ -1432,6 +1420,17 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_DELETE_SESSION
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_DELETE_SESSION) {
       handleDeleteSession(message as QuickPanelDeleteSessionMessage)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_PERSIST_SESSION
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_PERSIST_SESSION) {
+      handlePersistSession(message as QuickPanelPersistSessionMessage)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

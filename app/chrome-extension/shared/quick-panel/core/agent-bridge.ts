@@ -16,7 +16,7 @@
  * const bridge = new QuickPanelAgentBridge();
  *
  * // Send a message and subscribe to events
- * const result = await bridge.sendToAI({ instruction: 'Hello' });
+ * const result = await bridge.sendToAI({ sessionId: crypto.randomUUID(), instruction: 'Hello' });
  * if (result.success) {
  *   const unsubscribe = bridge.onRequestEvent(result.requestId, (event) => {
  *     console.log('Received event:', event);
@@ -41,6 +41,8 @@ import {
   type QuickPanelOpenSidepanelResponse,
   type QuickPanelOpenSessionPayload,
   type QuickPanelOpenSessionResponse,
+  type QuickPanelPersistSessionPayload,
+  type QuickPanelPersistSessionResponse,
   type QuickPanelSendToAIPayload,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -280,7 +282,7 @@ export class QuickPanelAgentBridge {
    * (within a time threshold) or create a new one named "Quick Session N".
    */
   async activateSession(
-    payload?: QuickPanelActivateSessionPayload,
+    payload: QuickPanelActivateSessionPayload,
   ): Promise<QuickPanelActivateSessionResponse> {
     if (this.disposed) {
       return { success: false, error: 'Bridge is disposed' };
@@ -342,6 +344,35 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to delete session' };
+    }
+  }
+
+  /**
+   * Persist (materialize) an ephemeral Quick Panel session into DB and backfill transcript.
+   * Used when user explicitly toggles "Persist Quick Chat" ON.
+   */
+  async persistSession(
+    payload: QuickPanelPersistSessionPayload,
+  ): Promise<QuickPanelPersistSessionResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+    if (!sessionId) return { success: false, error: 'sessionId is required' };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_PERSIST_SESSION,
+        payload: {
+          ...payload,
+          sessionId,
+        },
+      });
+      return response as QuickPanelPersistSessionResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to persist session' };
     }
   }
 

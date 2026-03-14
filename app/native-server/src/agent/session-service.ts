@@ -12,6 +12,7 @@ import { getDb, type SessionRow } from './db';
 import type { EngineName } from './engines/types';
 import {
   createMessage as createStoredMessage,
+  deleteMessagesBySessionId,
   getMessagesCountBySessionId,
 } from './message-service';
 import { upsertProject } from './project-service';
@@ -570,11 +571,15 @@ export async function updateSession(sessionId: string, updates: UpdateSessionInp
 
 /**
  * Delete a session by ID.
- * Note: Messages associated with this session are NOT automatically deleted.
- * The caller should handle message cleanup if needed.
+ * Deletes messages in the session first to avoid orphan rows.
  */
 export async function deleteSession(sessionId: string): Promise<void> {
   const db = getDb();
+  try {
+    await deleteMessagesBySessionId(sessionId);
+  } catch {
+    // Best-effort: still attempt to delete the session row.
+  }
   db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
 }
 

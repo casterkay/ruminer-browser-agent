@@ -58,8 +58,8 @@ export default defineContentScript({
     let persistEnabled = false;
     let isAutomationWorkflowTab = false;
     let automationSeedProgress: FloatingIconWorkflowProgress | null = null;
-    let ephemeralSessionId: string | null = null;
-    let ephemeralDeleteTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingDeleteSessionId: string | null = null;
+    let pendingDeleteTimer: ReturnType<typeof setTimeout> | null = null;
     let lastTooltipUrl = '';
     let lastIngestOpenedSessionId: string | null = null;
     let lastIngestOpenedAt = 0;
@@ -130,27 +130,24 @@ export default defineContentScript({
           placeholder: 'Ask about this page…',
           maxRecentMessages: 10,
           onExpandedChange: (expanded) => {
-            if (ephemeralDeleteTimer) {
-              clearTimeout(ephemeralDeleteTimer);
-              ephemeralDeleteTimer = null;
+            if (pendingDeleteTimer) {
+              clearTimeout(pendingDeleteTimer);
+              pendingDeleteTimer = null;
             }
 
             if (expanded) return;
-            if (persistEnabled) return;
 
-            const current = launcher?.getActiveSessionId() || null;
-            if (!current) return;
+            // Only delete a persisted session after persistence is toggled OFF and the launcher collapses.
+            if (!pendingDeleteSessionId) return;
 
-            ephemeralSessionId = current;
-
-            // Grace period to avoid deleting on hover jitter.
-            ephemeralDeleteTimer = setTimeout(() => {
-              ephemeralDeleteTimer = null;
+            const idToDelete = pendingDeleteSessionId;
+            pendingDeleteTimer = setTimeout(() => {
+              pendingDeleteTimer = null;
               if (persistEnabled) return;
-              if (!ephemeralSessionId) return;
-              void deleteSessionBestEffort(ephemeralSessionId);
-              ephemeralSessionId = null;
-            }, 5000);
+              if (!idToDelete) return;
+              void deleteSessionBestEffort(idToDelete);
+              if (pendingDeleteSessionId === idToDelete) pendingDeleteSessionId = null;
+            }, 800);
           },
         });
         launcher.mount();
@@ -185,9 +182,9 @@ export default defineContentScript({
       } catch {
         // ignore
       }
-      if (ephemeralDeleteTimer) {
-        clearTimeout(ephemeralDeleteTimer);
-        ephemeralDeleteTimer = null;
+      if (pendingDeleteTimer) {
+        clearTimeout(pendingDeleteTimer);
+        pendingDeleteTimer = null;
       }
       refreshTooltipState();
     }
@@ -234,29 +231,69 @@ export default defineContentScript({
           : undefined,
         onTogglePersist: (nextEnabled) => {
           void (async () => {
-            // Turning off persistence: delete the currently active session from DB.
-            if (!nextEnabled && persistEnabled) {
-              const currentSessionId = launcher?.getActiveSessionId() || null;
-              if (currentSessionId) {
-                const resp = await ensureBridge().deleteSession(currentSessionId);
+            const wasEnabled = persistEnabled;
+
+            if (nextEnabled) {
+              // Persist: materialize the current ephemeral session (if any) and backfill transcript.
+              const sessionId =
+                launcher?.isQuickSession?.() === true
+                  ? launcher?.getActiveSessionId() || null
+                  : null;
+              const messages = launcher?.exportTranscript?.() || [];
+
+              if (sessionId) {
+                const hostname = (() => {
+                  try {
+                    return new URL(location.href).hostname;
+                  } catch {
+                    return '';
+                  }
+                })();
+
+                const resp = await ensureBridge().persistSession({
+                  sessionId,
+                  name: hostname ? `Quick Chat (${hostname})` : undefined,
+                  messages,
+                });
+
                 if (!resp.success) {
                   floatingIcon?.showDialog({
                     kind: 'error',
                     title: 'Persist Quick Chat',
-                    message: resp.error || 'Failed to delete session',
+                    message: resp.error || 'Failed to persist session',
                   });
                   return;
                 }
               }
 
-              ephemeralSessionId = null;
+              pendingDeleteSessionId = null;
+              await setPersistPreference(true);
+              return;
             }
 
-            if (nextEnabled) {
-              ephemeralSessionId = null;
+            // Turning off persistence: delete the currently active session after collapse.
+            if (!nextEnabled && wasEnabled) {
+              const currentSessionId =
+                launcher?.isQuickSession?.() === true
+                  ? launcher?.getActiveSessionId() || null
+                  : null;
+              if (currentSessionId) pendingDeleteSessionId = currentSessionId;
             }
 
-            await setPersistPreference(nextEnabled);
+            await setPersistPreference(false);
+
+            // If we're already collapsed, schedule deletion immediately (with a short jitter grace).
+            if (!(launcher?.isExpanded() ?? false) && pendingDeleteSessionId) {
+              if (pendingDeleteTimer) clearTimeout(pendingDeleteTimer);
+              const idToDelete = pendingDeleteSessionId;
+              pendingDeleteTimer = setTimeout(() => {
+                pendingDeleteTimer = null;
+                if (persistEnabled) return;
+                if (!idToDelete) return;
+                void deleteSessionBestEffort(idToDelete);
+                if (pendingDeleteSessionId === idToDelete) pendingDeleteSessionId = null;
+              }, 800);
+            }
           })();
         },
         onNewQuickChat: () => {
@@ -264,12 +301,6 @@ export default defineContentScript({
             await initFloatingIcon({ force: true });
             if (!floatingIcon) return;
             const ui = ensureLauncher();
-
-            // If persistence is off, clean up the previous ephemeral session before creating a new one.
-            if (!persistEnabled && ephemeralSessionId) {
-              void deleteSessionBestEffort(ephemeralSessionId);
-              ephemeralSessionId = null;
-            }
 
             const resp = await ui.newQuickChat({ focus: true });
             if (!resp.success) {
@@ -279,10 +310,6 @@ export default defineContentScript({
                 message: resp.error || 'Failed to create quick chat',
               });
               return;
-            }
-
-            if (!persistEnabled) {
-              ephemeralSessionId = ui.getActiveSessionId();
             }
 
             refreshBranding();
@@ -573,19 +600,10 @@ export default defineContentScript({
 
             const ui = ensureLauncher();
 
-            // Replace any previous ephemeral session if persistence is off.
-            if (!persistEnabled && ephemeralSessionId && ephemeralSessionId !== sessionId) {
-              void deleteSessionBestEffort(ephemeralSessionId);
-              ephemeralSessionId = null;
-            }
-
             const opened = await ui.openSession(sessionId, { focus: false });
             if (!opened.success) {
               throw new Error(opened.error || 'Failed to open imported session');
             }
-
-            if (!persistEnabled) ephemeralSessionId = sessionId;
-            else ephemeralSessionId = null;
 
             refreshBranding();
             refreshTooltipState();
@@ -695,9 +713,9 @@ export default defineContentScript({
     // Cleanup when the document is being unloaded (policy-safe on modern pages)
     window.addEventListener('pagehide', () => {
       clearInterval(urlPoller);
-      if (ephemeralDeleteTimer) {
-        clearTimeout(ephemeralDeleteTimer);
-        ephemeralDeleteTimer = null;
+      if (pendingDeleteTimer) {
+        clearTimeout(pendingDeleteTimer);
+        pendingDeleteTimer = null;
       }
       chrome.runtime.onMessage.removeListener(handleMessage);
       chrome.storage.onChanged.removeListener(handleStorageChange);
@@ -706,10 +724,10 @@ export default defineContentScript({
       agentBridge?.dispose();
       agentBridge = null;
 
-      // Best-effort: don't leave ephemeral sessions around when persistence is off.
-      if (!persistEnabled && ephemeralSessionId) {
-        void deleteSessionBestEffort(ephemeralSessionId);
-        ephemeralSessionId = null;
+      // Best-effort: if persistence has been turned off, delete the persisted quick session on leave.
+      if (!persistEnabled && pendingDeleteSessionId) {
+        void deleteSessionBestEffort(pendingDeleteSessionId);
+        pendingDeleteSessionId = null;
       }
       if (floatingIcon) {
         floatingIcon.setWorkflowProgress(null);

@@ -722,9 +722,15 @@ export function mountQuickPanelAiChatPanel(
     if (disposed) return;
 
     const payload: QuickPanelSendToAIPayload = {
+      sessionId:
+        state.sessionId ||
+        (globalThis as any)?.crypto?.randomUUID?.() ||
+        `qp_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      isQuickSession: true,
       instruction,
       context: context ?? undefined,
     };
+    state.sessionId = payload.sessionId;
 
     // Send to agent
     const result = await agentBridge.sendToAI(payload);
@@ -739,6 +745,10 @@ export function mountQuickPanelAiChatPanel(
       setState({ sending: false, errorMessage: errorMsg });
       showBanner('error', errorMsg);
       return;
+    }
+
+    if (result.sessionId && result.sessionId !== state.sessionId) {
+      state.sessionId = result.sessionId;
     }
 
     // Optimistic user message rendering

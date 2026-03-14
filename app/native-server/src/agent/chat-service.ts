@@ -20,6 +20,11 @@ import {
   type AgentSession,
 } from './session-service';
 import { attachmentService, type SavedAttachment } from './attachment-service';
+import {
+  getEphemeralSessionState,
+  setEphemeralClaudeSessionId,
+  upsertEphemeralSessionContext,
+} from './ephemeral-session-store';
 
 export interface AgentChatServiceOptions {
   engines: AgentEngine[];
@@ -68,6 +73,10 @@ export class AgentChatService {
       throw new Error('instruction is required');
     }
 
+    const persistence: 'ephemeral' | 'persisted' =
+      payload.persistence === 'ephemeral' ? 'ephemeral' : 'persisted';
+    const isEphemeral = persistence === 'ephemeral';
+
     const requestId = payload.requestId || randomUUID();
     let projectId = payload.projectId;
     // Normalize empty string to undefined
@@ -109,7 +118,7 @@ export class AgentChatService {
 
     // Legacy fallback: if caller does not use sessions table, use project-level resume id
     let resumeClaudeSessionId: string | undefined;
-    if (!dbSessionId) {
+    if (!dbSessionId && !isEphemeral) {
       resumeClaudeSessionId = project.activeClaudeSessionId;
     }
 
@@ -135,12 +144,22 @@ export class AgentChatService {
       throw new Error(`No agent engine registered for ${engineName}`);
     }
 
+    if (isEphemeral) {
+      upsertEphemeralSessionContext({ sessionId, projectId, engineName });
+    }
+
     // Model priority: request > session > project
     const effectiveModel = payload.model?.trim() || dbSession?.model || projectSelectedModel;
 
-    // For Claude engine with session, use session's engineSessionId for resume
-    if (dbSession && engineName === 'claude') {
-      resumeClaudeSessionId = dbSession.engineSessionId;
+    // For Claude engine with session, use session's engineSessionId for resume.
+    // In ephemeral mode, prefer in-memory resume state over DB/project-level state.
+    if (engineName === 'claude') {
+      const ephemeralState = isEphemeral ? getEphemeralSessionState(sessionId) : null;
+      if (isEphemeral && ephemeralState?.claudeSessionId) {
+        resumeClaudeSessionId = ephemeralState.claudeSessionId;
+      } else if (dbSession) {
+        resumeClaudeSessionId = dbSession.engineSessionId;
+      }
     }
 
     const now = new Date().toISOString();
@@ -223,7 +242,7 @@ export class AgentChatService {
 
     this.streamManager.publish({ type: 'message', data: userMessage });
 
-    if (projectId) {
+    if (projectId && !isEphemeral) {
       // Persist user message into project history for later reload.
       try {
         await touchProjectActivity(projectId);
@@ -262,7 +281,7 @@ export class AgentChatService {
       emit: (event: RealtimeEvent) => {
         this.streamManager.publish(event);
 
-        if (!projectId) {
+        if (!projectId || isEphemeral) {
           return;
         }
 
@@ -303,23 +322,30 @@ export class AgentChatService {
         }
       },
       // Callback to persist Claude session ID when SDK returns system/init message
-      // Prefer session-level persistence over project-level
-      persistClaudeSessionId: dbSessionId
-        ? async (claudeSessionId: string) => {
-            await updateEngineSessionId(dbSessionId, claudeSessionId);
-          }
-        : projectId
-          ? async (claudeSessionId: string) => {
-              await updateProjectClaudeSessionId(projectId, claudeSessionId);
-            }
-          : undefined,
+      // Prefer session-level persistence over project-level. In ephemeral mode, store resume state in-memory only.
+      persistClaudeSessionId: async (claudeSessionId: string) => {
+        if (isEphemeral) {
+          setEphemeralClaudeSessionId(sessionId, claudeSessionId);
+          return;
+        }
+
+        if (dbSessionId) {
+          await updateEngineSessionId(dbSessionId, claudeSessionId);
+          return;
+        }
+
+        if (projectId) {
+          await updateProjectClaudeSessionId(projectId, claudeSessionId);
+        }
+      },
       // Callback to persist management info from system:init message
       // Only available when using session-level persistence
-      persistManagementInfo: dbSessionId
-        ? async (info) => {
-            await updateManagementInfo(dbSessionId, info);
-          }
-        : undefined,
+      persistManagementInfo:
+        !isEphemeral && dbSessionId
+          ? async (info) => {
+              await updateManagementInfo(dbSessionId, info);
+            }
+          : undefined,
     };
 
     const engineOptions: EngineInitOptions = {
