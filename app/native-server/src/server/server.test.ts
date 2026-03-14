@@ -24,4 +24,12 @@ describe('服务器测试', () => {
       message: 'pong',
     });
   });
+
+  test('GET /mcp without session should return 405 (Streamable HTTP probe)', async () => {
+    const response = await supertest(Server.getInstance().server).get('/mcp').expect(405);
+
+    expect(response.body).toEqual({
+      error: 'GET /mcp requires an MCP session. Initialize via POST /mcp first.',
+    });
+  });
 });

@@ -279,6 +279,16 @@ export class Server {
         ? (this.transportsMap.get(sessionId) as StreamableHTTPServerTransport)
         : undefined;
 
+      // Streamable HTTP clients (including the official TS SDK) may probe the GET endpoint
+      // *before* initializing a session via POST /mcp. Per the transport spec, returning 405
+      // signals that the server does not provide a standalone SSE stream at this stage.
+      if (!sessionId) {
+        reply
+          .code(HTTP_STATUS.METHOD_NOT_ALLOWED)
+          .send({ error: 'GET /mcp requires an MCP session. Initialize via POST /mcp first.' });
+        return;
+      }
+
       if (!transport) {
         reply.code(HTTP_STATUS.BAD_REQUEST).send({ error: ERROR_MESSAGES.INVALID_SSE_SESSION });
         return;

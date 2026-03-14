@@ -1661,7 +1661,7 @@ function injectToolRestrictions(
 function injectRuminateRagGuidance(instruction: string): string {
   const guidance = [
     'Ruminate mode (RAG):',
-    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user's own past messages.",
+    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user's own past messages. Consider using both **English** and **Chinese 中文** in queries.",
     '- Always set `user_id: "me"`.',
     '- Use the retrieved memories to ground your response when relevant.',
     '',
