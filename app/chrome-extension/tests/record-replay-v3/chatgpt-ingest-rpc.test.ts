@@ -115,7 +115,7 @@ describe('ingest workflow rpc', () => {
     });
   });
 
-  it('ingests a new conversation and records it in the conversation ledger', async () => {
+  it('ingests a new conversation (caller updates conversation ledger)', async () => {
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
       if (
         keys === STORAGE_KEYS.EMOS_SETTINGS ||
@@ -151,11 +151,10 @@ describe('ingest workflow rpc', () => {
     expect(resp.result.failed).toBe(0);
 
     const entry = await getConversationEntry('chatgpt:c1');
-    expect(entry?.status).toBe('ingested');
-    expect(entry?.message_hashes?.length).toBe(1);
+    expect(entry).toBeNull();
   });
 
-  it('only upserts from the first changed index (LCP incremental)', async () => {
+  it('supports suffix-only ingestion via baseIndex', async () => {
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
       if (
         keys === STORAGE_KEYS.EMOS_SETTINGS ||
@@ -203,13 +202,11 @@ describe('ingest workflow rpc', () => {
       type: 'ruminer.ingest.ingestConversation',
       platform: 'chatgpt',
       conversationId: 'c_lcp',
+      baseIndex: 2,
+      messageCount: 3,
       conversationTitle: 't',
       conversationUrl: 'https://chatgpt.com/c/c_lcp',
-      messages: [
-        { role: 'user', content: 'hi' },
-        { role: 'assistant', content: 'hello' },
-        { role: 'assistant', content: 'new tail' },
-      ],
+      messages: [{ role: 'assistant', content: 'new tail' }],
     })) as any;
     expect(r2.ok).toBe(true);
     expect(r2.result.skipped).toBe(2);
@@ -221,7 +218,7 @@ describe('ingest workflow rpc', () => {
     expect(callsAfter2).toBe(3);
   });
 
-  it('marks failed ingestion and forces full re-ingest on next run', async () => {
+  it('fails fast on the first failed message (monotonic prefix semantics)', async () => {
     const conversationId = `c_fail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
@@ -258,10 +255,6 @@ describe('ingest workflow rpc', () => {
     })) as any;
     expect(ok1.ok).toBe(true);
 
-    const entry1 = await getConversationEntry(`chatgpt:${conversationId}`);
-    expect(entry1?.status).toBe('ingested');
-    expect(entry1?.message_hashes?.length).toBe(2);
-
     const fetchSpy = globalThis.fetch as any;
     fetchSpy.mockImplementation(async (url: any, init?: any) => {
       const u = String(url || '');
@@ -290,23 +283,16 @@ describe('ingest workflow rpc', () => {
       type: 'ruminer.ingest.ingestConversation',
       platform: 'chatgpt',
       conversationId,
+      baseIndex: 2,
+      messageCount: 3,
       conversationTitle: 't',
       conversationUrl: `https://chatgpt.com/c/${conversationId}`,
-      messages: [
-        { role: 'user', content: 'hi' },
-        { role: 'assistant', content: 'hello' },
-        { role: 'assistant', content: 'new tail' },
-      ],
+      messages: [{ role: 'assistant', content: 'new tail' }],
     })) as any;
     expect(bad.ok).toBe(false);
     expect(bad.result.startIndex).toBe(2);
 
-    const entry2 = await getConversationEntry(`chatgpt:${conversationId}`);
-    expect(entry2?.status).toBe('failed');
-    // Keep last known-good hashes when failed
-    expect(entry2?.message_hashes?.length).toBe(2);
-
-    // Next run should resume from LCP (no forced startIndex=0).
+    // Next run resumes from the same baseIndex (caller-provided).
     fetchSpy.mockImplementation(async (url: any) => {
       const u = String(url || '');
       if (u.includes('/agent/emos/settings')) {
@@ -336,21 +322,15 @@ describe('ingest workflow rpc', () => {
       type: 'ruminer.ingest.ingestConversation',
       platform: 'chatgpt',
       conversationId,
+      baseIndex: 2,
+      messageCount: 3,
       conversationTitle: 't',
       conversationUrl: `https://chatgpt.com/c/${conversationId}`,
-      messages: [
-        { role: 'user', content: 'hi' },
-        { role: 'assistant', content: 'hello' },
-        { role: 'assistant', content: 'new tail' },
-      ],
+      messages: [{ role: 'assistant', content: 'new tail' }],
     })) as any;
     expect(ok3.ok).toBe(true);
     expect(ok3.result.startIndex).toBe(2);
     expect(ok3.result.upserted).toBe(1);
-
-    const entry3 = await getConversationEntry(`chatgpt:${conversationId}`);
-    expect(entry3?.status).toBe('ingested');
-    expect(entry3?.message_hashes?.length).toBe(3);
   });
 
   it('enqueueRuns best-effort dedupes against active queue items', async () => {

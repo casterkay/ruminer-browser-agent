@@ -37,7 +37,6 @@ export function createClaudeBuiltinFlows(nowIso: string): FlowV3[] {
       name: 'Scan & Ingest (background)',
       config: {
         platform: 'claude',
-        limit: 100,
       },
       ui: { x: 0, y: 0 },
     },

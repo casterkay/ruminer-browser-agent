@@ -9,16 +9,9 @@ import {
   type EventsBus,
 } from '@/entrypoints/background/record-replay-v3/engine/transport/events-bus';
 import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
-import { stableJson } from '@/entrypoints/shared/utils/stable-json';
 
-import {
-  getConversationEntry,
-  getConversationStates,
-  upsertConversationEntry,
-  type ConversationLedgerEntry,
-} from '../conversation-ledger';
+import { getConversationStates } from '../conversation-ledger';
 import { emosUpsertMemory, type EmosSingleMessage } from '../emos-client';
-import { sha256Hex } from '../hash';
 import { ensureBuiltinFlows } from './index';
 import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 
@@ -56,6 +49,10 @@ type IngestConversationRequest = {
   platform: ChatPlatform;
   conversationId: string;
   runId?: string | null;
+  /** If messages are a suffix slice, the 0-based index offset for message_id fallback. */
+  baseIndex?: number | null;
+  /** Full conversation message count (best-effort, used for logs only). */
+  messageCount?: number | null;
   conversationTitle?: string | null;
   conversationUrl?: string | null;
   messages: Array<{
@@ -143,15 +140,6 @@ function computeSender(role: 'user' | 'assistant'): { sender: 'me' | 'bot'; send
   return role === 'user'
     ? { sender: 'me', sender_name: 'Me' }
     : { sender: 'bot', sender_name: 'Bot' };
-}
-
-function longestCommonPrefixLen(a: string[], b: string[]): number {
-  const n = Math.min(a.length, b.length);
-  let i = 0;
-  for (; i < n; i++) {
-    if (a[i] !== b[i]) break;
-  }
-  return i;
 }
 
 async function notify(title: string, message: string): Promise<void> {
@@ -390,14 +378,6 @@ async function ingestWithRetry(message: EmosSingleMessage): Promise<void> {
     : new Error(String(lastError || 'Unknown ingest error'));
 }
 
-async function computeMessageHash(input: {
-  role: 'user' | 'assistant';
-  content: string;
-}): Promise<string> {
-  const canonical = stableJson({ content: normalizeContent(input.content), role: input.role });
-  return sha256Hex(canonical);
-}
-
 function toGroupId(platform: string, conversationId: string): string {
   return `${platform}:${conversationId}`;
 }
@@ -418,10 +398,6 @@ function buildEmosMessageId(
     return `${platform}:${pid}`;
   }
   return `${platform}:${conversationId}:${index}`;
-}
-
-async function computeHashesDigest(hashes: string[]): Promise<string> {
-  return sha256Hex(stableJson(hashes));
 }
 
 function ensurePlatform(value: unknown): IngestConversationRequest['platform'] | null {
@@ -493,6 +469,16 @@ async function handleIngestConversation(
   const groupId = toGroupId(platform, conversationId);
   const groupName = trimOrNull(req.conversationTitle);
   const sourceUrl = trimOrNull(req.conversationUrl);
+  const baseIndexRaw = req.baseIndex;
+  const baseIndex =
+    typeof baseIndexRaw === 'number' && Number.isFinite(baseIndexRaw) && baseIndexRaw > 0
+      ? Math.floor(baseIndexRaw)
+      : 0;
+  const fullMessageCountRaw = req.messageCount;
+  const fullMessageCount =
+    typeof fullMessageCountRaw === 'number' && Number.isFinite(fullMessageCountRaw)
+      ? Math.max(0, Math.floor(fullMessageCountRaw))
+      : null;
 
   const messages = Array.isArray(req.messages) ? req.messages : [];
   const normalizedMessages: Array<{
@@ -535,23 +521,11 @@ async function handleIngestConversation(
 
   const nowIso = new Date().toISOString();
 
-  const existing = await getConversationEntry(groupId);
-  const existingHashes = Array.isArray(existing?.message_hashes) ? existing!.message_hashes : [];
-
-  const newHashes: string[] = [];
-  for (const msg of normalizedMessages) {
-    const role = msg.role;
-    const content = msg.content;
-    newHashes.push(await computeMessageHash({ role, content }));
-  }
-
-  const startIndex = longestCommonPrefixLen(existingHashes, newHashes);
-
   let upserted = 0;
   let failed = 0;
   const errors: string[] = [];
 
-  for (let i = startIndex; i < normalizedMessages.length; i++) {
+  for (let i = 0; i < normalizedMessages.length; i++) {
     const raw = normalizedMessages[i];
     const role = raw.role;
     const content = raw.content;
@@ -562,8 +536,9 @@ async function handleIngestConversation(
         ? { sender: 'bot' as const, sender_name: platformLabel(platform) }
         : base;
 
+    const index = baseIndex + i;
     const m: EmosSingleMessage = {
-      message_id: buildEmosMessageId(platform, conversationId, i, raw.messageId),
+      message_id: buildEmosMessageId(platform, conversationId, index, raw.messageId),
       create_time: isoOrNow(raw.createTime),
       sender: sender.sender,
       sender_name: sender.sender_name,
@@ -586,29 +561,12 @@ async function handleIngestConversation(
   }
 
   if (failed > 0) {
-    const progressedHashes = newHashes.slice(0, Math.min(newHashes.length, startIndex + upserted));
-    const nextFailed: ConversationLedgerEntry = {
-      group_id: groupId,
-      platform,
-      conversation_id: conversationId,
-      conversation_url: sourceUrl,
-      conversation_title: groupName,
-      status: 'failed',
-      message_hashes: progressedHashes,
-      message_hashes_digest: await computeHashesDigest(progressedHashes),
-      first_seen_at: existing?.first_seen_at ?? nowIso,
-      last_seen_at: nowIso,
-      last_ingested_at: existing?.last_ingested_at ?? null,
-      last_error: errors[0] ?? 'Unknown error',
-    };
-    await upsertConversationEntry(nextFailed);
-
     const resultPayload = {
       upserted,
-      skipped: startIndex,
+      skipped: baseIndex,
       failed,
-      total: normalizedMessages.length,
-      startIndex,
+      total: fullMessageCount ?? baseIndex + normalizedMessages.length,
+      startIndex: baseIndex,
       errors,
     };
 
@@ -637,30 +595,15 @@ async function handleIngestConversation(
 
   const emosResult = {
     upserted,
-    skipped: startIndex,
+    skipped: baseIndex,
     failed: 0,
-    total: normalizedMessages.length,
-    startIndex,
+    total: fullMessageCount ?? baseIndex + normalizedMessages.length,
+    startIndex: baseIndex,
     errors: [],
   };
 
-  const nextOk: ConversationLedgerEntry = {
-    group_id: groupId,
-    platform,
-    conversation_id: conversationId,
-    conversation_url: sourceUrl,
-    conversation_title: groupName,
-    status: 'ingested',
-    message_hashes: newHashes,
-    message_hashes_digest: await computeHashesDigest(newHashes),
-    first_seen_at: existing?.first_seen_at ?? nowIso,
-    last_seen_at: nowIso,
-    last_ingested_at: nowIso,
-    last_error: null,
-  };
-
   // Persist ingested conversations as agent sessions in native-server (Imported Conversations project).
-  // Only mark ledger as "ingested" after session save succeeds to preserve retry semantics.
+  // Ledger is updated by the workflow nodes (scan-and-ingest-all / ingest-current) after this call.
   let sessionSaveOk = false;
   let sessionSaveError: string | null = null;
   let sessionSaveResult: { projectId: string; sessionId: string; messageCount: number } | null =
@@ -717,26 +660,6 @@ async function handleIngestConversation(
   } catch (e) {
     sessionSaveOk = false;
     sessionSaveError = e instanceof Error ? e.message : String(e);
-  }
-
-  if (!sessionSaveOk) {
-    const nextFailed: ConversationLedgerEntry = {
-      group_id: groupId,
-      platform,
-      conversation_id: conversationId,
-      conversation_url: sourceUrl,
-      conversation_title: groupName,
-      status: 'failed',
-      message_hashes: newHashes,
-      message_hashes_digest: await computeHashesDigest(newHashes),
-      first_seen_at: existing?.first_seen_at ?? nowIso,
-      last_seen_at: nowIso,
-      last_ingested_at: nowIso,
-      last_error: sessionSaveError || 'Failed to save session',
-    };
-    await upsertConversationEntry(nextFailed);
-  } else {
-    await upsertConversationEntry(nextOk);
   }
 
   if (runId) {
@@ -815,6 +738,8 @@ export async function ruminerIngestConversation(
       platform: input.platform,
       conversationId: input.conversationId,
       ...(input.runId !== undefined ? { runId: input.runId } : {}),
+      ...(input.baseIndex !== undefined ? { baseIndex: input.baseIndex } : {}),
+      ...(input.messageCount !== undefined ? { messageCount: input.messageCount } : {}),
       ...(input.conversationTitle !== undefined
         ? { conversationTitle: input.conversationTitle }
         : {}),

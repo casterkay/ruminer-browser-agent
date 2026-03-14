@@ -37,7 +37,6 @@ export function createGeminiBuiltinFlows(nowIso: string): FlowV3[] {
       name: 'Scan & Ingest (background)',
       config: {
         platform: 'gemini',
-        limit: 100,
       },
       ui: { x: 0, y: 0 },
     },

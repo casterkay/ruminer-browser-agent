@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'chatgpt';
-  const VERSION = '2026-03-14.1';
+  const VERSION = '2026-03-15.1';
   const LOG = '[ruminer.chatgpt-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -84,12 +84,12 @@
             return true;
           }
 
-          if (request.action === 'ruminer_scan_getConversationMessageHashes') {
+          if (request.action === 'ruminer_scan_getConversationMessages') {
             const conversationId = String(request?.payload?.conversationId || '');
             const conversationUrl = String(request?.payload?.conversationUrl || '');
             Promise.resolve()
               .then(() =>
-                api.getConversationMessageHashes({
+                api.getConversationMessages({
                   conversationId,
                   conversationUrl,
                 }),
@@ -103,7 +103,7 @@
                 ) {
                   sendResponse({
                     ok: false,
-                    error: String(value.error || 'getConversationMessageHashes failed'),
+                    error: String(value.error || 'getConversationMessages failed'),
                   });
                   return;
                 }
@@ -130,54 +130,6 @@
     String(s || '')
       .replace(/\r\n/g, '\n')
       .trim();
-
-  const bytesToHex = (buffer) =>
-    Array.from(new Uint8Array(buffer))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-
-  const sha256Hex = async (input) => {
-    const enc = new TextEncoder();
-    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
-    return bytesToHex(digest);
-  };
-
-  const stableJson = (value) => {
-    const seen = new Set();
-    const normalize = (v) => {
-      if (v === null) return null;
-      if (v === undefined) return undefined;
-      const t = typeof v;
-      if (t === 'string' || t === 'boolean') return v;
-      if (t === 'number') return Number.isFinite(v) ? v : null;
-      if (t !== 'object') return String(v);
-      if (seen.has(v)) throw new Error('stableJson: circular');
-      seen.add(v);
-      try {
-        if (Array.isArray(v)) return v.map((x) => normalize(x));
-        const keys = Object.keys(v).sort();
-        const out = {};
-        for (const k of keys) {
-          const nv = normalize(v[k]);
-          if (nv === undefined) continue;
-          out[k] = nv;
-        }
-        return out;
-      } finally {
-        seen.delete(v);
-      }
-    };
-    return JSON.stringify(normalize(value));
-  };
-
-  const hashMessage = async (role, content) => {
-    return sha256Hex(
-      stableJson({
-        role: String(role || ''),
-        content: normalizeContent(content),
-      }),
-    );
-  };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms || 0))));
 
@@ -468,7 +420,12 @@
       return parts
         .map((p) => {
           if (typeof p === 'string') return p;
-          if (p && typeof p === 'object' && typeof p.text === 'string') return p.text;
+          if (p && typeof p === 'object') {
+            if (typeof p.text === 'string') return p.text;
+            // Keep asset pointers stable without downloading large blobs.
+            if (typeof p.asset_pointer === 'string') return p.asset_pointer;
+            if (typeof p.audio_asset_pointer === 'string') return p.audio_asset_pointer;
+          }
           return '';
         })
         .join('');
@@ -480,38 +437,114 @@
       if (typeof content.url === 'string') bits.push(content.url);
       return bits.join('\n');
     }
+    if (t === 'tether_browsing_display')
+      return typeof content.result === 'string' ? content.result : '';
     if (t === 'image_asset_pointer')
       return typeof content.alt_text === 'string' ? content.alt_text : '';
     if (t === 'refusal') return typeof content.refusal === 'string' ? content.refusal : '';
     return '';
   };
 
-  const extractConversationMessages = (conversation) => {
-    const mapping = conversation && conversation.mapping ? conversation.mapping : null;
-    const current = conversation && conversation.current_node ? conversation.current_node : null;
-    if (!mapping || typeof mapping !== 'object' || !current) return [];
+  const isConversationMapping = (v) => v && typeof v === 'object';
 
-    const chain = [];
-    const visited = new Set();
-    let nodeId = String(current);
-    while (nodeId && mapping[nodeId] && !visited.has(nodeId)) {
-      visited.add(nodeId);
-      const node = mapping[nodeId];
-      chain.push(node);
-      nodeId = node && node.parent ? String(node.parent) : '';
+  const findFallbackLeafNodeId = (mapping) => {
+    try {
+      const nodes = Object.values(mapping || {});
+      const leaf = nodes.find((n) => !n || !Array.isArray(n.children) || n.children.length === 0);
+      const id = leaf && typeof leaf.id === 'string' ? leaf.id : '';
+      return id.trim() || null;
+    } catch {
+      return null;
     }
-    chain.reverse();
+  };
+
+  const shouldIncludeNodeMessage = (msg) => {
+    const role = msg && msg.author && typeof msg.author.role === 'string' ? msg.author.role : '';
+    if (role === 'system') return false;
+    const ct =
+      msg && msg.content && typeof msg.content.content_type === 'string'
+        ? msg.content.content_type
+        : '';
+    if (ct === 'model_editable_context') return false;
+    if (ct === 'user_editable_context') return false;
+    return role === 'user' || role === 'assistant';
+  };
+
+  const extractConversationNodes = (mapping, startNodeId) => {
+    const result = [];
+    let currentNodeId = startNodeId;
+    while (currentNodeId) {
+      const node = mapping[currentNodeId];
+      if (!node) break;
+      if (node.parent === undefined) break; // stop at root message
+      const msg = node.message;
+      if (msg && shouldIncludeNodeMessage(msg)) {
+        result.unshift(node);
+      }
+      currentNodeId = typeof node.parent === 'string' ? node.parent : '';
+    }
+    return result;
+  };
+
+  const mergeContinuationNodes = (nodes) => {
+    const merged = [];
+    for (const node of nodes) {
+      const prev = merged[merged.length - 1];
+      const prevMsg = prev && prev.message ? prev.message : null;
+      const msg = node && node.message ? node.message : null;
+      if (
+        prevMsg &&
+        msg &&
+        prevMsg.author?.role === 'assistant' &&
+        msg.author?.role === 'assistant' &&
+        prevMsg.recipient === 'all' &&
+        msg.recipient === 'all' &&
+        prevMsg.content?.content_type === 'text' &&
+        msg.content?.content_type === 'text' &&
+        Array.isArray(prevMsg.content.parts) &&
+        Array.isArray(msg.content.parts) &&
+        msg.content.parts.length > 0
+      ) {
+        const last = prevMsg.content.parts.length - 1;
+        const firstPart = typeof msg.content.parts[0] === 'string' ? msg.content.parts[0] : '';
+        prevMsg.content.parts[last] = String(prevMsg.content.parts[last] || '') + firstPart;
+        prevMsg.content.parts.push(...msg.content.parts.slice(1));
+        continue;
+      }
+      merged.push(node);
+    }
+    return merged;
+  };
+
+  const extractConversationMessages = (conversation) => {
+    const mapping =
+      conversation && isConversationMapping(conversation.mapping) ? conversation.mapping : null;
+    if (!mapping) return [];
+
+    const startNodeIdRaw =
+      conversation && typeof conversation.current_node === 'string'
+        ? conversation.current_node
+        : '';
+    const startNodeId = startNodeIdRaw.trim() || findFallbackLeafNodeId(mapping);
+    if (!startNodeId) return [];
+
+    const nodes = mergeContinuationNodes(extractConversationNodes(mapping, startNodeId));
 
     const out = [];
-    for (const node of chain) {
+    for (const node of nodes) {
       const msg = node && node.message ? node.message : null;
-      const role = msg && msg.author && typeof msg.author.role === 'string' ? msg.author.role : '';
-      if (role !== 'user' && role !== 'assistant') continue;
-      const content = normalizeContent(extractContentText(msg && msg.content ? msg.content : null));
+      if (!msg || !shouldIncludeNodeMessage(msg)) continue;
+      const role = msg.author.role;
+      const content = normalizeContent(extractContentText(msg.content));
       if (!content) continue;
       out.push({ role, content });
     }
     return out;
+  };
+
+  const conversationsPagingState = {
+    mode: null, // 'offset' | 'cursor'
+    cursorByLogicalOffset: new Map([[0, 0]]),
   };
 
   async function listConversations({ offset, limit }) {
@@ -521,7 +554,17 @@
     const { accessToken, accountId } = await getAuthContext();
     const payload = await fetchBackendApi(
       '/conversations',
-      { offset: OFF, limit: LIMIT, order: 'updated' },
+      (() => {
+        // Support both offset-based and cursor-based paging (best-effort).
+        if (conversationsPagingState.mode === 'cursor') {
+          const cursor = conversationsPagingState.cursorByLogicalOffset.get(OFF);
+          if (cursor === undefined) {
+            throw new Error(`Missing paging cursor for offset=${OFF}`);
+          }
+          return { cursor, limit: LIMIT };
+        }
+        return { offset: OFF, limit: LIMIT };
+      })(),
       accessToken,
       accountId,
       { retryAuthOnce: true, retryParseOnce: true },
@@ -533,19 +576,68 @@
         const id = String(it && it.id ? it.id : '').trim();
         if (!id) return null;
         const title = typeof it.title === 'string' && it.title.trim() ? it.title.trim() : null;
+        // Optional; if present, surface it so the background can sort accurately.
+        let updatedAtMs = null;
+        try {
+          const rawUpdated =
+            it && typeof it === 'object'
+              ? (it.update_time ?? it.updateTime ?? it.updated_at ?? it.updatedAt ?? null)
+              : null;
+          if (typeof rawUpdated === 'number' && Number.isFinite(rawUpdated)) {
+            updatedAtMs =
+              rawUpdated < 10_000_000_000 ? Math.floor(rawUpdated * 1000) : Math.floor(rawUpdated);
+          } else if (typeof rawUpdated === 'string' && rawUpdated.trim()) {
+            const t = Date.parse(rawUpdated);
+            if (Number.isFinite(t)) updatedAtMs = t;
+          }
+        } catch {}
         const url = new URL('/c/' + id, location.origin).toString();
-        return { conversationId: id, conversationUrl: url, conversationTitle: title };
+        return {
+          conversationId: id,
+          conversationUrl: url,
+          conversationTitle: title,
+          ...(updatedAtMs !== null ? { updatedAtMs } : {}),
+        };
       })
       .filter(Boolean);
 
-    const nextOffset = out.length > 0 ? OFF + out.length : null;
+    // Detect cursor-based paging on first response (or when present).
+    const cursor =
+      payload && (typeof payload.cursor === 'string' || typeof payload.cursor === 'number')
+        ? payload.cursor
+        : null;
+    if (cursor !== null && cursor !== undefined) {
+      conversationsPagingState.mode = 'cursor';
+    } else if (conversationsPagingState.mode === null) {
+      conversationsPagingState.mode = 'offset';
+    }
+
+    let nextOffset = null;
+    if (out.length > 0) {
+      const nextLogical = OFF + out.length;
+      const total =
+        payload && typeof payload.total === 'number' && Number.isFinite(payload.total)
+          ? payload.total
+          : null;
+      if (conversationsPagingState.mode === 'cursor') {
+        if (cursor) {
+          conversationsPagingState.cursorByLogicalOffset.set(nextLogical, cursor);
+          nextOffset = nextLogical;
+        } else {
+          nextOffset = null;
+        }
+      } else if (typeof total === 'number') {
+        nextOffset = nextLogical >= total ? null : nextLogical;
+      } else {
+        nextOffset = nextLogical;
+      }
+    }
     return { items: out, nextOffset };
   }
 
-  async function getConversationMessageHashes({ conversationId, conversationUrl, includeHashes }) {
+  async function getConversationMessages({ conversationId, conversationUrl }) {
     const id = String(conversationId || '').trim();
     if (!id) throw new Error('Missing conversationId');
-    const INCLUDE = includeHashes === true;
 
     const { accessToken, accountId } = await getAuthContext();
     const conv = await fetchBackendApi(
@@ -556,15 +648,12 @@
       { retryAuthOnce: true, retryParseOnce: true },
     );
     const msgs = extractConversationMessages(conv);
-    const hashes = [];
-    for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
-    const fullDigest = await sha256Hex(stableJson(hashes));
     return {
       conversationId: id,
-      messageCount: hashes.length,
-      fullDigest,
-      ...(INCLUDE ? { messageHashes: hashes } : {}),
       conversationUrl: String(conversationUrl || '') || null,
+      conversationTitle:
+        conv && typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : null,
+      messages: msgs,
     };
   }
 
@@ -572,7 +661,7 @@
     platform: PLATFORM,
     version: VERSION,
     listConversations,
-    getConversationMessageHashes,
+    getConversationMessages,
   };
 
   try {

@@ -37,7 +37,6 @@ export function createDeepseekBuiltinFlows(nowIso: string): FlowV3[] {
       name: 'Scan & Ingest (background)',
       config: {
         platform: 'deepseek',
-        limit: 100,
       },
       ui: { x: 0, y: 0 },
     },

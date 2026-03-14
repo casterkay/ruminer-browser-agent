@@ -4,6 +4,16 @@ import { inferPlatformFromUrl, type ChatPlatform } from '@/common/chat-platforms
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
 import { ruminerIngestConversation } from '../builtin-flows/ingest-workflow-rpc';
+import {
+  getConversationEntry,
+  upsertConversationEntry,
+  type ConversationLedgerEntry,
+} from '../conversation-ledger';
+import {
+  computeConversationDigestFromMessages,
+  normalizeConversationContent,
+  type ConversationMessage,
+} from '../conversation-digest';
 import { toErrorResult } from '../utils';
 
 const ingestCurrentConfigSchema = z.object({
@@ -255,9 +265,42 @@ export type IngestConversationInTabResult = {
   conversationTitle: string | null;
   conversationUrl: string;
   messageCount: number;
+  messagesDigest: string;
   sessionId: string | null;
   projectId: string | null;
 };
+
+function toGroupId(platform: ChatPlatform, conversationId: string): string {
+  return `${platform}:${conversationId}`;
+}
+
+function buildManualImportLedgerEntry(args: {
+  existing: ConversationLedgerEntry | null;
+  nowIso: string;
+  platform: ChatPlatform;
+  conversationId: string;
+  conversationUrl: string | null;
+  conversationTitle: string | null;
+  digest: string;
+  messageCount: number;
+}): ConversationLedgerEntry {
+  const groupId = toGroupId(args.platform, args.conversationId);
+  return {
+    group_id: groupId,
+    platform: args.platform,
+    conversation_id: args.conversationId,
+    conversation_url: args.conversationUrl,
+    conversation_title: args.conversationTitle,
+    // Manual import must always clear status to prevent scan-all stop gaps.
+    status: null,
+    messages_digest: args.digest,
+    message_count: args.messageCount,
+    first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
+    last_seen_at: args.nowIso,
+    last_ingested_at: args.nowIso,
+    last_error: null,
+  };
+}
 
 export async function ingestConversationInTab(
   args: IngestConversationInTabArgs,
@@ -357,18 +400,37 @@ export async function ingestConversationInTab(
   }
   const messages = Array.isArray(extracted.messages) ? extracted.messages : [];
 
+  const normalizedForIngest = messages
+    .map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: normalizeConversationContent(m.content),
+      ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
+      ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
+    }))
+    .filter((m) => Boolean(m.content));
+
+  const digestMessages: ConversationMessage[] = normalizedForIngest.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+  if (digestMessages.length === 0) {
+    throw new IngestConversationError(
+      RR_ERROR_CODES.SCRIPT_FAILED,
+      `Conversation has no extractable messages (conversationId=${conversationId})`,
+      { tabId, platform, conversationId },
+    );
+  }
+
+  const { digest: messagesDigest, messageCount } =
+    await computeConversationDigestFromMessages(digestMessages);
+
   const ingestResp = await ruminerIngestConversation({
     platform,
     conversationId,
     runId: typeof args.runId === 'string' ? args.runId : null,
     conversationTitle: extracted.conversationTitle ?? null,
     conversationUrl: extracted.conversationUrl ?? conversationUrl,
-    messages: messages.map((m) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: String(m.content || ''),
-      ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
-      ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
-    })),
+    messages: normalizedForIngest,
   });
 
   if (!isRecord(ingestResp) || ingestResp.ok !== true) {
@@ -404,7 +466,8 @@ export async function ingestConversationInTab(
     conversationId,
     conversationTitle: extracted.conversationTitle ?? null,
     conversationUrl: extracted.conversationUrl ?? conversationUrl,
-    messageCount: messages.length,
+    messageCount,
+    messagesDigest,
     sessionId,
     projectId,
   };
@@ -543,6 +606,39 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
       ctx.log('info', `${LOG_PREFIX} succeeded`, result);
     } catch {
       // ignore
+    }
+
+    // Manual import: store digest + count, always clear status to avoid scan-all early-stop gaps.
+    try {
+      const existing = await getConversationEntry(
+        toGroupId(result.platform, result.conversationId),
+      );
+      const nowIso = new Date().toISOString();
+      const next = buildManualImportLedgerEntry({
+        existing,
+        nowIso,
+        platform: result.platform,
+        conversationId: result.conversationId,
+        conversationUrl: result.conversationUrl ?? null,
+        conversationTitle: result.conversationTitle,
+        digest: result.messagesDigest,
+        messageCount: result.messageCount,
+      });
+      await upsertConversationEntry(next);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await emitToTab('ruminer_ingest_current_conversation_failed', {
+        runId: ctx.runId,
+        error: `Ingest succeeded but ledger update failed: ${msg}`,
+        code: RR_ERROR_CODES.INTERNAL,
+        tabId,
+        conversationId: result.conversationId,
+      });
+      return toErrorResult(RR_ERROR_CODES.INTERNAL, `Ledger update failed: ${msg}`, {
+        error: msg,
+        conversationId: result.conversationId,
+        platform: result.platform,
+      });
     }
 
     await emitToTab('ruminer_ingest_current_conversation_succeeded', {

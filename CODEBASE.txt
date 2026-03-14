@@ -42,6 +42,7 @@ app/
 │   │   └── vue.svg
 │   ├── common
 │   │   ├── agent-models.ts
+│   │   ├── chat-platforms.ts
 │   │   ├── constants.ts
 │   │   ├── element-marker-types.ts
 │   │   ├── flow-approvals.ts
@@ -276,7 +277,8 @@ app/
 │   │       ├── chatgpt.svg
 │   │       ├── claude.png
 │   │       ├── deepseek.svg
-│   │       └── gemini.svg
+│   │       ├── gemini.svg
+│   │       └── inbox.svg
 │   ├── README.md
 │   ├── shared
 │   │   ├── element-picker
@@ -376,6 +378,7 @@ app/
 │   │   │   │   ├── codex.ts
 │   │   │   │   ├── openclaw.ts
 │   │   │   │   └── types.ts
+│   │   │   ├── ephemeral-session-store.ts
 │   │   │   ├── mcp-tool-telemetry.ts
 │   │   │   ├── message-service.ts
 │   │   │   ├── open-project.ts
@@ -445,4 +448,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 322 files
+99 directories, 325 files

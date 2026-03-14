@@ -121,7 +121,8 @@ function replaceInlineCitationsOutsideCode(line: string, refs: Map<string, strin
         new Set(contents.map((c) => String(c || '').trim()).filter(Boolean)),
       );
       const messageIdsAttr = escapeHtmlAttr(messageIds.join(','));
-      return `<emos-cite keys="${keysAttr}" message-ids="${messageIdsAttr}"></emos-cite>`;
+      const contentsAttr = escapeHtmlAttr(contents.join('|||'));
+      return `<emos-cite keys="${keysAttr}" message-ids="${messageIdsAttr}" contents="${contentsAttr}"></emos-cite>`;
     });
 
     i = chunkEnd;

@@ -1,8 +1,4 @@
-import { stableJson } from '@/entrypoints/shared/utils/stable-json';
-
-import { sha256Hex } from './hash';
-
-export type ConversationLedgerStatus = 'ingested' | 'skipped' | 'failed';
+export type ConversationLedgerStatus = 'ingested' | 'failed';
 
 export interface ConversationLedgerEntry {
   /** Primary key: `${platform}:${conversationId}` */
@@ -11,11 +7,11 @@ export interface ConversationLedgerEntry {
   conversation_id: string;
   conversation_url: string | null;
   conversation_title: string | null;
-  status: ConversationLedgerStatus;
-  /** Ordered list of sha256(stableJson({ role, content })) for each message index */
-  message_hashes: string[];
-  /** sha256(stableJson(message_hashes)) - optional performance cache */
-  message_hashes_digest?: string | null;
+  /** Null means "known digest but not promoted to ingested/failed yet" (manual import). */
+  status: ConversationLedgerStatus | null;
+  /** sha256(stableJson([{ role, content }...])) for the whole message list. */
+  messages_digest: string | null;
+  message_count: number | null;
   first_seen_at: string;
   last_seen_at: string;
   last_ingested_at: string | null;
@@ -28,13 +24,13 @@ export interface ConversationStatesQuery {
 
 export interface ConversationState {
   exists: boolean;
-  status?: ConversationLedgerStatus;
-  messageCount?: number;
-  fullDigest?: string;
+  status?: ConversationLedgerStatus | null;
+  messageCount?: number | null;
+  fullDigest?: string | null;
 }
 
 const DB_NAME = 'ruminer_rr_v3';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'conversation_ledger';
 
 function openDb(): Promise<IDBDatabase> {
@@ -43,11 +39,13 @@ function openDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'group_id' });
-        store.createIndex('status', 'status', { unique: false });
-        store.createIndex('platform', 'platform', { unique: false });
+      // No migration/backward compatibility: wipe and recreate the store.
+      if (db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
       }
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'group_id' });
+      store.createIndex('status', 'status', { unique: false });
+      store.createIndex('platform', 'platform', { unique: false });
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -110,6 +108,13 @@ export async function upsertConversationEntry(entry: ConversationLedgerEntry): P
   });
 }
 
+export async function listConversationEntries(): Promise<ConversationLedgerEntry[]> {
+  return withStore('readonly', async (store) => {
+    const result = await requestToPromise<ConversationLedgerEntry[]>(store.getAll());
+    return Array.isArray(result) ? result : [];
+  });
+}
+
 export async function getConversationStates(
   query: ConversationStatesQuery,
 ): Promise<Record<string, ConversationState>> {
@@ -125,13 +130,14 @@ export async function getConversationStates(
         const entry = await requestToPromise<ConversationLedgerEntry | undefined>(store.get(gid));
         if (!entry) return [gid, { exists: false } satisfies ConversationState] as const;
 
-        const hashes = Array.isArray(entry.message_hashes) ? entry.message_hashes : [];
-        const messageCount = hashes.length;
-        const cachedDigest =
-          typeof entry.message_hashes_digest === 'string' && entry.message_hashes_digest.trim()
-            ? entry.message_hashes_digest.trim()
-            : '';
-        const fullDigest = cachedDigest || (await sha256Hex(stableJson(hashes)));
+        const messageCount =
+          typeof entry.message_count === 'number' && Number.isFinite(entry.message_count)
+            ? Math.max(0, Math.floor(entry.message_count))
+            : null;
+        const fullDigest =
+          typeof entry.messages_digest === 'string' && entry.messages_digest.trim()
+            ? entry.messages_digest.trim()
+            : null;
         return [
           gid,
           {

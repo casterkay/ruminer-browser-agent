@@ -5,41 +5,85 @@ import { isCancelRequested } from '@/entrypoints/background/record-replay-v3/eng
 import { createRunsStore } from '@/entrypoints/background/record-replay-v3/storage/runs';
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
-import { getConversationStates } from '../conversation-ledger';
+import {
+  listConversationEntries,
+  upsertConversationEntry,
+  type ConversationLedgerEntry,
+} from '../conversation-ledger';
 import {
   registerAutomationTab,
   setAutomationTabLastProgress,
   unregisterAutomationTab,
 } from '../automation-tabs';
+import { ruminerIngestConversation } from '../builtin-flows/ingest-workflow-rpc';
+import {
+  computeConversationDigestFromMessages,
+  normalizeConversationMessages,
+  type ConversationMessage,
+} from '../conversation-digest';
 import { toErrorResult } from '../utils';
-import { ingestConversationInTab } from './ingest-conversation';
 
-const scanAndEnqueueConfigSchema = z.object({
+/**
+ * Workflow procedure (scan + ingest, fail-fast):
+ *
+ * - Load the entire conversation ledger into memory.
+ * - Scan newest → oldest:
+ *   - Extract + normalize the full message list for each conversation.
+ *   - Compute a single digest for the whole message list.
+ *   - Stop scanning at the first conversation where `status='ingested'` and `ledger.digest === computedDigest`.
+ *   - Keep earlier conversations (messages + digest) in memory only; do not mutate the ledger during scanning.
+ * - Ingest oldest → newest among the scanned conversations:
+ *   - If digest matches ledger, skip ingestion.
+ *   - Otherwise ingest (best-effort suffix optimization via prefix digest + count).
+ *   - After each conversation: upsert ledger `status='ingested'` + digest/count; on failure upsert `status='failed'`
+ *     (preserving previous digest/count) and fail the workflow run immediately.
+ */
+const scanAndIngestConfigSchema = z.object({
   platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
-  limit: z.number().int().min(1).max(200).default(100),
-  stopAtFirstUnchangedIngested: z.boolean().default(false),
+  listPageSize: z.number().int().min(1).max(500).default(100),
   digestThrottleMs: z.number().int().min(0).max(5_000).default(0),
   listThrottleMs: z.number().int().min(0).max(2_000).default(0),
 });
 
-type ScanAndEnqueueConfig = z.infer<typeof scanAndEnqueueConfigSchema>;
+type ScanAndIngestConfig = z.infer<typeof scanAndIngestConfigSchema>;
 
 type ConversationListItem = {
   conversationId: string;
   conversationUrl: string;
   conversationTitle: string | null;
+  /** Optional; only for API platforms that expose an updated time. */
+  updatedAtMs?: number | null;
 };
 
 type ListResult = { items: ConversationListItem[]; nextOffset: number | null };
 
-type ConversationDigestResult = {
+type ConversationMessagesResult = {
+  conversationId: string;
+  conversationUrl: string | null;
+  conversationTitle: string | null;
+  messages: unknown;
+};
+
+type ScannedConversation = {
+  groupId: string;
+  conversationId: string;
+  conversationUrl: string;
+  conversationTitle: string | null;
+  messages: ConversationMessage[];
+  digest: string;
   messageCount: number;
-  fullDigest: string;
-  messageHashes?: string[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function clampInt(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms))));
 }
 
 async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
@@ -92,17 +136,6 @@ async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<voi
   });
 }
 
-function scanScriptPath(platform: ChatPlatform): string {
-  return `inject-scripts/ruminer.${platform}-scan.js`;
-}
-
-function scanExecutionWorld(platform: ChatPlatform): chrome.scripting.ExecutionWorld {
-  // This node calls the injected scanner via chrome.tabs.sendMessage RPC.
-  // That requires the injected script to run in the ISOLATED "content script" world.
-  // If a platform needs MAIN-world fetch semantics (Origin), add an ISOLATED<->MAIN bridge.
-  return 'ISOLATED';
-}
-
 function platformHomeUrl(platform: ChatPlatform): string {
   switch (platform) {
     case 'chatgpt':
@@ -118,10 +151,24 @@ function platformHomeUrl(platform: ChatPlatform): string {
   }
 }
 
-async function probeScanApi(
-  tabId: number,
-  platform: ChatPlatform,
-): Promise<Record<string, unknown> | null> {
+function scanScriptPath(platform: ChatPlatform): string {
+  return `inject-scripts/ruminer.${platform}-scan.js`;
+}
+
+function scanExecutionWorld(): chrome.scripting.ExecutionWorld {
+  // Uses chrome.tabs.sendMessage RPC; injected script must run in ISOLATED world.
+  return 'ISOLATED';
+}
+
+async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [0] },
+    files: [scanScriptPath(platform)],
+    world: scanExecutionWorld(),
+  });
+}
+
+async function probeScanApi(tabId: number): Promise<Record<string, unknown> | null> {
   try {
     const res = (await chrome.tabs.sendMessage(
       tabId,
@@ -132,14 +179,6 @@ async function probeScanApi(
   } catch {
     return null;
   }
-}
-
-async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
-  await chrome.scripting.executeScript({
-    target: { tabId, frameIds: [0] },
-    files: [scanScriptPath(platform)],
-    world: scanExecutionWorld(platform),
-  });
 }
 
 async function pingScanRpc(
@@ -171,7 +210,7 @@ async function ensureScanRpcInjected(tabId: number, platform: ChatPlatform): Pro
 
   const ping1 = await pingScanRpc(tabId);
   if (ping1?.platform !== platform) {
-    const probe = await probeScanApi(tabId, platform);
+    const probe = await probeScanApi(tabId);
     const detail = probe ? JSON.stringify(probe) : 'null';
     throw new Error(`Scan RPC not responding after injection (probe=${detail})`);
   }
@@ -190,7 +229,7 @@ function isRetryableSendMessageError(err: unknown): boolean {
 async function callScanRpc<T>(
   tabId: number,
   platform: ChatPlatform,
-  action: 'ruminer_scan_listConversations' | 'ruminer_scan_getConversationMessageHashes',
+  action: 'ruminer_scan_listConversations' | 'ruminer_scan_getConversationMessages',
   payload: Record<string, unknown>,
 ): Promise<T> {
   const MAX_ATTEMPTS = 2;
@@ -247,31 +286,19 @@ async function callListConversations(
     throw e instanceof Error ? e : new Error(String(e));
   });
 
-  if (raw === null || raw === undefined) {
-    const p0 = await probeScanApi(tabId, platform);
+  if (!isRecord(raw)) {
+    const p0 = await probeScanApi(tabId);
     throw new Error(
       `listConversations returned invalid result (probe=${isRecord(p0) ? JSON.stringify(p0) : 'null'})`,
     );
   }
 
-  // Compatibility: allow returning either `{ items, nextOffset }` or an array of items.
-  const normalized = Array.isArray(raw)
-    ? { items: raw, nextOffset: raw.length > 0 ? payload.offset + raw.length : null }
-    : raw;
-
-  if (!isRecord(normalized)) {
-    const p0 = await probeScanApi(tabId, platform);
-    throw new Error(
-      `listConversations returned non-object result (type=${typeof raw}, probe=${isRecord(p0) ? JSON.stringify(p0) : 'null'})`,
-    );
-  }
-
-  const itemsRaw = Array.isArray((normalized as any).items)
-    ? (normalized as any).items
-    : Array.isArray((normalized as any).conversations)
-      ? (normalized as any).conversations
+  const itemsRaw = Array.isArray((raw as any).items)
+    ? (raw as any).items
+    : Array.isArray((raw as any).conversations)
+      ? (raw as any).conversations
       : [];
-  const nextOffsetRaw = (normalized as any).nextOffset;
+  const nextOffsetRaw = (raw as any).nextOffset;
   const nextOffset =
     typeof nextOffsetRaw === 'number' && Number.isFinite(nextOffsetRaw)
       ? Math.floor(nextOffsetRaw)
@@ -287,89 +314,140 @@ async function callListConversations(
         typeof it?.conversationTitle === 'string' && it.conversationTitle.trim()
           ? it.conversationTitle.trim()
           : null;
-      return { conversationId, conversationUrl, conversationTitle };
+
+      const updatedAtRaw = (it as any)?.updatedAtMs ?? (it as any)?.updatedAt ?? null;
+      const updatedAtMs =
+        typeof updatedAtRaw === 'number' && Number.isFinite(updatedAtRaw)
+          ? Math.floor(updatedAtRaw)
+          : null;
+
+      return {
+        conversationId,
+        conversationUrl,
+        conversationTitle,
+        ...(updatedAtMs !== null ? { updatedAtMs } : {}),
+      };
     })
     .filter(Boolean) as ConversationListItem[];
 
   return { items, nextOffset };
 }
 
-async function callConversationDigest(
+async function callConversationMessages(
   tabId: number,
   platform: ChatPlatform,
   payload: { conversationId: string; conversationUrl: string },
-): Promise<ConversationDigestResult> {
-  const MAX_ATTEMPTS = 2;
+): Promise<ConversationMessagesResult> {
+  const raw = await callScanRpc<unknown>(tabId, platform, 'ruminer_scan_getConversationMessages', {
+    conversationId: payload.conversationId,
+    conversationUrl: payload.conversationUrl,
+  }).catch((e) => {
+    throw e instanceof Error ? e : new Error(String(e));
+  });
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    let raw: unknown = null;
-    try {
-      raw = await callScanRpc<unknown>(
-        tabId,
-        platform,
-        'ruminer_scan_getConversationMessageHashes',
-        {
-          conversationId: payload.conversationId,
-          conversationUrl: payload.conversationUrl,
-        },
-      );
-    } catch (e) {
-      const err = e instanceof Error ? e.message : String(e || '');
-      const retryable = err.includes('navigation_started') || isRetryableSendMessageError(e);
-      if (retryable && attempt + 1 < MAX_ATTEMPTS) {
-        await waitForTabComplete(tabId, 15_000).catch(() => undefined);
-        await ensureScanRpcInjected(tabId, platform).catch(() => undefined);
-        continue;
-      }
-      throw new Error(err || 'Scan digest failed');
-    }
-
-    if (!isRecord(raw)) {
-      throw new Error('getConversationMessageHashes returned invalid result');
-    }
-
-    const fullDigest = typeof (raw as any).fullDigest === 'string' ? (raw as any).fullDigest : '';
-    const messageCountRaw = (raw as any).messageCount;
-    const messageCount =
-      typeof messageCountRaw === 'number' && Number.isFinite(messageCountRaw)
-        ? Math.floor(messageCountRaw)
-        : 0;
-    const messageHashesRaw = (raw as any).messageHashes;
-    const messageHashes = Array.isArray(messageHashesRaw)
-      ? messageHashesRaw.map((h: any) => String(h))
-      : undefined;
-
-    if (!fullDigest.trim() || messageCount < 0) {
-      throw new Error('getConversationMessageHashes returned invalid digest/count');
-    }
-
-    return {
-      fullDigest: fullDigest.trim(),
-      messageCount,
-      ...(messageHashes ? { messageHashes } : {}),
-    };
+  if (!isRecord(raw)) {
+    throw new Error('getConversationMessages returned invalid result');
   }
 
-  throw new Error('getConversationMessageHashes retry attempts exhausted');
-}
+  const conversationId =
+    typeof (raw as any).conversationId === 'string' ? String((raw as any).conversationId) : '';
+  const conversationUrl =
+    typeof (raw as any).conversationUrl === 'string' && String((raw as any).conversationUrl).trim()
+      ? String((raw as any).conversationUrl).trim()
+      : null;
+  const conversationTitle =
+    typeof (raw as any).conversationTitle === 'string' &&
+    String((raw as any).conversationTitle).trim()
+      ? String((raw as any).conversationTitle).trim()
+      : null;
+  const messages = (raw as any).messages as unknown;
 
-function clampInt(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, Math.floor(n)));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms))));
-}
-
-function formatDurationShort(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  if (!conversationId.trim()) {
+    throw new Error('getConversationMessages missing conversationId');
   }
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+
+  return {
+    conversationId: conversationId.trim(),
+    conversationUrl,
+    conversationTitle,
+    messages,
+  };
+}
+
+function toGroupId(platform: ChatPlatform, conversationId: string): string {
+  return `${platform}:${conversationId}`;
+}
+
+function shouldStopScan(entry: ConversationLedgerEntry | undefined, digest: string): boolean {
+  if (!entry) return false;
+  if (entry.status !== 'ingested') return false;
+  if (typeof entry.messages_digest !== 'string' || !entry.messages_digest.trim()) return false;
+  return entry.messages_digest.trim() === digest;
+}
+
+function toTrimmedLedgerDigest(entry: ConversationLedgerEntry | undefined): string {
+  const raw = entry?.messages_digest;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function toLedgerCount(entry: ConversationLedgerEntry | undefined): number | null {
+  const n = entry?.message_count;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.max(0, Math.floor(n));
+}
+
+function buildIngestedLedgerEntry(args: {
+  existing: ConversationLedgerEntry | undefined;
+  nowIso: string;
+  platform: ChatPlatform;
+  conversationId: string;
+  conversationUrl: string | null;
+  conversationTitle: string | null;
+  digest: string;
+  messageCount: number;
+}): ConversationLedgerEntry {
+  const groupId = toGroupId(args.platform, args.conversationId);
+  return {
+    group_id: groupId,
+    platform: args.platform,
+    conversation_id: args.conversationId,
+    conversation_url: args.conversationUrl,
+    conversation_title: args.conversationTitle,
+    status: 'ingested',
+    messages_digest: args.digest,
+    message_count: args.messageCount,
+    first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
+    last_seen_at: args.nowIso,
+    last_ingested_at: args.nowIso,
+    last_error: null,
+  };
+}
+
+function buildFailedLedgerEntry(args: {
+  existing: ConversationLedgerEntry | undefined;
+  nowIso: string;
+  platform: ChatPlatform;
+  conversationId: string;
+  conversationUrl: string | null;
+  conversationTitle: string | null;
+  error: string;
+}): ConversationLedgerEntry {
+  const groupId = toGroupId(args.platform, args.conversationId);
+  return {
+    group_id: groupId,
+    platform: args.platform,
+    conversation_id: args.conversationId,
+    conversation_url: args.conversationUrl,
+    conversation_title: args.conversationTitle,
+    status: 'failed',
+    // Do not change digest/count on failure.
+    messages_digest: args.existing?.messages_digest ?? null,
+    message_count: args.existing?.message_count ?? null,
+    first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
+    last_seen_at: args.nowIso,
+    last_ingested_at: args.existing?.last_ingested_at ?? null,
+    last_error: args.error,
+  };
 }
 
 type WorkflowRunStatus = 'running' | 'paused';
@@ -435,29 +513,21 @@ function createProgressEmitter(args: { tabId: number; runId: string; platform: C
   return { emit, clear };
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const n = Math.max(1, Math.floor(size));
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += n) out.push(items.slice(i, i + n));
-  return out;
-}
-
 export const scanAndEnqueueNodeDefinition: NodeDefinition<
   'ruminer.scan_and_ingest_conversations',
-  ScanAndEnqueueConfig
+  ScanAndIngestConfig
 > = {
   kind: 'ruminer.scan_and_ingest_conversations',
-  schema: scanAndEnqueueConfigSchema,
+  schema: scanAndIngestConfigSchema,
   async execute(ctx, node) {
     const platform = node.config.platform;
     const tabId = ctx.tabId;
-    const stopAtFirstUnchangedIngested = node.config.stopAtFirstUnchangedIngested === true;
     const digestThrottleMs = clampInt(node.config.digestThrottleMs, 0, 5_000);
     const listThrottleMs = clampInt(node.config.listThrottleMs, 0, 2_000);
+    const listPageSize = clampInt(node.config.listPageSize, 1, 500);
 
     const runsStore = createRunsStore();
 
-    // Mark this tab as an automated workflow tab so content scripts can keep the workflow UI across navigations.
     try {
       await registerAutomationTab({ tabId, runId: ctx.runId });
     } catch {
@@ -470,25 +540,32 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
     let lastStepAt = runStartedAt;
     let emaMsPerStep: number | null = null;
 
-    let scanChecked = 0; // steps: evaluated conversations
-    let ingestPending = 0; // steps: conversations that will require ingest (determined during scan)
-    let ingestDone = 0; // steps: completed ingest attempts
-    let totalConversations: number | null = null;
+    let scanChecked = 0; // conversations scanned (digest computed + ledger compared)
+    let ingestDone = 0; // conversations processed in ingest phase (including skip)
+    let scanTotal: number | null = null;
     let aborted = false;
     let paused = false;
 
-    function totalStepsEstimate(): number | null {
-      if (totalConversations === null) return null;
-      const remaining = Math.max(0, totalConversations - scanChecked);
-      return totalConversations + ingestPending + remaining;
+    function onStepCompleted(): void {
+      const now = Date.now();
+      const dt = now - lastStepAt;
+      lastStepAt = now;
+      const clamped = clampInt(dt, 50, 60_000);
+      emaMsPerStep = emaMsPerStep === null ? clamped : emaMsPerStep * 0.8 + clamped * 0.2;
+    }
+
+    function totalStepsEstimate(scannedToIngest: number): number | null {
+      if (scanTotal === null) return null;
+      // We scan scanTotal, then ingest up to scannedToIngest.
+      return scanTotal + scannedToIngest;
     }
 
     function finishedSteps(): number {
       return scanChecked + ingestDone;
     }
 
-    function computeEstimatedTotalMs(now: number): number | null {
-      const total = totalStepsEstimate();
+    function computeEstimatedTotalMs(now: number, scannedToIngest: number): number | null {
+      const total = totalStepsEstimate(scannedToIngest);
       if (total === null) return null;
       if (emaMsPerStep === null) return null;
       const elapsed = now - runStartedAt;
@@ -496,13 +573,16 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       return estimate;
     }
 
-    async function emitProgress(opts?: { force?: boolean }): Promise<void> {
+    async function emitProgress(
+      scannedToIngest: number,
+      opts?: { force?: boolean },
+    ): Promise<void> {
       const now = Date.now();
-      const total = totalStepsEstimate();
+      const total = totalStepsEstimate(scannedToIngest);
       const finished = finishedSteps();
       const percent =
         total && total > 0 ? clampInt((finished / total) * 100, 0, 100) : total === 0 ? 100 : 0;
-      const estimatedTotalMs = computeEstimatedTotalMs(now);
+      const estimatedTotalMs = computeEstimatedTotalMs(now, scannedToIngest);
       await emitter.emit(
         {
           runId: ctx.runId,
@@ -518,15 +598,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       );
     }
 
-    function onStepCompleted(): void {
-      const now = Date.now();
-      const dt = now - lastStepAt;
-      lastStepAt = now;
-      // Clamp dt to reduce huge spikes (tab throttling / background timers / etc.)
-      const clamped = clampInt(dt, 50, 60_000);
-      emaMsPerStep = emaMsPerStep === null ? clamped : emaMsPerStep * 0.8 + clamped * 0.2;
-    }
-
     async function cooperativeGate(): Promise<boolean> {
       if (isCancelRequested(ctx.runId)) return false;
 
@@ -539,7 +610,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
         if (isPaused !== paused) {
           paused = isPaused;
-          await emitProgress({ force: true });
+          await emitProgress(0, { force: true });
         }
 
         if (!isPaused) return true;
@@ -549,7 +620,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
     }
 
     try {
-      // Initial UI signal (content script may not be ready yet; best-effort).
       await emitter.emit(
         {
           runId: ctx.runId,
@@ -564,7 +634,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         { force: true },
       );
 
-      // Ensure the run tab is on the platform origin before injection.
       try {
         await chrome.tabs.update(tabId, { url: platformHomeUrl(platform) });
       } catch (e) {
@@ -588,123 +657,76 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         });
       }
 
-      // ========= Phase 1: list all conversations =========
-      const limit = node.config.limit;
-
-      let offset = 0;
-      const all: ConversationListItem[] = [];
-      const listStartedAt = Date.now();
-
+      // ===== Load entire ledger into memory (no mutation) =====
+      let ledgerByGroupId: Map<string, ConversationLedgerEntry>;
       try {
-        ctx.log('info', 'workflow.progress', {
-          payload: {
-            kind: `${platform}.scanner.list.started`,
-            limit,
-          },
-        } as any);
-      } catch {
-        // ignore
-      }
-
-      for (;;) {
-        if (!(await cooperativeGate())) {
-          aborted = true;
-          break;
-        }
-
-        let list: ListResult;
-        try {
-          list = await callListConversations(tabId, platform, { offset, limit });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          return toErrorResult(
-            RR_ERROR_CODES.SCRIPT_FAILED,
-            `Scan listConversations failed: ${msg}`,
-            { error: msg, platform },
-          );
-        }
-
-        if (list.items.length > 0) {
-          all.push(...list.items);
-        }
-
-        await emitProgress();
-        if (listThrottleMs > 0) await sleep(listThrottleMs);
-
-        if (list.nextOffset === null) break;
-        offset = list.nextOffset;
-      }
-
-      totalConversations = all.length;
-      await emitProgress({ force: true });
-
-      try {
-        ctx.log('info', 'workflow.progress', {
-          payload: {
-            kind: `${platform}.scanner.list.finished`,
-            conversations: totalConversations,
-            elapsedMs: Date.now() - listStartedAt,
-          },
-        } as any);
-      } catch {
-        // ignore
-      }
-
-      if (aborted) {
-        return {
-          status: 'succeeded',
-          outputs: { scanned: totalConversations, ingested: 0, failed: 0 },
-        };
-      }
-
-      if (totalConversations === 0) {
-        return {
-          status: 'succeeded',
-          outputs: { scanned: 0, ingested: 0, failed: 0 },
-        };
-      }
-
-      // ========= Phase 2: read ledger states (batched) =========
-      const states: Record<string, any> = {};
-      const groupIds = all.map((c) => `${platform}:${c.conversationId}`);
-      try {
-        const ledgerStartedAt = Date.now();
-        try {
-          ctx.log('info', 'workflow.progress', {
-            payload: {
-              kind: `${platform}.scanner.ledger.started`,
-              conversations: groupIds.length,
-            },
-          } as any);
-        } catch {
-          // ignore
-        }
-
-        for (const batch of chunk(groupIds, 100)) {
-          if (!(await cooperativeGate())) {
-            aborted = true;
-            break;
-          }
-          const resp = await getConversationStates({ groupIds: batch });
-          if (isRecord(resp)) Object.assign(states, resp);
-          await emitProgress();
-        }
-
-        try {
-          ctx.log('info', 'workflow.progress', {
-            payload: {
-              kind: `${platform}.scanner.ledger.finished`,
-              elapsedMs: Date.now() - ledgerStartedAt,
-            },
-          } as any);
-        } catch {
-          // ignore
-        }
+        const all = await listConversationEntries();
+        ledgerByGroupId = new Map(all.map((e) => [e.group_id, e]));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return toErrorResult(
           RR_ERROR_CODES.INTERNAL,
-          `Failed to read conversation ledger: ${msg}`,
+          `Failed to load conversation ledger: ${msg}`,
+          {
+            error: msg,
+            platform,
+          },
+        );
+      }
+
+      const scanned: ScannedConversation[] = [];
+
+      // ===== Build conversation iteration order =====
+      const allConversations: ConversationListItem[] = [];
+
+      try {
+        if (platform === 'chatgpt') {
+          // API list: fetch full metadata list first; sort by updatedAtMs if present; else preserve returned order.
+          let offset = 0;
+          for (;;) {
+            if (!(await cooperativeGate())) {
+              aborted = true;
+              break;
+            }
+            const list = await callListConversations(tabId, platform, {
+              offset,
+              limit: listPageSize,
+            });
+            if (list.items.length > 0) allConversations.push(...list.items);
+            await emitProgress(scanned.length);
+            if (listThrottleMs > 0) await sleep(listThrottleMs);
+            if (list.nextOffset === null) break;
+            offset = list.nextOffset;
+          }
+
+          const hasUpdated = allConversations.some(
+            (c) => typeof c.updatedAtMs === 'number' && Number.isFinite(c.updatedAtMs),
+          );
+          if (hasUpdated) {
+            allConversations.sort((a, b) => {
+              const aT =
+                typeof a.updatedAtMs === 'number' && Number.isFinite(a.updatedAtMs)
+                  ? a.updatedAtMs
+                  : 0;
+              const bT =
+                typeof b.updatedAtMs === 'number' && Number.isFinite(b.updatedAtMs)
+                  ? b.updatedAtMs
+                  : 0;
+              return bT - aT;
+            });
+          }
+
+          scanTotal = allConversations.length;
+          await emitProgress(scanned.length, { force: true });
+        } else {
+          // DOM list: do not pre-scroll the entire list; fetch one-by-one by offset.
+          scanTotal = null;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return toErrorResult(
+          RR_ERROR_CODES.SCRIPT_FAILED,
+          `Scan listConversations failed: ${msg}`,
           {
             error: msg,
             platform,
@@ -715,207 +737,255 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       if (aborted) {
         return {
           status: 'succeeded',
-          outputs: { scanned: totalConversations, ingested: 0, failed: 0 },
+          outputs: { scanned: 0, ingested: 0, failed: 0, skipped: 0 },
         };
       }
 
-      // ========= Phase 3: decide what to ingest =========
-      const toIngest: ConversationListItem[] = [];
-      const decideStartedAt = Date.now();
-
+      // ===== Scan loop: fetch messages + digest, compare ledger, stop on first unchanged+ingested =====
       try {
-        ctx.log('info', 'workflow.progress', {
-          payload: {
-            kind: `${platform}.scanner.decide.started`,
-            stopAtFirstUnchangedIngested,
-          },
-        } as any);
-      } catch {
-        // ignore
-      }
+        if (platform === 'chatgpt') {
+          for (const c of allConversations) {
+            if (!(await cooperativeGate())) {
+              aborted = true;
+              break;
+            }
 
-      for (const c of all) {
-        if (!(await cooperativeGate())) {
-          aborted = true;
-          break;
-        }
+            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
 
-        const groupId = `${platform}:${c.conversationId}`;
-        const state =
-          isRecord(states) && isRecord(states[groupId])
-            ? (states[groupId] as any)
-            : { exists: false };
-
-        let needsIngest = false;
-
-        if (!state.exists) {
-          needsIngest = true;
-        } else if (state.status === 'skipped') {
-          needsIngest = false;
-        } else if (state.status === 'failed') {
-          needsIngest = true;
-        } else {
-          if (digestThrottleMs > 0) await sleep(digestThrottleMs);
-          let digest: ConversationDigestResult;
-          try {
-            digest = await callConversationDigest(tabId, platform, {
+            const conv = await callConversationMessages(tabId, platform, {
               conversationId: c.conversationId,
               conversationUrl: c.conversationUrl,
             });
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan message hash failed: ${msg}`, {
-              error: msg,
-              platform,
-              conversationId: c.conversationId,
-            });
-          }
 
-          const ledgerCount =
-            typeof state.messageCount === 'number' && Number.isFinite(state.messageCount)
-              ? Math.floor(state.messageCount)
-              : null;
-          const ledgerDigest = typeof state.fullDigest === 'string' ? state.fullDigest.trim() : '';
-
-          const unchanged =
-            ledgerCount !== null &&
-            ledgerDigest &&
-            ledgerCount === digest.messageCount &&
-            ledgerDigest === digest.fullDigest;
-
-          needsIngest = !unchanged;
-
-          if (stopAtFirstUnchangedIngested && unchanged && state.status === 'ingested') {
-            // Optimization: conversation list is ordered by "updated". If we hit an unchanged+ingested
-            // conversation, older conversations are very likely unchanged as well. Stop here.
-            scanChecked = totalConversations ?? scanChecked;
-            await emitProgress({ force: true });
-            try {
-              ctx.log('info', 'workflow.progress', {
-                payload: {
-                  kind: `${platform}.scanner.decide.early_stop`,
-                  conversationId: c.conversationId,
-                  scannedDecisions: scanChecked,
-                },
-              } as any);
-            } catch {
-              // ignore
+            const messages = normalizeConversationMessages(conv.messages);
+            if (messages.length === 0) {
+              throw new Error(
+                `Conversation has no extractable messages (conversationId=${conv.conversationId})`,
+              );
             }
-            break;
+
+            const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
+            const groupId = toGroupId(platform, conv.conversationId);
+            const entry = ledgerByGroupId.get(groupId);
+
+            if (shouldStopScan(entry, digest)) {
+              break;
+            }
+
+            scanned.push({
+              groupId,
+              conversationId: conv.conversationId,
+              conversationUrl: c.conversationUrl,
+              conversationTitle: c.conversationTitle,
+              messages,
+              digest,
+              messageCount,
+            });
+
+            scanChecked += 1;
+            onStepCompleted();
+            await emitProgress(scanned.length);
+          }
+        } else {
+          let offset = 0;
+          for (;;) {
+            if (!(await cooperativeGate())) {
+              aborted = true;
+              break;
+            }
+
+            const list = await callListConversations(tabId, platform, { offset, limit: 1 });
+            const c = list.items[0];
+            if (!c) break;
+
+            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+
+            const conv = await callConversationMessages(tabId, platform, {
+              conversationId: c.conversationId,
+              conversationUrl: c.conversationUrl,
+            });
+
+            const messages = normalizeConversationMessages(conv.messages);
+            if (messages.length === 0) {
+              throw new Error(
+                `Conversation has no extractable messages (conversationId=${conv.conversationId})`,
+              );
+            }
+
+            const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
+            const groupId = toGroupId(platform, conv.conversationId);
+            const entry = ledgerByGroupId.get(groupId);
+
+            if (shouldStopScan(entry, digest)) {
+              break;
+            }
+
+            scanned.push({
+              groupId,
+              conversationId: conv.conversationId,
+              conversationUrl: c.conversationUrl,
+              conversationTitle: c.conversationTitle,
+              messages,
+              digest,
+              messageCount,
+            });
+
+            scanChecked += 1;
+            onStepCompleted();
+            await emitProgress(scanned.length);
+
+            offset += 1;
+            if (listThrottleMs > 0) await sleep(listThrottleMs);
           }
         }
-
-        scanChecked += 1;
-        onStepCompleted();
-
-        if (needsIngest) {
-          toIngest.push(c);
-          ingestPending += 1;
-        }
-
-        await emitProgress();
-      }
-
-      try {
-        ctx.log('info', 'workflow.progress', {
-          payload: {
-            kind: `${platform}.scanner.decide.finished`,
-            elapsedMs: Date.now() - decideStartedAt,
-            toIngest: toIngest.length,
-          },
-        } as any);
-      } catch {
-        // ignore
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Scan failures must fail the entire workflow immediately (no ledger writes).
+        return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan failed: ${msg}`, {
+          error: msg,
+          platform,
+        });
       }
 
       if (aborted) {
         return {
           status: 'succeeded',
-          outputs: { scanned: totalConversations, ingested: 0, failed: 0 },
+          outputs: { scanned: scanChecked, ingested: 0, failed: 0, skipped: 0, aborted: true },
         };
       }
 
-      // ========= Phase 4: ingest =========
+      // ===== Ingest phase: from memory, reverse order =====
       let ingested = 0;
+      let skipped = 0;
       let failed = 0;
 
-      if (toIngest.length > 0) {
-        try {
-          ctx.log('info', 'workflow.progress', {
-            payload: {
-              kind: `${platform}.scanner.enqueued`,
-              conversations: toIngest.map((c) => ({
-                platform,
-                sessionId: `${platform}:${c.conversationId}`,
-                conversationId: c.conversationId,
-                title: c.conversationTitle,
-                url: c.conversationUrl,
-              })),
-            },
-          } as any);
-        } catch {
-          // ignore
-        }
-      }
-
-      for (const c of toIngest) {
+      for (let i = scanned.length - 1; i >= 0; i--) {
         if (!(await cooperativeGate())) {
           aborted = true;
           break;
         }
 
-        try {
-          await chrome.tabs.update(tabId, { url: c.conversationUrl });
-          await waitForTabComplete(tabId, 30_000);
-          await ingestConversationInTab({
-            tabId,
-            runId: ctx.runId,
-            conversationUrl: c.conversationUrl,
-            platformOverride: platform,
-            waitForCompleteMs: 0,
+        const item = scanned[i];
+        const existing = ledgerByGroupId.get(item.groupId);
+        const ledgerDigest = toTrimmedLedgerDigest(existing);
+
+        // If digest matches, skip ingestion but still promote status + persist digest/count.
+        if (ledgerDigest && ledgerDigest === item.digest) {
+          const nowIso = new Date().toISOString();
+          const nextOk = buildIngestedLedgerEntry({
+            existing,
+            nowIso,
+            platform,
+            conversationId: item.conversationId,
+            conversationUrl: item.conversationUrl,
+            conversationTitle: item.conversationTitle,
+            digest: item.digest,
+            messageCount: item.messageCount,
           });
-          ingested += 1;
-        } catch (e) {
-          failed += 1;
-          const msg = e instanceof Error ? e.message : String(e);
-          try {
-            ctx.log('error', 'ruminer.scan_and_ingest: ingest failed', {
-              platform,
-              conversationId: c.conversationId,
-              conversationUrl: c.conversationUrl,
-              error: msg,
-            } as any);
-          } catch {
-            // ignore
-          }
-        } finally {
+          await upsertConversationEntry(nextOk);
+          ledgerByGroupId.set(item.groupId, nextOk);
+          skipped += 1;
           ingestDone += 1;
           onStepCompleted();
-          await emitProgress();
+          await emitProgress(scanned.length);
+          continue;
         }
+
+        // Prefix-only optimization for appended messages: if old digest matches new prefix, ingest suffix only.
+        let baseIndex = 0;
+        let messagesToIngest = item.messages;
+        const oldCount = toLedgerCount(existing);
+        if (
+          existing?.status === 'ingested' &&
+          ledgerDigest &&
+          oldCount &&
+          oldCount <= item.messageCount
+        ) {
+          const prefix = item.messages.slice(0, oldCount);
+          const { digest: prefixDigest } = await computeConversationDigestFromMessages(prefix);
+          if (prefixDigest === ledgerDigest) {
+            baseIndex = oldCount;
+            messagesToIngest = item.messages.slice(oldCount);
+          }
+        }
+
+        const ingestResp = await ruminerIngestConversation({
+          platform,
+          conversationId: item.conversationId,
+          runId: ctx.runId,
+          baseIndex,
+          messageCount: item.messageCount,
+          conversationTitle: item.conversationTitle,
+          conversationUrl: item.conversationUrl,
+          messages: messagesToIngest.map((m) => ({ role: m.role, content: m.content })),
+        });
+
+        if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {
+          const err =
+            isRecord(ingestResp) && typeof (ingestResp as any).error === 'string'
+              ? String((ingestResp as any).error || 'Ingest failed')
+              : 'Ingest failed';
+          const nowIso = new Date().toISOString();
+          const nextFailed = buildFailedLedgerEntry({
+            existing,
+            nowIso,
+            platform,
+            conversationId: item.conversationId,
+            conversationUrl: item.conversationUrl,
+            conversationTitle: item.conversationTitle,
+            error: err,
+          });
+          await upsertConversationEntry(nextFailed);
+          ledgerByGroupId.set(item.groupId, nextFailed);
+          failed += 1;
+          // Ingest failure must fail the entire workflow immediately.
+          return toErrorResult(RR_ERROR_CODES.NETWORK_REQUEST_FAILED, `Ingest failed: ${err}`, {
+            error: err,
+            platform,
+            conversationId: item.conversationId,
+            conversationUrl: item.conversationUrl,
+          });
+        }
+
+        const nowIso = new Date().toISOString();
+        const nextOk = buildIngestedLedgerEntry({
+          existing,
+          nowIso,
+          platform,
+          conversationId: item.conversationId,
+          conversationUrl: item.conversationUrl,
+          conversationTitle: item.conversationTitle,
+          digest: item.digest,
+          messageCount: item.messageCount,
+        });
+        await upsertConversationEntry(nextOk);
+        ledgerByGroupId.set(item.groupId, nextOk);
+
+        ingested += 1;
+        ingestDone += 1;
+        onStepCompleted();
+        await emitProgress(scanned.length);
       }
 
-      const scanned = totalConversations;
-
-      try {
-        ctx.log('info', 'ruminer.scan_and_ingest: finished', {
-          platform,
-          scanned,
-          ingested,
-          failed,
-          ...(aborted ? { aborted: true } : {}),
-          ...(emaMsPerStep !== null ? { avgMsPerStep: Math.floor(emaMsPerStep) } : {}),
-          elapsed: formatDurationShort(Date.now() - runStartedAt),
-        });
-      } catch {
-        // ignore
+      if (aborted) {
+        return {
+          status: 'succeeded',
+          outputs: {
+            scanned: scanChecked,
+            ingested,
+            skipped,
+            failed,
+            aborted: true,
+          },
+        };
       }
 
       return {
         status: 'succeeded',
         outputs: {
-          scanned,
+          scanned: scanChecked,
           ingested,
+          skipped,
           failed,
         },
       };

@@ -94,12 +94,12 @@
             return true;
           }
 
-          if (request.action === 'ruminer_scan_getConversationMessageHashes') {
+          if (request.action === 'ruminer_scan_getConversationMessages') {
             const conversationId = String(request?.payload?.conversationId || '');
             const conversationUrl = String(request?.payload?.conversationUrl || '');
             Promise.resolve()
               .then(() =>
-                api.getConversationMessageHashes({
+                api.getConversationMessages({
                   conversationId,
                   conversationUrl,
                 }),
@@ -113,7 +113,7 @@
                 ) {
                   sendResponse({
                     ok: false,
-                    error: String(value.error || 'getConversationMessageHashes failed'),
+                    error: String(value.error || 'getConversationMessages failed'),
                   });
                   return;
                 }
@@ -467,33 +467,87 @@
     return true;
   };
 
-  let cachedConversations = null;
-  async function ensureCache() {
-    if (cachedConversations) return;
-    cachedConversations = await collectSidebarConversations();
+  const sidebarCache = {
+    items: [],
+    seen: new Set(),
+    done: false,
+  };
+
+  async function ensureSidebarCacheSize(targetCount) {
+    if (sidebarCache.done) return;
+    if (sidebarCache.items.length >= targetCount) return;
+
+    const scroller = findSidebarScroller();
+    let stable = 0;
+    let lastCount = sidebarCache.items.length;
+
+    for (let i = 0; i < 80 && sidebarCache.items.length < targetCount; i++) {
+      const anchors = Array.from(document.querySelectorAll('a[href]'));
+      for (const a of anchors) {
+        const href = String(a.getAttribute('href') || '');
+        if (!href.includes('/chat/')) continue;
+        let url;
+        try {
+          url = new URL(href, location.origin);
+        } catch {
+          continue;
+        }
+        if (url.hostname !== location.hostname) continue;
+        const id = parseConversationId(url.toString());
+        if (!id) continue;
+        if (sidebarCache.seen.has(id)) continue;
+        const title = String(a.textContent || '').trim() || null;
+        sidebarCache.seen.add(id);
+        sidebarCache.items.push({
+          conversationId: id,
+          conversationUrl: url.toString(),
+          conversationTitle: title,
+        });
+      }
+
+      if (sidebarCache.items.length === lastCount) stable += 1;
+      else stable = 0;
+      lastCount = sidebarCache.items.length;
+
+      if (stable >= 5) {
+        sidebarCache.done = true;
+        break;
+      }
+
+      if (scroller) {
+        scroller.scrollTop = Math.min(
+          scroller.scrollHeight,
+          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
+        );
+      }
+      await sleep(200);
+    }
+
+    if (sidebarCache.items.length === lastCount) {
+      sidebarCache.done = true;
+    }
   }
 
   async function listConversations({ offset, limit }) {
     const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
     const LIM = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
-    await ensureCache();
-    const all = Array.isArray(cachedConversations) ? cachedConversations : [];
-    const slice = all.slice(OFF, OFF + LIM);
-    const nextOffset = OFF + slice.length < all.length ? OFF + slice.length : null;
+    const target = OFF + LIM;
+    await ensureSidebarCacheSize(target);
+    const slice = sidebarCache.items.slice(OFF, OFF + LIM);
+    const nextOffset = slice.length > 0 ? OFF + slice.length : sidebarCache.done ? null : OFF;
     return { items: slice, nextOffset };
   }
 
-  async function getConversationMessageHashes({ conversationId, conversationUrl, includeHashes }) {
+  async function getConversationMessages({ conversationId, conversationUrl }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const INCLUDE = includeHashes === true;
     const convId = String(conversationId || '').trim() || parseConversationId(url) || '';
 
     if (convId) {
       try {
         const conv = await fetchConversationViaApi({ conversationId: convId });
         const branch = getCurrentBranchMessages(conv);
-        const hashes = [];
+        const msgs = [];
         for (const m of branch) {
           const sender = m && typeof m.sender === 'string' ? m.sender : '';
           if (!sender) continue;
@@ -501,14 +555,13 @@
           const role = sender === 'human' ? 'user' : 'assistant';
           const content = extractTextFromMessage(m);
           if (!content) continue;
-          hashes.push(await hashMessage(role, content));
+          msgs.push({ role, content });
         }
-        const fullDigest = await sha256Hex(stableJson(hashes));
         return {
           conversationId: convId,
-          messageCount: hashes.length,
-          fullDigest,
-          ...(INCLUDE ? { messageHashes: hashes } : {}),
+          conversationUrl: url,
+          conversationTitle: null,
+          messages: msgs,
         };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -525,15 +578,28 @@
     if (opened === false) return { ok: false, error: 'navigation_started' };
     await sleep(400);
 
+    // Best-effort: scroll up to load older turns if the transcript is virtualized.
+    const scroller = document.scrollingElement || document.documentElement;
+    let stable = 0;
+    for (let i = 0; i < 120; i++) {
+      const beforeTop = scroller.scrollTop;
+      scroller.scrollTop = Math.max(
+        0,
+        scroller.scrollTop - Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
+      );
+      await sleep(220);
+      const afterTop = scroller.scrollTop;
+      if (afterTop === beforeTop) stable += 1;
+      else stable = 0;
+      if (stable >= 5) break;
+    }
+
     const msgs = extractMessagesFromDom();
-    const hashes = [];
-    for (const m of msgs) hashes.push(await hashMessage(m.role, m.content));
-    const fullDigest = await sha256Hex(stableJson(hashes));
     return {
       conversationId: convId || parseConversationId(url) || null,
-      messageCount: hashes.length,
-      fullDigest,
-      ...(INCLUDE ? { messageHashes: hashes } : {}),
+      conversationUrl: url,
+      conversationTitle: null,
+      messages: msgs,
     };
   }
 
@@ -541,7 +607,7 @@
     platform: PLATFORM,
     version: VERSION,
     listConversations,
-    getConversationMessageHashes,
+    getConversationMessages,
   };
 
   try {
