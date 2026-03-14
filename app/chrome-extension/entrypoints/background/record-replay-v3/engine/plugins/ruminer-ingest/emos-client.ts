@@ -13,6 +13,11 @@ export interface EmosSingleMessage {
   refer_list?: string[];
 }
 
+export type EmosRequestContext = {
+  baseUrl: string;
+  headers: Record<string, string>;
+};
+
 export interface EmosSearchRequest {
   query: string;
   user_id?: string;
@@ -44,23 +49,26 @@ function ensureBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
 }
 
-async function buildHeaders(): Promise<Record<string, string>> {
-  const settings = await getEmosSettings();
+export function createEmosRequestContext(settings: {
+  baseUrl: string;
+  apiKey: string;
+}): EmosRequestContext {
+  const baseUrl = ensureBaseUrl(String(settings.baseUrl || '').trim());
+  const apiKey = String(settings.apiKey || '').trim();
+  if (!baseUrl) throw new Error('EMOS base URL is not configured');
+  if (!apiKey) throw new Error('EMOS API key is not configured');
   return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
+    baseUrl,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
   };
 }
 
-async function getBaseUrl(): Promise<string> {
+export async function getEmosRequestContext(): Promise<EmosRequestContext> {
   const settings = await getEmosSettings();
-  if (!settings.baseUrl.trim()) {
-    throw new Error('EMOS base URL is not configured');
-  }
-  if (!settings.apiKey.trim()) {
-    throw new Error('EMOS API key is not configured');
-  }
-  return ensureBaseUrl(settings.baseUrl);
+  return createEmosRequestContext({ baseUrl: settings.baseUrl, apiKey: settings.apiKey });
 }
 
 async function parseJsonResponse(response: Response): Promise<unknown> {
@@ -71,13 +79,15 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
-export async function emosUpsertMemory(message: EmosSingleMessage): Promise<unknown> {
-  const baseUrl = await getBaseUrl();
-  const headers = await buildHeaders();
+export async function emosUpsertMemory(
+  message: EmosSingleMessage,
+  ctx?: EmosRequestContext,
+): Promise<unknown> {
+  const request = ctx ?? (await getEmosRequestContext());
 
-  const response = await fetch(`${baseUrl}/api/v0/memories`, {
+  const response = await fetch(`${request.baseUrl}/api/v0/memories`, {
     method: 'POST',
-    headers,
+    headers: request.headers,
     body: JSON.stringify(message),
   });
 
@@ -90,8 +100,7 @@ export async function emosUpsertMemory(message: EmosSingleMessage): Promise<unkn
 }
 
 export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosSearchResponse> {
-  const baseUrl = await getBaseUrl();
-  const headers = await buildHeaders();
+  const request = await getEmosRequestContext();
 
   // Build query string from body params
   const params = new URLSearchParams();
@@ -112,9 +121,9 @@ export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosS
     }
   });
 
-  const response = await fetch(`${baseUrl}/api/v0/memories/search?${params.toString()}`, {
+  const response = await fetch(`${request.baseUrl}/api/v0/memories/search?${params.toString()}`, {
     method: 'GET',
-    headers,
+    headers: request.headers,
   });
 
   const payload = (await parseJsonResponse(response)) as EmosSearchResponse;
@@ -132,16 +141,15 @@ export interface EmosDeleteFilters {
 }
 
 export async function emosDeleteMemory(filters: EmosDeleteFilters): Promise<unknown> {
-  const baseUrl = await getBaseUrl();
-  const headers = await buildHeaders();
+  const request = await getEmosRequestContext();
 
   const body: Record<string, string> = { event_id: filters.event_id };
   if (filters.user_id) body.user_id = filters.user_id;
   if (filters.group_id) body.group_id = filters.group_id;
 
-  const response = await fetch(`${baseUrl}/api/v0/memories`, {
+  const response = await fetch(`${request.baseUrl}/api/v0/memories`, {
     method: 'DELETE',
-    headers,
+    headers: request.headers,
     body: JSON.stringify(body),
   });
 
@@ -154,8 +162,7 @@ export async function emosDeleteMemory(filters: EmosDeleteFilters): Promise<unkn
 }
 
 export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}): Promise<unknown> {
-  const baseUrl = await getBaseUrl();
-  const headers = await buildHeaders();
+  const request = await getEmosRequestContext();
 
   const params = new URLSearchParams();
   if (paramsInput.group_id) params.append('group_id', paramsInput.group_id);
@@ -190,9 +197,9 @@ export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}):
     }
   });
 
-  const response = await fetch(`${baseUrl}/api/v0/memories?${params.toString()}`, {
+  const response = await fetch(`${request.baseUrl}/api/v0/memories?${params.toString()}`, {
     method: 'GET',
-    headers,
+    headers: request.headers,
   });
 
   const payload = await parseJsonResponse(response);

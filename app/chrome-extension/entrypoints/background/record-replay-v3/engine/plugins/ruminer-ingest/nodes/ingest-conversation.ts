@@ -5,15 +5,15 @@ import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
 import { ruminerIngestConversation } from '../builtin-flows/ingest-workflow-rpc';
 import {
-  getConversationEntry,
-  upsertConversationEntry,
-  type ConversationLedgerEntry,
-} from '../conversation-ledger';
-import {
   computeConversationDigestFromMessages,
   normalizeConversationContent,
   type ConversationMessage,
 } from '../conversation-digest';
+import {
+  getConversationEntry,
+  upsertConversationEntry,
+  type ConversationLedgerEntry,
+} from '../conversation-ledger';
 import { toErrorResult } from '../utils';
 
 const ingestCurrentConfigSchema = z.object({
@@ -215,7 +215,7 @@ async function callIngestRpc(
       lastErr = e;
       const retryable = isRetryableSendMessageError(e);
       if (retryable && attempt + 1 < MAX_ATTEMPTS) {
-        await waitForTabComplete(tabId, 15_000).catch(() => undefined);
+        await waitForTabComplete(tabId, 5_000).catch(() => undefined);
         await ensureIngestRpcInjected(tabId, platform).catch(() => undefined);
         continue;
       }

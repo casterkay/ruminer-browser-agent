@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
-import { emosUpsertMemory } from './emos-client';
+import { emosUpsertMemory, getEmosRequestContext, type EmosRequestContext } from './emos-client';
 import { getLedgerEntry, upsertLedgerEntry } from './ingestion-ledger';
 import { toFailedLedgerEntry } from './ledger-policy';
 import type { LedgerBatchItem } from './types';
@@ -32,12 +32,16 @@ function isLedgerBatchItem(value: unknown): value is LedgerBatchItem {
   );
 }
 
-async function ingestWithRetry(item: LedgerBatchItem, config: EmosIngestConfig): Promise<void> {
+async function ingestWithRetry(
+  item: LedgerBatchItem,
+  config: EmosIngestConfig,
+  ctx: EmosRequestContext,
+): Promise<void> {
   let delayMs = config.initialBackoffMs;
   let lastError: unknown;
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     try {
-      await emosUpsertMemory(item.message);
+      await emosUpsertMemory(item.message, ctx);
       return;
     } catch (error) {
       lastError = error;
@@ -68,6 +72,8 @@ export const emosIngestNodeDefinition: NodeDefinition<'ruminer.emos_ingest', Emo
     let failed = 0;
     const errors: string[] = [];
 
+    const emosCtx = await getEmosRequestContext();
+
     for (let i = 0; i < input.length; i++) {
       const item = input[i];
       if (!isLedgerBatchItem(item)) {
@@ -82,7 +88,7 @@ export const emosIngestNodeDefinition: NodeDefinition<'ruminer.emos_ingest', Emo
       }
 
       try {
-        await ingestWithRetry(item, node.config);
+        await ingestWithRetry(item, node.config, emosCtx);
         const existing = await getLedgerEntry(item.message.item_key);
         await upsertLedgerEntry({
           item_key: item.message.item_key,

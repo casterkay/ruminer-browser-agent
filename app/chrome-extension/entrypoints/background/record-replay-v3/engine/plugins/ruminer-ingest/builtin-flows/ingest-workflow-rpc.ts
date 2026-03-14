@@ -11,7 +11,12 @@ import {
 import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 
 import { getConversationStates } from '../conversation-ledger';
-import { emosUpsertMemory, type EmosSingleMessage } from '../emos-client';
+import {
+  createEmosRequestContext,
+  emosUpsertMemory,
+  type EmosRequestContext,
+  type EmosSingleMessage,
+} from '../emos-client';
 import { ensureBuiltinFlows } from './index';
 import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 
@@ -358,13 +363,13 @@ async function handleEnqueueRuns(req: EnqueueRunsRequest): Promise<unknown> {
   };
 }
 
-async function ingestWithRetry(message: EmosSingleMessage): Promise<void> {
+async function ingestWithRetry(message: EmosSingleMessage, ctx: EmosRequestContext): Promise<void> {
   const maxRetries = 3;
   let delayMs = 500;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      await emosUpsertMemory(message);
+      await emosUpsertMemory(message, ctx);
       return;
     } catch (error) {
       lastError = error;
@@ -465,6 +470,7 @@ async function handleIngestConversation(
   if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
     return { ok: false, error: 'EMOS settings incomplete (missing baseUrl/apiKey)' };
   }
+  const emosCtx = createEmosRequestContext({ baseUrl: settings.baseUrl, apiKey: settings.apiKey });
 
   const groupId = toGroupId(platform, conversationId);
   const groupName = trimOrNull(req.conversationTitle);
@@ -521,6 +527,7 @@ async function handleIngestConversation(
 
   const nowIso = new Date().toISOString();
 
+  const tEmosStart = Date.now();
   let upserted = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -550,7 +557,7 @@ async function handleIngestConversation(
     };
 
     try {
-      await ingestWithRetry(m);
+      await ingestWithRetry(m, emosCtx);
       upserted += 1;
     } catch (e) {
       failed += 1;
@@ -559,6 +566,7 @@ async function handleIngestConversation(
       break;
     }
   }
+  const emosUpsertMs = Date.now() - tEmosStart;
 
   if (failed > 0) {
     const resultPayload = {
@@ -608,8 +616,10 @@ async function handleIngestConversation(
   let sessionSaveError: string | null = null;
   let sessionSaveResult: { projectId: string; sessionId: string; messageCount: number } | null =
     null;
+  let sessionSaveMs: number | null = null;
 
   try {
+    const tSessionSaveStart = Date.now();
     const port = await getNativeServerPort();
     if (!port) {
       throw new Error('Native server not running; cannot save session');
@@ -645,6 +655,7 @@ async function handleIngestConversation(
       sessionId: String(payload.sessionId || groupId),
       messageCount: Number(payload.messageCount || 0),
     };
+    sessionSaveMs = Date.now() - tSessionSaveStart;
 
     // Notify UI to refresh sessions immediately (avoid minutes-long stale list).
     try {
@@ -672,6 +683,10 @@ async function handleIngestConversation(
       ...(inferredRunId ? { inferredRunId: true } : {}),
       ...(sessionSaveResult ? { session: sessionSaveResult } : {}),
       emos: emosResult,
+      perf: {
+        emosUpsertMs,
+        ...(sessionSaveMs !== null ? { sessionSaveMs } : {}),
+      },
       sessionSaveOk,
       ...(sessionSaveError ? { sessionSaveError } : {}),
     });
