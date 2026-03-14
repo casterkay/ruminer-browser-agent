@@ -8,7 +8,7 @@ import { extractListNodeDefinition } from './extract-list';
 import { ledgerUpsertNodeDefinition } from './ledger-upsert';
 import { ensureConversationTabNodeDefinition } from './nodes/ensure-conversation-tab';
 import { ingestCurrentNodeDefinition } from './nodes/ingest-conversation';
-import { scanAndEnqueueNodeDefinition } from './nodes/scan-and-enqueue';
+import { scanAndEnqueueNodeDefinition } from './nodes/scan-and-ingest-all';
 import { normalizeAndHashNodeDefinition } from './normalize-and-hash';
 import { pageAuthCheckNodeDefinition } from './page-auth-check';
 import { randomDelayNodeDefinition } from './random-delay';

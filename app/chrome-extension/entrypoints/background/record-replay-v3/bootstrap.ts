@@ -28,6 +28,7 @@ import { DEFAULT_QUEUE_CONFIG, type RunQueueItem } from './engine/queue/queue';
 import { createRunScheduler, type RunExecutor, type RunScheduler } from './engine/queue/scheduler';
 import { recoverFromCrash } from './engine/recovery/recovery-coordinator';
 
+import { clearCancelRequest } from './engine/kernel/run-cancel-registry';
 import { RpcServer } from './engine/transport/rpc-server';
 
 import { createCommandTriggerHandlerFactory } from './engine/triggers/command-trigger';
@@ -378,6 +379,9 @@ function createDefaultRunExecutor(deps: {
       if (runner) {
         deps.runners.unregister(runId);
       }
+
+      // Clear any cooperative cancel marker for this run (prevents leaks across runs).
+      clearCancelRequest(runId);
 
       // 7. 清理临时 Tab
       if (shouldClose) {

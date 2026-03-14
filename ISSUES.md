@@ -10,6 +10,21 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ---
 
+## Misc Issues
+
+- [ ] Gemini user message needs to be expanded to get full content.
+- [ ] Ingested Gemini messages are not properly formatted (newlines lost).
+- [ ] Use openclaw workspace as project dir for openclaw engine.
+- [ ] Attached images are not read by agent.
+- [ ] Replace floating icon animation with CSS image sprites or WebM.
+- [ ] Add a new tool for agent to freely modify the DOM.
+- [ ] OpenClaw and Codex still cannot use Ruminer MCP tools.
+- [ ] Design and implement the system for agent-driven workflow development.
+- [ ] Actions list above floating icon quickly closes when cursor enters the icon from above.
+- [ ] Claude scan and ingest API calls get 403 errors
+- [ ] Claude scan by DOM goes to a new page every time - optimize by utilizing client-side navigation (e.g. clicking the conversation links in sidebar)
+- [ ] ChatGPT scan workflow is not working
+
 ## P0 — Broken / Data-loss / Duplicates
 
 ### P0.1 — All `conversation_scan` workflows fail: `Scan listConversations failed: listConversations failed`

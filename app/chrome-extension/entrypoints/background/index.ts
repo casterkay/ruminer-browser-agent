@@ -6,6 +6,7 @@ import { initQuickPanelCommands } from './quick-panel/commands';
 import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
 import { initRecordReplayListeners } from './record-replay';
 import { initIngestWorkflowRpc } from './record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/ingest-workflow-rpc';
+import { enqueueRun } from './record-replay-v3/engine/queue/enqueue-run';
 import {
   initSemanticSimilarityListener,
   initializeSemanticEngineIfCached,
@@ -13,11 +14,22 @@ import {
 import { initStorageManagerListener } from './storage-manager';
 import { openAgentChatSidepanel } from './utils/sidepanel';
 import { initWebEditorListeners } from './web-editor';
+import { NOTIFICATIONS } from '@/common/constants';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
 
 const SIDEPANEL_CONTEXT_MENU_ID = 'ruminer_open_sidepanel';
+const IMPORT_CURRENT_CONVERSATION_CONTEXT_MENU_ID = 'ruminer_import_current_conversation';
+const IMPORT_CURRENT_DOCUMENT_URL_PATTERNS = [
+  'https://chatgpt.com/*',
+  'https://chat.openai.com/*',
+  'https://claude.ai/*',
+  'https://gemini.google.com/*',
+  'https://chat.deepseek.com/*',
+];
+
+let ensureContextMenusPromise: Promise<void> | null = null;
 
 /**
  * Feature flag for RR-V3
@@ -96,6 +108,31 @@ export default defineBackground(() => {
 
   // Single context menu entry to open sidepanel
   initSidepanelContextMenu();
+
+  // Content-script shortcut: run Import Current Conversation from floating tooltip chip
+  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    const msg = message as { type?: string; payload?: { url?: unknown } } | undefined;
+    if (msg?.type !== 'ruminer.import_current_conversation') return false;
+
+    const tab = sender?.tab;
+    if (!tab?.id) {
+      sendResponse({ ok: false, error: 'This action must be triggered from a tab.' });
+      return true;
+    }
+
+    const urlFromPayload = typeof msg.payload?.url === 'string' ? msg.payload.url.trim() : '';
+    const url = urlFromPayload || (typeof tab.url === 'string' ? tab.url.trim() : '');
+
+    void importCurrentConversationFromTab({ ...tab, url }).then(
+      () => sendResponse({ ok: true }),
+      (e) => {
+        const err = e instanceof Error ? e.message : String(e);
+        sendResponse({ ok: false, error: err || 'Failed to queue workflow' });
+      },
+    );
+
+    return true;
+  });
 });
 
 /**
@@ -107,11 +144,6 @@ function initSidepanelContextMenu(): void {
 
   // Create the context menu immediately on startup
   createSidepanelContextMenu();
-
-  // Also recreate on install/update to ensure it's always there
-  chrome.runtime.onInstalled.addListener(() => {
-    createSidepanelContextMenu();
-  });
 
   // Handle click
   chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -137,6 +169,89 @@ function initSidepanelContextMenu(): void {
       // Also run the async setup (setOptions)
       openAgentChatSidepanel(tab.id, tab.windowId);
     }
+
+    if (info.menuItemId === IMPORT_CURRENT_CONVERSATION_CONTEXT_MENU_ID && tab?.id) {
+      void importCurrentConversationFromTab(tab).catch((e) => {
+        console.warn('[ContextMenu] Import Current Conversation failed:', e);
+      });
+    }
+  });
+}
+
+async function notify(title: string, message: string): Promise<void> {
+  try {
+    await chrome.notifications.create({
+      type: NOTIFICATIONS.TYPE,
+      iconUrl: chrome.runtime.getURL('icon/128.png'),
+      title,
+      message,
+      priority: NOTIFICATIONS.PRIORITY,
+    });
+  } catch {
+    // ignore (notifications permission may be absent or blocked)
+  }
+}
+
+async function importCurrentConversationFromTab(tab: chrome.tabs.Tab): Promise<void> {
+  const tabId = tab.id;
+  if (typeof tabId !== 'number' || !Number.isFinite(tabId)) return;
+
+  const url = typeof tab.url === 'string' ? tab.url.trim() : '';
+  if (!url) {
+    await notify('Import Current Conversation', 'This tab has no URL.');
+    return;
+  }
+
+  const runtime = await bootstrapV3();
+
+  try {
+    const result = await enqueueRun(
+      { storage: runtime.storage, events: runtime.events, scheduler: runtime.scheduler },
+      {
+        flowId: 'auto.conversation_ingest.v1' as any,
+        tabId,
+        args: { ruminerConversationUrl: url } as any,
+        maxAttempts: 1,
+        priority: 0,
+      },
+    );
+    await notify('Import Current Conversation', `Queued (runId=${result.runId})`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await notify('Import Current Conversation', msg || 'Failed to queue workflow');
+    throw e;
+  }
+}
+
+async function ensureContextMenuItem(
+  spec: chrome.contextMenus.CreateProperties & { id: string },
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.contextMenus.create(spec, () => {
+      if (!chrome.runtime.lastError) {
+        resolve();
+        return;
+      }
+
+      const msg = String(chrome.runtime.lastError.message || '');
+      // If it already exists (service worker restart / races), update it instead of erroring.
+      if (msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('already exists')) {
+        chrome.contextMenus.update(spec.id, spec, () => {
+          const _ = chrome.runtime.lastError;
+          resolve();
+        });
+        return;
+      }
+
+      // Otherwise best-effort remove then create again.
+      chrome.contextMenus.remove(spec.id, () => {
+        const _ = chrome.runtime.lastError;
+        chrome.contextMenus.create(spec, () => {
+          const __ = chrome.runtime.lastError;
+          resolve();
+        });
+      });
+    });
   });
 }
 
@@ -144,27 +259,26 @@ function initSidepanelContextMenu(): void {
  * Create/recreate the sidepanel context menu
  */
 function createSidepanelContextMenu(): void {
-  // Remove any existing menu with our ID first, then create
-  chrome.contextMenus.remove(SIDEPANEL_CONTEXT_MENU_ID, () => {
-    // Clear the error (menu may not exist)
-    const _ = chrome.runtime.lastError;
-    // Create the menu
-    chrome.contextMenus.create(
-      {
+  if (!ensureContextMenusPromise) {
+    ensureContextMenusPromise = (async () => {
+      await ensureContextMenuItem({
         id: SIDEPANEL_CONTEXT_MENU_ID,
         title: 'Open Sidepanel',
         contexts: ['all'],
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          console.error(
-            '[Sidepanel] Failed to create context menu:',
-            chrome.runtime.lastError.message,
-          );
-        } else {
-          console.log('[Sidepanel] Context menu created successfully');
-        }
-      },
-    );
+      });
+
+      await ensureContextMenuItem({
+        id: IMPORT_CURRENT_CONVERSATION_CONTEXT_MENU_ID,
+        title: 'Import Current Conversation',
+        contexts: ['page'],
+        documentUrlPatterns: IMPORT_CURRENT_DOCUMENT_URL_PATTERNS,
+      });
+    })().finally(() => {
+      ensureContextMenusPromise = null;
+    });
+  }
+
+  void ensureContextMenusPromise.catch((e) => {
+    console.warn('[ContextMenu] ensure menus failed:', e);
   });
 }

@@ -13,12 +13,12 @@
  * - UI currently edits only the first 2 stops (parser supports N stops)
  */
 
-import { Disposer } from '../../../utils/disposables';
-import type { StyleTransactionHandle, TransactionManager } from '../../../core/transaction-manager';
 import type { DesignTokensService } from '../../../core/design-tokens';
+import type { StyleTransactionHandle, TransactionManager } from '../../../core/transaction-manager';
+import { Disposer } from '../../../utils/disposables';
+import type { DesignControl } from '../types';
 import { createColorField, type ColorField } from './color-field';
 import { wireNumberStepping } from './number-stepping';
-import type { DesignControl } from '../types';
 
 // =============================================================================
 // Constants
@@ -2181,7 +2181,7 @@ export function createGradientControl(options: GradientControlOptions): DesignCo
       // Disable if we can't remove (only 2 stops remaining or control is disabled)
       const canRemove = !typeSelect.disabled && models.length > 2;
       removeBtn.disabled = !canRemove;
-      removeBtn.textContent = '–';
+      removeBtn.textContent = '-';
 
       removeBtn.addEventListener('click', (event) => {
         event.preventDefault();

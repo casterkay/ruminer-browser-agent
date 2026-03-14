@@ -37,7 +37,10 @@ import {
   type QuickPanelActivateSessionPayload,
   type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIResponse,
+  type QuickPanelDeleteSessionResponse,
   type QuickPanelOpenSidepanelResponse,
+  type QuickPanelOpenSessionPayload,
+  type QuickPanelOpenSessionResponse,
   type QuickPanelSendToAIPayload,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -293,6 +296,52 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to activate session' };
+    }
+  }
+
+  /**
+   * Open a specific session by ID for the Quick Panel launcher.
+   * Intended for post-ingest flows that want to show an imported conversation.
+   */
+  async openSession(payload: QuickPanelOpenSessionPayload): Promise<QuickPanelOpenSessionResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SESSION,
+        payload,
+      });
+
+      return response as QuickPanelOpenSessionResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to open session' };
+    }
+  }
+
+  /**
+   * Delete a session from the native server.
+   * Used when Quick Session persistence is toggled off.
+   */
+  async deleteSession(sessionId: string): Promise<QuickPanelDeleteSessionResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    const id = String(sessionId || '').trim();
+    if (!id) return { success: false, error: 'sessionId is required' };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_DELETE_SESSION,
+        payload: { sessionId: id },
+      });
+      return response as QuickPanelDeleteSessionResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to delete session' };
     }
   }
 

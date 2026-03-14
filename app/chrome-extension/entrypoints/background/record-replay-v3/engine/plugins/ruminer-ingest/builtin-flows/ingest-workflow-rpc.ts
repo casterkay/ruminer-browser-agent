@@ -1,3 +1,4 @@
+import { type ChatPlatform } from '@/common/chat-platforms';
 import { NOTIFICATIONS, STORAGE_KEYS } from '@/common/constants';
 
 import { createStoragePort } from '@/entrypoints/background/record-replay-v3';
@@ -15,7 +16,6 @@ import {
   getConversationStates,
   upsertConversationEntry,
   type ConversationLedgerEntry,
-  type ConversationLedgerStatus,
 } from '../conversation-ledger';
 import { emosUpsertMemory, type EmosSingleMessage } from '../emos-client';
 import { sha256Hex } from '../hash';
@@ -48,7 +48,7 @@ export type RuminerEnqueueRunItem = EnqueueRunsRequest['items'][number];
 
 type IngestConversationRequest = {
   type: 'ruminer.ingest.ingestConversation';
-  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
+  platform: ChatPlatform;
   conversationId: string;
   runId?: string | null;
   conversationTitle?: string | null;
@@ -60,8 +60,6 @@ type IngestConversationRequest = {
     messageId?: string | null;
   }>;
 };
-
-export type RuminerIngestPlatform = IngestConversationRequest['platform'];
 
 type SupportedWorkflowRpcRequest =
   | WorkflowNotifyRequest

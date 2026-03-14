@@ -31,6 +31,8 @@ export interface QuickPanelLauncherOptions {
   agentBridge: QuickPanelAgentBridge;
   placeholder?: string;
   maxRecentMessages?: number;
+  /** Optional callback when expanded state changes. */
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export interface QuickPanelLauncherManager {
@@ -38,12 +40,23 @@ export interface QuickPanelLauncherManager {
   mount: () => void;
   /** Expand the launcher UI. */
   expand: (options?: { focus?: boolean }) => void;
+  /** Open a specific session by ID (and expand). */
+  openSession: (
+    sessionId: string,
+    options?: { focus?: boolean },
+  ) => Promise<{ success: true } | { success: false; error: string }>;
+  /** Create a new quick chat session (and expand). */
+  newQuickChat: (options?: {
+    focus?: boolean;
+  }) => Promise<{ success: true } | { success: false; error: string }>;
   /** Collapse the launcher UI. */
   collapse: (options?: { force?: boolean }) => void;
   /** Toggle expanded state. */
   toggle: (options?: { focus?: boolean }) => void;
   /** Whether the launcher is expanded. */
   isExpanded: () => boolean;
+  /** Current active sessionId (if any). */
+  getActiveSessionId: () => string | null;
   /** Update engine/session branding. */
   setBranding: (branding: QuickPanelLauncherBranding) => void;
   /** Dispose DOM and listeners. */
@@ -187,7 +200,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
 
   .qp-quick-launcher-msg[data-role='user'] {
     align-self: flex-end;
-    background: linear-gradient(145deg, rgba(100, 72, 22, 0.72), rgba(80, 58, 18, 0.62));
+    background: linear-gradient(145deg, rgba(100, 72, 22, 0.92), rgba(80, 58, 18, 0.82));
     border: 1px solid rgba(229, 169, 61, 0.48);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.33), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
@@ -200,7 +213,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     align-self: flex-start;
     opacity: 0.7;
     font-size: 11px;
-    background: linear-gradient(145deg, rgba(60, 60, 60, 0.5), rgba(40, 40, 40, 0.4));
+    background: linear-gradient(145deg, rgba(60, 60, 60, 0.9), rgba(40, 40, 40, 0.8));
     border-color: rgba(255, 255, 255, 0.1);
   }
 
@@ -739,6 +752,12 @@ export function createQuickPanelLauncher(
       launcherEl.dataset.expanded = next ? 'true' : 'false';
     }
 
+    try {
+      options.onExpandedChange?.(next);
+    } catch {
+      // ignore
+    }
+
     if (next) {
       // Animate to content height
       requestAnimationFrame(() => {
@@ -844,6 +863,30 @@ export function createQuickPanelLauncher(
   let lastActivationAt = 0;
 
   async function ensureActiveSession(): Promise<void> {
+    if (activeSessionId && historyLoaded) return;
+
+    if (activeSessionId && !historyLoaded) {
+      try {
+        const opened = await options.agentBridge.openSession({
+          sessionId: activeSessionId,
+          reason: 'open',
+        });
+        if (opened.success) {
+          branding = {
+            ...branding,
+            sessionName: opened.sessionName,
+            engineDisplayName: opened.engineDisplayName,
+            brandIconUrl: opened.brandIconUrl,
+          };
+          if (Array.isArray(opened.recentMessages)) setHistory(opened.recentMessages);
+          historyLoaded = true;
+          return;
+        }
+      } catch {
+        // ignore; fall through to normal activation
+      }
+    }
+
     const now = Date.now();
     if (activationInFlight) return activationInFlight;
 
@@ -1470,6 +1513,59 @@ export function createQuickPanelLauncher(
     }
   }
 
+  async function openSession(
+    sessionId: string,
+    openOptions?: { focus?: boolean },
+  ): Promise<{ success: true } | { success: false; error: string }> {
+    if (disposed) return { success: false, error: 'Launcher is disposed' };
+    mount();
+    const id = normalizeText(sessionId).trim();
+    if (!id) return { success: false, error: 'sessionId is required' };
+
+    const result = await options.agentBridge.openSession({ sessionId: id, reason: 'import' });
+    if (!result.success) return { success: false, error: result.error || 'Failed to open session' };
+
+    activeSessionId = result.sessionId;
+    branding = {
+      ...branding,
+      sessionName: result.sessionName,
+      engineDisplayName: result.engineDisplayName,
+      brandIconUrl: result.brandIconUrl,
+    };
+    if (Array.isArray(result.recentMessages)) setHistory(result.recentMessages);
+    else setHistory([]);
+
+    expand({ focus: openOptions?.focus });
+    return { success: true };
+  }
+
+  async function newQuickChat(newOptions?: {
+    focus?: boolean;
+  }): Promise<{ success: true } | { success: false; error: string }> {
+    if (disposed) return { success: false, error: 'Launcher is disposed' };
+    mount();
+
+    const result = await options.agentBridge.activateSession({
+      reason: 'shortcut',
+      forceNew: true,
+    });
+    if (!result.success)
+      return { success: false, error: result.error || 'Failed to create session' };
+
+    activeSessionId = result.sessionId;
+    branding = {
+      ...branding,
+      sessionName: result.sessionName,
+      engineDisplayName: result.engineDisplayName,
+      brandIconUrl: result.brandIconUrl,
+    };
+    if (Array.isArray(result.recentMessages)) setHistory(result.recentMessages);
+    else setHistory([]);
+
+    expand({ focus: newOptions?.focus });
+    return { success: true };
+  }
+
   function collapse(collapseOptions?: { force?: boolean }): void {
     if (disposed) return;
     if (!launcherEl) return;
@@ -1488,6 +1584,10 @@ export function createQuickPanelLauncher(
 
   function isExpanded(): boolean {
     return expanded;
+  }
+
+  function getActiveSessionId(): string | null {
+    return activeSessionId;
   }
 
   function dispose(): void {
@@ -1527,9 +1627,12 @@ export function createQuickPanelLauncher(
   return {
     mount,
     expand,
+    openSession,
+    newQuickChat,
     collapse,
     toggle,
     isExpanded,
+    getActiveSessionId,
     setBranding,
     dispose,
   };

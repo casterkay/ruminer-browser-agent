@@ -8,7 +8,133 @@
   const LOG = '[ruminer.deepseek-scan]';
 
   const existing = window.__RUMINER_SCAN__;
-  if (existing && existing.platform === PLATFORM && existing.version === VERSION) return;
+  const sameApi = existing && existing.platform === PLATFORM && existing.version === VERSION;
+
+  const parseConversationId = (urlString) => {
+    try {
+      const u = new URL(String(urlString || ''));
+      const pathname = String(u.pathname || '');
+      return pathname.split('/').filter(Boolean).pop() || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const installRpc = () => {
+    const rpc = window.__RUMINER_SCAN_RPC__;
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
+    window.__RUMINER_SCAN_RPC__ = { platform: PLATFORM, version: VERSION };
+
+    try {
+      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+        try {
+          if (!request || typeof request.action !== 'string') return false;
+
+          if (request.action === 'ruminer_scan_ping') {
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_scan_probe') {
+            const api = window.__RUMINER_SCAN__;
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+              hasApi: Boolean(api),
+              apiPlatform: api && typeof api === 'object' ? String(api.platform || '') : '',
+              apiVersion: api && typeof api === 'object' ? String(api.version || '') : '',
+              keys: api && typeof api === 'object' ? Object.keys(api).slice(0, 30) : [],
+            });
+            return false;
+          }
+
+          const api = window.__RUMINER_SCAN__;
+          if (!api) {
+            sendResponse({ ok: false, error: '__RUMINER_SCAN__ not found on window' });
+            return false;
+          }
+          if (api.platform !== PLATFORM) {
+            sendResponse({
+              ok: false,
+              error: `__RUMINER_SCAN__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_scan_listConversations') {
+            const offset = Number(request?.payload?.offset || 0);
+            const limit = Number(request?.payload?.limit || 100);
+            Promise.resolve()
+              .then(() => api.listConversations({ offset, limit }))
+              .then((value) => {
+                if (
+                  value &&
+                  typeof value === 'object' &&
+                  value.ok === false &&
+                  typeof value.error === 'string'
+                ) {
+                  sendResponse({
+                    ok: false,
+                    error: String(value.error || 'listConversations failed'),
+                  });
+                  return;
+                }
+                sendResponse({ ok: true, value });
+              })
+              .catch((e) =>
+                sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+              );
+            return true;
+          }
+
+          if (request.action === 'ruminer_scan_getConversationMessageHashes') {
+            const conversationId = String(request?.payload?.conversationId || '');
+            const conversationUrl = String(request?.payload?.conversationUrl || '');
+            Promise.resolve()
+              .then(() =>
+                api.getConversationMessageHashes({
+                  conversationId,
+                  conversationUrl,
+                }),
+              )
+              .then((value) => {
+                if (
+                  value &&
+                  typeof value === 'object' &&
+                  value.ok === false &&
+                  typeof value.error === 'string'
+                ) {
+                  sendResponse({
+                    ok: false,
+                    error: String(value.error || 'getConversationMessageHashes failed'),
+                  });
+                  return;
+                }
+                sendResponse({ ok: true, value });
+              })
+              .catch((e) =>
+                sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+              );
+            return true;
+          }
+        } catch (e) {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+          return false;
+        }
+        return false;
+      });
+    } catch {}
+  };
+
+  installRpc();
+  if (sameApi) return;
 
   const normalizeContent = (s) =>
     String(s || '')
@@ -64,24 +190,6 @@
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
-
-  const parseConversationId = (urlString) => {
-    try {
-      const u = new URL(String(urlString || ''), location.origin);
-      const p = String(u.pathname || '');
-      let m = p.match(/\/(?:chat|c)\/([^/?#]+)/i);
-      if (m) return String(m[1] || '').trim();
-      const sp = u.searchParams;
-      for (const key of ['conversationId', 'chatId', 'id']) {
-        const v = sp.get(key);
-        if (v && v.trim()) return v.trim();
-      }
-      const seg = p.split('/').filter(Boolean).pop();
-      return seg ? String(seg).trim() : '';
-    } catch {
-      return '';
-    }
-  };
 
   const findSidebarScroller = () => {
     const candidates = ['nav', 'aside', '[data-testid*="sidebar"]', '[class*="sidebar"]'];

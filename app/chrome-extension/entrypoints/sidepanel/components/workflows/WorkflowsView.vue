@@ -95,74 +95,6 @@
 
     <!-- Scrollable Content -->
     <div class="flex-1 overflow-y-auto ac-scroll">
-      <!-- Queue Progress (hidden when queue is empty) -->
-      <div v-if="queueProgress?.queueSize && queueProgress.queueSize > 0" class="px-4 pt-3">
-        <div class="rounded-xl p-3 border" :style="sectionStyle">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">Queue</div>
-              <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
-                {{ queueProgress.running }} running • {{ queueProgress.queued }} queued •
-                {{ queueProgress.paused }} paused
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2 flex-shrink-0">
-              <button
-                type="button"
-                class="p-2 rounded transition-colors disabled:opacity-50"
-                :style="queueButtonStyle"
-                :disabled="queueProgress.running === 0 && queueProgress.queued === 0"
-                @click="toggleQueuePauseResume"
-                :title="
-                  queueProgress.running > 0
-                    ? 'Pause queue processing (let active runs finish)'
-                    : 'Resume queue processing'
-                "
-              >
-                <ILucidePause v-if="queueProgress.running > 0" class="w-4 h-4" />
-                <ILucidePlay v-else class="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                class="p-2 rounded transition-colors disabled:opacity-50"
-                :style="queueStopButtonStyle"
-                :disabled="queueProgress.queued === 0"
-                @click="$emit('stopQueue')"
-                title="Clear all queued runs (let active runs finish)"
-              >
-                <ILucideSquare class="w-4 h-4 fill-current" />
-              </button>
-            </div>
-          </div>
-
-          <div class="mt-3">
-            <div
-              class="flex items-center justify-between text-xs"
-              :style="{ color: 'var(--ac-text-muted)' }"
-            >
-              <span>Progress</span>
-              <span>{{ queueProgress.done }}/{{ queueProgress.total }}</span>
-            </div>
-            <div
-              class="mt-2 h-2 rounded-full overflow-hidden"
-              :style="{ backgroundColor: 'var(--ac-surface-muted)' }"
-            >
-              <div
-                class="h-full transition-all"
-                :style="{
-                  width:
-                    queueProgress.total > 0
-                      ? `${Math.round((queueProgress.done / queueProgress.total) * 100)}%`
-                      : '0%',
-                  backgroundColor: 'var(--ac-accent)',
-                }"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Empty State -->
       <div
         v-if="filteredFlows.length === 0"
@@ -754,12 +686,14 @@
 </template>
 
 <script lang="ts" setup>
+import {
+  inferPlatformFromUrl,
+  parseConversationId,
+  type ChatPlatform,
+} from '@/common/chat-platforms';
+import { STORAGE_KEYS } from '@/common/constants';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import WorkflowListItem from './WorkflowListItem.vue';
-import { STORAGE_KEYS } from '@/common/constants';
-import ILucidePause from '~icons/lucide/pause';
-import ILucidePlay from '~icons/lucide/play';
-import ILucideSquare from '~icons/lucide/square';
 
 interface FlowLite {
   id: string;
@@ -1387,68 +1321,10 @@ const resultModalTags = computed(() => {
 const isIngestorResult = computed(() => resultModalTags.value.includes('ingestor'));
 const isScannerResult = computed(() => resultModalTags.value.includes('scanner'));
 
-type IngestPlatform = 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
-
-function inferPlatformFromTags(tags: string[]): IngestPlatform | null {
-  if (tags.includes('chatgpt')) return 'chatgpt';
-  if (tags.includes('gemini')) return 'gemini';
-  if (tags.includes('claude')) return 'claude';
-  if (tags.includes('deepseek')) return 'deepseek';
-  return null;
-}
-
-function inferPlatformFromUrl(urlString: string): IngestPlatform | null {
-  let u: URL;
-  try {
-    u = new URL(urlString);
-  } catch {
-    return null;
-  }
-  const host = String(u.hostname || '').toLowerCase();
-  if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
-  if (host === 'claude.ai') return 'claude';
-  if (host === 'gemini.google.com') return 'gemini';
-  if (host === 'chat.deepseek.com') return 'deepseek';
-  return null;
-}
-
-function parseConversationIdFromUrl(platform: IngestPlatform, urlString: string): string | null {
-  let u: URL;
-  try {
-    u = new URL(urlString);
-  } catch {
-    return null;
-  }
-
-  const pathname = String(u.pathname || '');
-
-  if (platform === 'chatgpt') {
-    const m = pathname.match(/\/(?:c|chat)\/([^/?#]+)/i);
-    return m ? String(m[1] || '').trim() || null : null;
-  }
-
-  if (platform === 'claude') {
-    const m = pathname.match(/^\/chat\/([^/?#]+)/i);
-    return m ? String(m[1] || '').trim() || null : null;
-  }
-
-  if (platform === 'gemini') {
-    const m = pathname.match(/^\/app\/([^/?#]+)/i);
-    return m ? String(m[1] || '').trim() || null : null;
-  }
-
-  if (platform === 'deepseek') {
-    const m = pathname.match(/\/(?:chat|c)\/([^/?#]+)/i);
-    if (m) return String(m[1] || '').trim() || null;
-    for (const key of ['conversationId', 'chatId', 'id']) {
-      const v = u.searchParams.get(key);
-      if (v && v.trim()) return v.trim();
-    }
-    const seg = pathname.split('/').filter(Boolean).pop();
-    return seg ? String(seg).trim() || null : null;
-  }
-
-  return null;
+function inferPlatformFromTags(tags: string[]): ChatPlatform | null {
+  return ['chatgpt', 'gemini', 'claude', 'deepseek'].find((tag) =>
+    tags.includes(tag),
+  ) as ChatPlatform | null;
 }
 
 function deriveSessionIdFromRunArgs(run: RunLite | null, tags: string[]): string | null {
@@ -1458,7 +1334,7 @@ function deriveSessionIdFromRunArgs(run: RunLite | null, tags: string[]): string
   if (!urlString) return null;
   const platform = inferPlatformFromTags(tags) ?? inferPlatformFromUrl(urlString);
   if (!platform) return null;
-  const conversationId = parseConversationIdFromUrl(platform, urlString);
+  const conversationId = parseConversationId(urlString);
   if (!conversationId) return null;
   return `${platform}:${conversationId}`;
 }
@@ -1877,6 +1753,7 @@ watch(
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }

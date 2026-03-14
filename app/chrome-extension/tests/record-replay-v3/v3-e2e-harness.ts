@@ -54,6 +54,7 @@ import {
   createRunnerRegistry,
   type RunnerRegistry,
 } from '@/entrypoints/background/record-replay-v3/engine/kernel/debug-controller';
+import { clearCancelRequest } from '@/entrypoints/background/record-replay-v3/engine/kernel/run-cancel-registry';
 import { createNotImplementedArtifactService } from '@/entrypoints/background/record-replay-v3/engine/kernel/artifacts';
 import { RpcServer } from '@/entrypoints/background/record-replay-v3/engine/transport/rpc-server';
 import {
@@ -557,6 +558,7 @@ function createE2EExecutor(deps: {
       await runner.start();
     } finally {
       deps.runners.unregister(runId);
+      clearCancelRequest(runId);
     }
   };
 }

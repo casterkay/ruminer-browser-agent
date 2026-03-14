@@ -208,11 +208,6 @@ function bindingMatchesActiveTab(binding: any): boolean {
   const activeUrl = safeParseUrl(activeUrlRaw);
   if (!activeUrl) return false;
 
-  if (kind === 'path') {
-    const expected = normalizePath(value).toLowerCase();
-    return expected ? activeUrl.pathname.toLowerCase().startsWith(expected) : false;
-  }
-
   if (kind === 'url') {
     const expectedUrl = safeParseUrl(value);
     if (expectedUrl) {

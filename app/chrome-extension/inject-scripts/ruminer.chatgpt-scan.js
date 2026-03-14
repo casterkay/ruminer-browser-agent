@@ -8,7 +8,123 @@
   const LOG = '[ruminer.chatgpt-scan]';
 
   const existing = window.__RUMINER_SCAN__;
-  if (existing && existing.platform === PLATFORM && existing.version === VERSION) return;
+  const sameApi = existing && existing.platform === PLATFORM && existing.version === VERSION;
+
+  const installRpc = () => {
+    const rpc = window.__RUMINER_SCAN_RPC__;
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
+    window.__RUMINER_SCAN_RPC__ = { platform: PLATFORM, version: VERSION };
+
+    try {
+      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+        try {
+          if (!request || typeof request.action !== 'string') return false;
+
+          if (request.action === 'ruminer_scan_ping') {
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_scan_probe') {
+            const api = window.__RUMINER_SCAN__;
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+              hasApi: Boolean(api),
+              apiPlatform: api && typeof api === 'object' ? String(api.platform || '') : '',
+              apiVersion: api && typeof api === 'object' ? String(api.version || '') : '',
+              keys: api && typeof api === 'object' ? Object.keys(api).slice(0, 30) : [],
+            });
+            return false;
+          }
+
+          const api = window.__RUMINER_SCAN__;
+          if (!api) {
+            sendResponse({ ok: false, error: '__RUMINER_SCAN__ not found on window' });
+            return false;
+          }
+          if (api.platform !== PLATFORM) {
+            sendResponse({
+              ok: false,
+              error: `__RUMINER_SCAN__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_scan_listConversations') {
+            const offset = Number(request?.payload?.offset || 0);
+            const limit = Number(request?.payload?.limit || 100);
+            Promise.resolve()
+              .then(() => api.listConversations({ offset, limit }))
+              .then((value) => {
+                if (
+                  value &&
+                  typeof value === 'object' &&
+                  value.ok === false &&
+                  typeof value.error === 'string'
+                ) {
+                  sendResponse({
+                    ok: false,
+                    error: String(value.error || 'listConversations failed'),
+                  });
+                  return;
+                }
+                sendResponse({ ok: true, value });
+              })
+              .catch((e) =>
+                sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+              );
+            return true;
+          }
+
+          if (request.action === 'ruminer_scan_getConversationMessageHashes') {
+            const conversationId = String(request?.payload?.conversationId || '');
+            const conversationUrl = String(request?.payload?.conversationUrl || '');
+            Promise.resolve()
+              .then(() =>
+                api.getConversationMessageHashes({
+                  conversationId,
+                  conversationUrl,
+                }),
+              )
+              .then((value) => {
+                if (
+                  value &&
+                  typeof value === 'object' &&
+                  value.ok === false &&
+                  typeof value.error === 'string'
+                ) {
+                  sendResponse({
+                    ok: false,
+                    error: String(value.error || 'getConversationMessageHashes failed'),
+                  });
+                  return;
+                }
+                sendResponse({ ok: true, value });
+              })
+              .catch((e) =>
+                sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+              );
+            return true;
+          }
+        } catch (e) {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+          return false;
+        }
+        return false;
+      });
+    } catch {}
+  };
+
+  installRpc();
+  if (sameApi) return;
 
   const normalizeContent = (s) =>
     String(s || '')

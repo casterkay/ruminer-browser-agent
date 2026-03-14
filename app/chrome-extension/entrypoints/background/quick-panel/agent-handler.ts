@@ -25,8 +25,12 @@ import {
   type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIMessage,
   type QuickPanelCancelAIResponse,
+  type QuickPanelDeleteSessionMessage,
+  type QuickPanelDeleteSessionResponse,
   type QuickPanelGetBrandingMessage,
   type QuickPanelGetBrandingResponse,
+  type QuickPanelOpenSessionMessage,
+  type QuickPanelOpenSessionResponse,
   type QuickPanelSendToAIMessage,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -48,6 +52,7 @@ const STORAGE_KEY_SELECTED_PROJECT = 'agent-selected-project-id';
 const STORAGE_KEY_QP_LAST_SESSION_ID = 'quick-panel-last-session-id';
 const STORAGE_KEY_QP_LAST_ACTIVE_AT = 'quick-panel-last-active-at';
 const STORAGE_KEY_QP_SESSION_COUNTER = 'quick-panel-session-counter';
+const STORAGE_KEY_QP_PERSIST_ENABLED = 'quick-panel-persist-enabled';
 
 /** Resume previous Quick Panel session if last active within this threshold. */
 const QUICK_PANEL_SESSION_RESUME_THRESHOLD_MS = 30 * 60 * 1000;
@@ -127,6 +132,17 @@ function normalizePort(value: unknown): number | null {
   if (port <= 0 || port > 65535) return null;
 
   return port;
+}
+
+function normalizeBool(value: unknown): boolean {
+  if (value === true) return true;
+  if (value === false) return false;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  }
+  return false;
 }
 
 function createRequestId(): string {
@@ -696,10 +712,12 @@ async function handleSendToAI(
   const stored = await chrome.storage.local.get([
     STORAGE_KEYS.NATIVE_SERVER_PORT,
     STORAGE_KEY_SELECTED_SESSION,
+    STORAGE_KEY_QP_PERSIST_ENABLED,
   ]);
 
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
   const sessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+  const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
 
   if (!sessionId) {
     // No session selected: open sidepanel for user to select/create one
@@ -711,14 +729,16 @@ async function handleSendToAI(
     };
   }
 
-  // Update Quick Panel "last active" bookkeeping (used for resume threshold).
-  try {
-    await chrome.storage.local.set({
-      [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionId,
-      [STORAGE_KEY_QP_LAST_ACTIVE_AT]: Date.now(),
-    });
-  } catch {
-    // ignore
+  // Update Quick Panel "last active" bookkeeping (used for resume threshold) only when persisted.
+  if (persistEnabled) {
+    try {
+      await chrome.storage.local.set({
+        [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionId,
+        [STORAGE_KEY_QP_LAST_ACTIVE_AT]: Date.now(),
+      });
+    } catch {
+      // ignore
+    }
   }
 
   // Create request state
@@ -788,9 +808,11 @@ async function handleActivateSession(
     STORAGE_KEY_QP_LAST_SESSION_ID,
     STORAGE_KEY_QP_LAST_ACTIVE_AT,
     STORAGE_KEY_QP_SESSION_COUNTER,
+    STORAGE_KEY_QP_PERSIST_ENABLED,
   ]);
 
   const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+  const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
 
   const now = Date.now();
   const lastSessionId = normalizeString(stored?.[STORAGE_KEY_QP_LAST_SESSION_ID]).trim();
@@ -803,6 +825,7 @@ async function handleActivateSession(
         : Number.NaN;
 
   const resumeEligible =
+    persistEnabled &&
     !forceNew &&
     !!lastSessionId &&
     Number.isFinite(lastActiveAt) &&
@@ -815,11 +838,12 @@ async function handleActivateSession(
       const sessionInfo = await fetchSessionInfo(port, lastSessionId);
       if (sessionInfo?.id) {
         try {
-          await chrome.storage.local.set({
-            [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id,
-            [STORAGE_KEY_QP_LAST_SESSION_ID]: sessionInfo.id,
-            [STORAGE_KEY_QP_LAST_ACTIVE_AT]: now,
-          });
+          const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id };
+          if (persistEnabled) {
+            patch[STORAGE_KEY_QP_LAST_SESSION_ID] = sessionInfo.id;
+            patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = now;
+          }
+          await chrome.storage.local.set(patch as any);
         } catch {
           // ignore
         }
@@ -900,12 +924,13 @@ async function handleActivateSession(
   }
 
   try {
-    await chrome.storage.local.set({
-      [STORAGE_KEY_SELECTED_SESSION]: created.id,
-      [STORAGE_KEY_QP_LAST_SESSION_ID]: created.id,
-      [STORAGE_KEY_QP_LAST_ACTIVE_AT]: now,
-      [STORAGE_KEY_QP_SESSION_COUNTER]: nextN + 1,
-    });
+    const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: created.id };
+    if (persistEnabled) {
+      patch[STORAGE_KEY_QP_LAST_SESSION_ID] = created.id;
+      patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = now;
+      patch[STORAGE_KEY_QP_SESSION_COUNTER] = nextN + 1;
+    }
+    await chrome.storage.local.set(patch as any);
   } catch {
     // ignore
   }
@@ -931,6 +956,107 @@ async function handleActivateSession(
     brandIconUrl: createdBrandIconUrl,
     recentMessages,
   };
+}
+
+/**
+ * Handle QUICK_PANEL_OPEN_SESSION message.
+ * Selects an explicit session by ID and returns recent messages for launcher rendering.
+ */
+async function handleOpenSession(
+  message: QuickPanelOpenSessionMessage,
+): Promise<QuickPanelOpenSessionResponse> {
+  const sessionId = normalizeString(message?.payload?.sessionId).trim();
+  if (!sessionId) {
+    return { success: false, error: 'sessionId is required' };
+  }
+
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEYS.NATIVE_SERVER_PORT,
+    STORAGE_KEY_QP_PERSIST_ENABLED,
+  ]);
+  const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+  const persistEnabled = normalizeBool(stored?.[STORAGE_KEY_QP_PERSIST_ENABLED]);
+
+  const sessionInfo = await fetchSessionInfo(port, sessionId);
+  if (!sessionInfo?.id) {
+    return { success: false, error: 'Session not found' };
+  }
+
+  try {
+    const patch: Record<string, unknown> = { [STORAGE_KEY_SELECTED_SESSION]: sessionInfo.id };
+    if (persistEnabled) {
+      patch[STORAGE_KEY_QP_LAST_SESSION_ID] = sessionInfo.id;
+      patch[STORAGE_KEY_QP_LAST_ACTIVE_AT] = Date.now();
+    }
+    await chrome.storage.local.set(patch as any);
+  } catch {
+    // ignore
+  }
+
+  const recentMessages = await fetchRecentSessionMessages(
+    port,
+    sessionInfo.id,
+    QUICK_PANEL_RECENT_MESSAGES_LIMIT,
+  );
+
+  const engineName = normalizeString(sessionInfo.engineName).trim();
+  const brandIconUrl = engineName ? await resolveEngineIconUrl(engineName) : '';
+
+  return {
+    success: true,
+    sessionId: sessionInfo.id,
+    sessionName: sessionInfo.name || 'Session',
+    engineName,
+    engineDisplayName: toEngineDisplayName(engineName),
+    brandIconUrl,
+    recentMessages,
+  };
+}
+
+/**
+ * Handle QUICK_PANEL_DELETE_SESSION message.
+ * Deletes a session from native-server and clears local selection when applicable.
+ */
+async function handleDeleteSession(
+  message: QuickPanelDeleteSessionMessage,
+): Promise<QuickPanelDeleteSessionResponse> {
+  const sessionId = normalizeString(message?.payload?.sessionId).trim();
+  if (!sessionId) return { success: false, error: 'sessionId is required' };
+
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEYS.NATIVE_SERVER_PORT,
+    STORAGE_KEY_SELECTED_SESSION,
+    STORAGE_KEY_QP_LAST_SESSION_ID,
+  ]);
+
+  const port = normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+
+  try {
+    const url = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}`;
+    const resp = await fetch(url, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 404) {
+      const text = await resp.text().catch(() => '');
+      return { success: false, error: text || `HTTP ${resp.status}` };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg || 'Failed to delete session' };
+  }
+
+  try {
+    const selected = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim();
+    const last = normalizeString(stored?.[STORAGE_KEY_QP_LAST_SESSION_ID]).trim();
+    const keysToRemove: string[] = [];
+    if (selected === sessionId) keysToRemove.push(STORAGE_KEY_SELECTED_SESSION);
+    if (last === sessionId) {
+      keysToRemove.push(STORAGE_KEY_QP_LAST_SESSION_ID, STORAGE_KEY_QP_LAST_ACTIVE_AT);
+    }
+    if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
+  } catch {
+    // ignore
+  }
+
+  return { success: true };
 }
 
 /**
@@ -1284,6 +1410,28 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_ACTIVATE_SESSION
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_ACTIVATE_SESSION) {
       handleActivateSession(message as QuickPanelActivateSessionMessage, sender)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_OPEN_SESSION
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SESSION) {
+      handleOpenSession(message as QuickPanelOpenSessionMessage)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_DELETE_SESSION
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_DELETE_SESSION) {
+      handleDeleteSession(message as QuickPanelDeleteSessionMessage)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

@@ -89,6 +89,8 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_OPEN_SIDEPANEL: 'quick_panel_open_sidepanel',
   QUICK_PANEL_GET_BRANDING: 'quick_panel_get_branding',
   QUICK_PANEL_ACTIVATE_SESSION: 'quick_panel_activate_session',
+  QUICK_PANEL_OPEN_SESSION: 'quick_panel_open_session',
+  QUICK_PANEL_DELETE_SESSION: 'quick_panel_delete_session',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
@@ -307,6 +309,40 @@ export type QuickPanelActivateSessionResponse =
       recentMessages?: AgentMessage[];
     }
   | { success: false; error: string };
+
+export interface QuickPanelOpenSessionPayload {
+  sessionId: string;
+  /** Optional reason for telemetry/debugging. */
+  reason?: 'import' | 'open' | 'toggle';
+}
+
+export interface QuickPanelOpenSessionMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SESSION;
+  payload: QuickPanelOpenSessionPayload;
+}
+
+export type QuickPanelOpenSessionResponse =
+  | {
+      success: true;
+      sessionId: string;
+      sessionName: string;
+      engineName: string;
+      engineDisplayName: string;
+      brandIconUrl: string;
+      recentMessages?: AgentMessage[];
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelDeleteSessionPayload {
+  sessionId: string;
+}
+
+export interface QuickPanelDeleteSessionMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_DELETE_SESSION;
+  payload: QuickPanelDeleteSessionPayload;
+}
+
+export type QuickPanelDeleteSessionResponse = { success: true } | { success: false; error: string };
 
 /**
  * Payload for cancelling an active AI request.

@@ -31,14 +31,14 @@ describe('ruminer ingest builtin flows', () => {
     const flows = collectBuiltins('2026-03-12T00:00:00.000Z');
 
     for (const flow of flows) {
-      const scan = findNode(flow, 'ruminer.scan_and_enqueue_conversations');
+      const scan = findNode(flow, 'ruminer.scan_and_ingest_conversations');
       if (scan) {
         expect((scan.config as any)?.platform).toBeTruthy();
       }
 
       const ingest = findNode(flow, 'ruminer.ingest_current_conversation');
       if (ingest) {
-        expect((ingest.config as any)?.platform).toBeTruthy();
+        expect((ingest.config as any)?.conversationUrlVar).toBeTruthy();
       }
     }
   });

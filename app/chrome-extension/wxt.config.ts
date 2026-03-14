@@ -137,7 +137,7 @@ export default defineConfig({
   },
   vite: (env) => ({
     plugins: [
-      // TailwindCSS v4 Vite plugin – no PostCSS config required
+      // TailwindCSS v4 Vite plugin - no PostCSS config required
       tailwindcss(),
       // Auto-register SVG icons as Vue components; all icons are bundled locally
       Components({

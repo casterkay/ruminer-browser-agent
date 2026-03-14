@@ -8,7 +8,96 @@
   const LOG = '[ruminer.chatgpt-ingest]';
 
   const existing = window.__RUMINER_INGEST__;
-  if (existing && existing.platform === PLATFORM && existing.version === VERSION) return;
+  const sameApi = existing && existing.platform === PLATFORM && existing.version === VERSION;
+
+  const parseConversationId = (urlString) => {
+    try {
+      const u = new URL(String(urlString || ''));
+      const pathname = String(u.pathname || '');
+      return pathname.split('/').filter(Boolean).pop() || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const installRpc = () => {
+    const rpc = window.__RUMINER_INGEST_RPC__;
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
+    window.__RUMINER_INGEST_RPC__ = { platform: PLATFORM, version: VERSION };
+
+    try {
+      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+        try {
+          if (!request || typeof request.action !== 'string') return false;
+
+          if (request.action === 'ruminer_ingest_ping') {
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_ingest_probe') {
+            const api = window.__RUMINER_INGEST__;
+            sendResponse({
+              ok: true,
+              platform: PLATFORM,
+              version: VERSION,
+              href: String(location.href || ''),
+              hasApi: Boolean(api),
+              apiPlatform: api && typeof api === 'object' ? String(api.platform || '') : '',
+              apiVersion: api && typeof api === 'object' ? String(api.version || '') : '',
+              keys: api && typeof api === 'object' ? Object.keys(api).slice(0, 30) : [],
+            });
+            return false;
+          }
+
+          const api = window.__RUMINER_INGEST__;
+          if (!api) {
+            sendResponse({ ok: false, error: '__RUMINER_INGEST__ not found on window' });
+            return false;
+          }
+          if (api.platform !== PLATFORM) {
+            sendResponse({
+              ok: false,
+              error: `__RUMINER_INGEST__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')}, version=${String(api.version || '')})`,
+            });
+            return false;
+          }
+
+          if (request.action === 'ruminer_ingest_extractConversation') {
+            const conversationUrl = request?.payload?.conversationUrl ?? null;
+            Promise.resolve()
+              .then(() => api.extractConversation({ conversationUrl }))
+              .then((value) => {
+                if (value === undefined || value === null) {
+                  sendResponse({
+                    ok: false,
+                    error: '__RUMINER_INGEST__.extractConversation returned no value',
+                  });
+                  return;
+                }
+                sendResponse({ ok: true, value });
+              })
+              .catch((e) =>
+                sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+              );
+            return true;
+          }
+        } catch (e) {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+          return false;
+        }
+        return false;
+      });
+    } catch {}
+  };
+
+  installRpc();
+  if (sameApi) return;
 
   const normalizeContent = (s) =>
     String(s || '')
@@ -196,26 +285,10 @@
     return out;
   };
 
-  const parseConversationIdFromUrl = (rawUrl) => {
-    try {
-      const url = new URL(String(rawUrl || ''), location.origin);
-      const segments = String(url.pathname || '')
-        .split('/')
-        .filter(Boolean);
-      const markerIdx = segments.findIndex((s) => s === 'c' || s === 'chat');
-      if (markerIdx >= 0 && markerIdx + 1 < segments.length) {
-        return String(segments[markerIdx + 1] || '').trim();
-      }
-      return '';
-    } catch {
-      return '';
-    }
-  };
-
   async function extractConversation({ conversationUrl }) {
     const rawUrl = String(conversationUrl || location.href || '').trim();
     if (!rawUrl) throw new Error('Missing conversation URL');
-    const conversationId = parseConversationIdFromUrl(rawUrl);
+    const conversationId = parseConversationId(rawUrl);
     if (!conversationId) throw new Error('Failed to parse conversation id from URL');
 
     const accessToken = await getAccessToken();

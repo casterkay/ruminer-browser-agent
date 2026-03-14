@@ -49,14 +49,13 @@
         <div class="workflow-chips">
           <!-- Schedule chip -->
           <button
+            v-if="!isIngestor"
             class="workflow-schedule-chip"
             :class="{
               'workflow-schedule-chip-active': scheduleEnabled,
-              'workflow-schedule-chip-disabled': isIngestor,
             }"
-            :style="isIngestor ? scheduleChipDisabledStyle : scheduleChipStyle"
-            :disabled="isIngestor"
-            @click.stop="isIngestor ? null : toggleScheduleMenu()"
+            :style="scheduleChipStyle"
+            @click.stop="toggleScheduleMenu()"
           >
             <svg
               viewBox="0 0 24 24"
@@ -421,6 +420,7 @@ const PLATFORM_ICONS: Record<string, { file: string; alt: string }> = {
   gemini: { file: 'gemini.svg', alt: 'Gemini' },
   claude: { file: 'claude.png', alt: 'Claude' },
   deepseek: { file: 'deepseek.svg', alt: 'DeepSeek' },
+  ingestor: { file: 'inbox.svg', alt: 'Ingestor' },
 };
 
 const platformIcon = computed(() => {

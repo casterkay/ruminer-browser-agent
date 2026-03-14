@@ -39,7 +39,7 @@ const LOADING_TEXTS: Record<LoadingLocale, string[]> = {
   // German (dry humor, office + engineering vibes)
   de: [
     'Kaffee rein, Erkenntnis raus…',
-    'Bitte warten – das Gehirn macht ein Update.',
+    'Bitte warten - das Gehirn macht ein Update.',
     'Ich sortiere Gedanken nach DIN-Norm…',
     'Die Antwort wird gerade entknotet…',
     'Kurz die Realität neu kompilieren…',
@@ -50,7 +50,7 @@ const LOADING_TEXTS: Record<LoadingLocale, string[]> = {
     'Wörter werden gerade frisch abgewogen…',
     'Die Logik sitzt noch im Stau.',
     'Antwort wird sorgfältig entstaubt…',
-    'Bitte nicht drücken – Denkprozess läuft.',
+    'Bitte nicht drücken - Denkprozess läuft.',
     'Ich lese die Zwischenzeilen im Schritttempo…',
     'Noch schnell die Kommas zählen…',
     'Gedanken werden gerade entwirrt.',
@@ -59,7 +59,7 @@ const LOADING_TEXTS: Record<LoadingLocale, string[]> = {
     'Die letzte Schraube am Satz sitzt gleich.',
     'Qualitätssicherung für gute Ideen läuft…',
     'Ich finde den einen Bug in der Formulierung…',
-    'Warte kurz – ich lade die passenden Wörter nach.',
+    'Warte kurz - ich lade die passenden Wörter nach.',
   ],
 
   // Japanese (light, friendly internet tone; no direct CN meme translations)

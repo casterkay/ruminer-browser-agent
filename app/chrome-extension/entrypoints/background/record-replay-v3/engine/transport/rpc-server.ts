@@ -19,6 +19,7 @@ import type { QueueItemStatus } from '../queue/queue';
 import { enqueueRun } from '../queue/enqueue-run';
 import { ensureBuiltinFlows } from '../plugins/ruminer-ingest/builtin-flows';
 import type { TriggerManager } from '../triggers/trigger-manager';
+import { requestCancel } from '../kernel/run-cancel-registry';
 import {
   RR_V3_PORT_NAME,
   isRpcRequest,
@@ -1256,6 +1257,8 @@ export class RpcServer {
       throw new Error(`Runner for "${runId}" not found (run may have already finished)`);
     }
 
+    // Allow long-running nodes to observe cancel quickly (cooperative cancel).
+    requestCancel(runId);
     runner.cancel(reason);
     return { ok: true, runId };
   }

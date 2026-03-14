@@ -57,7 +57,7 @@ describe('ingest workflow rpc telemetry', () => {
     await storage.runs.save({
       schemaVersion: RUN_SCHEMA_VERSION,
       id: runId,
-      flowId: 'chatgpt.conversation_ingest.v1',
+      flowId: 'auto.conversation_ingest.v1',
       status: 'running',
       createdAt: Date.now(),
       updatedAt: Date.now(),

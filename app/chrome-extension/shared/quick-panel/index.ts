@@ -390,4 +390,10 @@ export type { TabsProviderOptions, TabsSearchResultData } from './providers';
 
 // Floating Icon
 export { createFloatingIcon } from './ui/floating-icon';
-export type { FloatingIconManager, FloatingIconOptions } from './ui/floating-icon';
+export type {
+  FloatingIconManager,
+  FloatingIconOptions,
+  FloatingIconWorkflowControls,
+  FloatingIconWorkflowProgress,
+  FloatingIconWorkflowStatus,
+} from './ui/floating-icon';
