@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'chatgpt';
-  const VERSION = '2026-03-13.2';
+  const VERSION = '2026-03-14.1';
   const LOG = '[ruminer.chatgpt-ingest]';
 
   const existing = window.__RUMINER_INGEST__;
@@ -104,11 +104,18 @@
       .replace(/\r\n/g, '\n')
       .trim();
 
-  const safeJson = async (resp) => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms || 0))));
+
+  const readJsonOrThrow = async (resp) => {
+    const ct = String(resp?.headers?.get?.('content-type') || '');
+    const text = await resp.text().catch(() => '');
     try {
-      return await resp.json();
+      return text ? JSON.parse(text) : null;
     } catch {
-      return null;
+      const snippet = text ? String(text).slice(0, 240) : '';
+      throw new Error(
+        `Invalid JSON response (status=${resp?.status || 0}, content-type=${ct || 'unknown'}): ${snippet}`,
+      );
     }
   };
 
@@ -122,6 +129,55 @@
     }
   };
 
+  const isRetryableStatus = (status) =>
+    status === 408 || status === 429 || (status >= 500 && status <= 599);
+
+  const isRetryableFetchError = (e) => {
+    const msg = e instanceof Error ? e.message : String(e || '');
+    return (
+      e instanceof TypeError ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('NetworkError') ||
+      msg.includes('Load failed') ||
+      msg.includes('The network connection was lost') ||
+      msg.includes('AbortError')
+    );
+  };
+
+  const fetchWithRetry = async (input, init, timeoutMs, opts) => {
+    const attempts = Math.max(1, Math.min(5, Math.floor(opts?.attempts ?? 3)));
+    const baseDelayMs = Math.max(100, Math.min(5_000, Math.floor(opts?.baseDelayMs ?? 300)));
+
+    let lastErr = null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        const resp = await fetchWithTimeout(input, init, timeoutMs);
+        if (!resp || typeof resp.status !== 'number') return resp;
+        if (!isRetryableStatus(resp.status)) return resp;
+
+        const ra = Number(resp.headers?.get?.('retry-after') || '');
+        const retryAfterMs = Number.isFinite(ra) ? Math.max(0, Math.floor(ra * 1000)) : 0;
+        const jitter = Math.floor(Math.random() * 120);
+        const backoff = Math.floor(baseDelayMs * Math.pow(2, attempt - 1));
+        const delay = Math.min(30_000, Math.max(retryAfterMs, backoff + jitter));
+        if (attempt < attempts) {
+          await sleep(delay);
+          continue;
+        }
+        return resp;
+      } catch (e) {
+        lastErr = e;
+        if (!isRetryableFetchError(e) || attempt >= attempts) throw e;
+        const jitter = Math.floor(Math.random() * 120);
+        const backoff = Math.floor(baseDelayMs * Math.pow(2, attempt - 1));
+        await sleep(Math.min(30_000, backoff + jitter));
+      }
+    }
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error(String(lastErr || 'fetchWithRetry failed'));
+  };
+
   const getCookie = (key) => {
     try {
       const m = document.cookie.match('(^|;)\\s*' + key + '\\s*=\\s*([^;]+)');
@@ -129,6 +185,22 @@
     } catch {
       return '';
     }
+  };
+
+  const AUTH_CACHE_TTL_MS = 60_000;
+  const authCache = {
+    token: { value: null, at: 0, promise: null },
+    account: { workspaceId: '', value: null, at: 0, promise: null },
+  };
+
+  const clearAuthCache = () => {
+    authCache.token.value = null;
+    authCache.token.at = 0;
+    authCache.token.promise = null;
+    authCache.account.workspaceId = '';
+    authCache.account.value = null;
+    authCache.account.at = 0;
+    authCache.account.promise = null;
   };
 
   const getPageAccessToken = () => {
@@ -153,12 +225,41 @@
     if (pageToken) return pageToken;
 
     const sessionUrl = new URL('/api/auth/session', location.origin).toString();
-    const resp = await fetchWithTimeout(sessionUrl, { credentials: 'include' }, 15_000);
-    if (!resp.ok) throw new Error('Not logged in to ChatGPT');
-    const payload = await safeJson(resp);
-    const token = payload && typeof payload.accessToken === 'string' ? payload.accessToken : '';
-    if (!token.trim()) throw new Error('ChatGPT session missing access token');
-    return token.trim();
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const resp = await fetchWithRetry(sessionUrl, { credentials: 'include' }, 15_000, {
+        attempts: 3,
+        baseDelayMs: 250,
+      });
+      if (!resp.ok) throw new Error('Not logged in to ChatGPT');
+      try {
+        const payload = await readJsonOrThrow(resp);
+        const token = payload && typeof payload.accessToken === 'string' ? payload.accessToken : '';
+        if (!token.trim()) throw new Error('ChatGPT session missing access token');
+        return token.trim();
+      } catch (e) {
+        if (attempt >= 2) throw e;
+        await sleep(400 + Math.floor(Math.random() * 120));
+      }
+    }
+    throw new Error('ChatGPT session missing access token');
+  };
+
+  const getAccessTokenCached = async () => {
+    const now = Date.now();
+    if (authCache.token.value && now - authCache.token.at < AUTH_CACHE_TTL_MS)
+      return authCache.token.value;
+    if (authCache.token.promise) return authCache.token.promise;
+    authCache.token.promise = Promise.resolve()
+      .then(() => getAccessToken())
+      .then((token) => {
+        authCache.token.value = token;
+        authCache.token.at = Date.now();
+        return token;
+      })
+      .finally(() => {
+        authCache.token.promise = null;
+      });
+    return authCache.token.promise;
   };
 
   const getTeamAccountId = async (accessToken) => {
@@ -168,7 +269,7 @@
       '/backend-api/accounts/check/v4-2023-04-27',
       location.origin,
     ).toString();
-    const resp = await fetchWithTimeout(
+    const resp = await fetchWithRetry(
       checkUrl,
       {
         headers: {
@@ -178,9 +279,10 @@
         credentials: 'include',
       },
       20_000,
+      { attempts: 3, baseDelayMs: 300 },
     );
     if (!resp.ok) return null;
-    const payload = await safeJson(resp);
+    const payload = await readJsonOrThrow(resp);
     try {
       const account = payload && payload.accounts && payload.accounts[workspaceId];
       const aid = account && account.account && account.account.account_id;
@@ -190,7 +292,40 @@
     }
   };
 
-  const fetchBackendApi = async (path, query, accessToken, accountId) => {
+  const getTeamAccountIdCached = async (accessToken) => {
+    const workspaceId = getCookie('_account');
+    if (!workspaceId) return null;
+    const now = Date.now();
+    if (
+      authCache.account.workspaceId === workspaceId &&
+      now - authCache.account.at < AUTH_CACHE_TTL_MS
+    ) {
+      return authCache.account.value;
+    }
+    if (authCache.account.promise && authCache.account.workspaceId === workspaceId) {
+      return authCache.account.promise;
+    }
+    authCache.account.workspaceId = workspaceId;
+    authCache.account.promise = Promise.resolve()
+      .then(() => getTeamAccountId(accessToken))
+      .then((accountId) => {
+        authCache.account.value = accountId;
+        authCache.account.at = Date.now();
+        return accountId;
+      })
+      .finally(() => {
+        authCache.account.promise = null;
+      });
+    return authCache.account.promise;
+  };
+
+  const getAuthContext = async () => {
+    const accessToken = await getAccessTokenCached();
+    const accountId = await getTeamAccountIdCached(accessToken);
+    return { accessToken, accountId };
+  };
+
+  const fetchBackendApi = async (path, query, accessToken, accountId, opts) => {
     const url = new URL('/backend-api' + path, location.origin);
     for (const [k, v] of Object.entries(query || {})) {
       if (v === undefined || v === null) continue;
@@ -203,14 +338,23 @@
     };
     if (accountId) headers['Chatgpt-Account-Id'] = accountId;
 
-    const resp = await fetchWithTimeout(
-      url.toString(),
-      { headers, credentials: 'include' },
-      30_000,
-    );
+    const resp = await fetchWithRetry(url.toString(), { headers, credentials: 'include' }, 30_000, {
+      attempts: 3,
+      baseDelayMs: 350,
+    });
+    if ((resp.status === 401 || resp.status === 403) && opts?.retryAuthOnce === true) {
+      clearAuthCache();
+      const ctx = await getAuthContext();
+      return fetchBackendApi(path, query, ctx.accessToken, ctx.accountId, { retryAuthOnce: false });
+    }
     if (!resp.ok) {
-      const body = await safeJson(resp);
-      const msg = body && (body.detail || body.error) ? String(body.detail || body.error) : '';
+      let msg = '';
+      try {
+        const body = await readJsonOrThrow(resp);
+        msg = body && (body.detail || body.error) ? String(body.detail || body.error) : '';
+      } catch (e) {
+        msg = e instanceof Error ? e.message : String(e);
+      }
       throw new Error(
         'ChatGPT backend API failed (' +
           resp.status +
@@ -218,7 +362,22 @@
           (msg || resp.statusText || 'request failed'),
       );
     }
-    return safeJson(resp);
+    try {
+      return await readJsonOrThrow(resp);
+    } catch (e) {
+      if (opts?.retryParseOnce === true) {
+        await sleep(500 + Math.floor(Math.random() * 180));
+        const resp2 = await fetchWithRetry(
+          url.toString(),
+          { headers, credentials: 'include' },
+          30_000,
+          { attempts: 2, baseDelayMs: 450 },
+        );
+        if (!resp2.ok) throw e;
+        return readJsonOrThrow(resp2);
+      }
+      throw e;
+    }
   };
 
   const extractContentText = (content) => {
@@ -291,13 +450,13 @@
     const conversationId = parseConversationId(rawUrl);
     if (!conversationId) throw new Error('Failed to parse conversation id from URL');
 
-    const accessToken = await getAccessToken();
-    const accountId = await getTeamAccountId(accessToken);
+    const { accessToken, accountId } = await getAuthContext();
     const conv = await fetchBackendApi(
       '/conversation/' + encodeURIComponent(conversationId),
       {},
       accessToken,
       accountId,
+      { retryAuthOnce: true, retryParseOnce: true },
     );
 
     const messages = extractConversationMessages(conv);

@@ -6,12 +6,20 @@ import { createRunsStore } from '@/entrypoints/background/record-replay-v3/stora
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
 import { getConversationStates } from '../conversation-ledger';
+import {
+  registerAutomationTab,
+  setAutomationTabLastProgress,
+  unregisterAutomationTab,
+} from '../automation-tabs';
 import { toErrorResult } from '../utils';
 import { ingestConversationInTab } from './ingest-conversation';
 
 const scanAndEnqueueConfigSchema = z.object({
   platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
   limit: z.number().int().min(1).max(200).default(100),
+  stopAtFirstUnchangedIngested: z.boolean().default(false),
+  digestThrottleMs: z.number().int().min(0).max(5_000).default(0),
+  listThrottleMs: z.number().int().min(0).max(2_000).default(0),
 });
 
 type ScanAndEnqueueConfig = z.infer<typeof scanAndEnqueueConfigSchema>;
@@ -382,6 +390,8 @@ function createProgressEmitter(args: { tabId: number; runId: string; platform: C
   let lastKey = '';
 
   async function emit(payload: WorkflowProgressPayload, opts?: { force?: boolean }): Promise<void> {
+    void setAutomationTabLastProgress(args.tabId, payload);
+
     const force = opts?.force === true;
     const now = Date.now();
     const key = JSON.stringify({
@@ -411,6 +421,7 @@ function createProgressEmitter(args: { tabId: number; runId: string; platform: C
   }
 
   async function clear(): Promise<void> {
+    void setAutomationTabLastProgress(args.tabId, null);
     try {
       await chrome.tabs.sendMessage(args.tabId, {
         action: 'ruminer_workflow_clear',
@@ -440,8 +451,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
   async execute(ctx, node) {
     const platform = node.config.platform;
     const tabId = ctx.tabId;
+    const stopAtFirstUnchangedIngested = node.config.stopAtFirstUnchangedIngested === true;
+    const digestThrottleMs = clampInt(node.config.digestThrottleMs, 0, 5_000);
+    const listThrottleMs = clampInt(node.config.listThrottleMs, 0, 2_000);
 
     const runsStore = createRunsStore();
+
+    // Mark this tab as an automated workflow tab so content scripts can keep the workflow UI across navigations.
+    try {
+      await registerAutomationTab({ tabId, runId: ctx.runId });
+    } catch {
+      // ignore
+    }
 
     const emitter = createProgressEmitter({ tabId, runId: ctx.runId, platform });
 
@@ -572,6 +593,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
       let offset = 0;
       const all: ConversationListItem[] = [];
+      const listStartedAt = Date.now();
+
+      try {
+        ctx.log('info', 'workflow.progress', {
+          payload: {
+            kind: `${platform}.scanner.list.started`,
+            limit,
+          },
+        } as any);
+      } catch {
+        // ignore
+      }
 
       for (;;) {
         if (!(await cooperativeGate())) {
@@ -595,12 +628,27 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           all.push(...list.items);
         }
 
+        await emitProgress();
+        if (listThrottleMs > 0) await sleep(listThrottleMs);
+
         if (list.nextOffset === null) break;
         offset = list.nextOffset;
       }
 
       totalConversations = all.length;
       await emitProgress({ force: true });
+
+      try {
+        ctx.log('info', 'workflow.progress', {
+          payload: {
+            kind: `${platform}.scanner.list.finished`,
+            conversations: totalConversations,
+            elapsedMs: Date.now() - listStartedAt,
+          },
+        } as any);
+      } catch {
+        // ignore
+      }
 
       if (aborted) {
         return {
@@ -620,6 +668,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       const states: Record<string, any> = {};
       const groupIds = all.map((c) => `${platform}:${c.conversationId}`);
       try {
+        const ledgerStartedAt = Date.now();
+        try {
+          ctx.log('info', 'workflow.progress', {
+            payload: {
+              kind: `${platform}.scanner.ledger.started`,
+              conversations: groupIds.length,
+            },
+          } as any);
+        } catch {
+          // ignore
+        }
+
         for (const batch of chunk(groupIds, 100)) {
           if (!(await cooperativeGate())) {
             aborted = true;
@@ -627,6 +687,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           }
           const resp = await getConversationStates({ groupIds: batch });
           if (isRecord(resp)) Object.assign(states, resp);
+          await emitProgress();
+        }
+
+        try {
+          ctx.log('info', 'workflow.progress', {
+            payload: {
+              kind: `${platform}.scanner.ledger.finished`,
+              elapsedMs: Date.now() - ledgerStartedAt,
+            },
+          } as any);
+        } catch {
+          // ignore
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -649,6 +721,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
       // ========= Phase 3: decide what to ingest =========
       const toIngest: ConversationListItem[] = [];
+      const decideStartedAt = Date.now();
+
+      try {
+        ctx.log('info', 'workflow.progress', {
+          payload: {
+            kind: `${platform}.scanner.decide.started`,
+            stopAtFirstUnchangedIngested,
+          },
+        } as any);
+      } catch {
+        // ignore
+      }
 
       for (const c of all) {
         if (!(await cooperativeGate())) {
@@ -671,6 +755,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         } else if (state.status === 'failed') {
           needsIngest = true;
         } else {
+          if (digestThrottleMs > 0) await sleep(digestThrottleMs);
           let digest: ConversationDigestResult;
           try {
             digest = await callConversationDigest(tabId, platform, {
@@ -699,6 +784,25 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             ledgerDigest === digest.fullDigest;
 
           needsIngest = !unchanged;
+
+          if (stopAtFirstUnchangedIngested && unchanged && state.status === 'ingested') {
+            // Optimization: conversation list is ordered by "updated". If we hit an unchanged+ingested
+            // conversation, older conversations are very likely unchanged as well. Stop here.
+            scanChecked = totalConversations ?? scanChecked;
+            await emitProgress({ force: true });
+            try {
+              ctx.log('info', 'workflow.progress', {
+                payload: {
+                  kind: `${platform}.scanner.decide.early_stop`,
+                  conversationId: c.conversationId,
+                  scannedDecisions: scanChecked,
+                },
+              } as any);
+            } catch {
+              // ignore
+            }
+            break;
+          }
         }
 
         scanChecked += 1;
@@ -710,6 +814,18 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         }
 
         await emitProgress();
+      }
+
+      try {
+        ctx.log('info', 'workflow.progress', {
+          payload: {
+            kind: `${platform}.scanner.decide.finished`,
+            elapsedMs: Date.now() - decideStartedAt,
+            toIngest: toIngest.length,
+          },
+        } as any);
+      } catch {
+        // ignore
       }
 
       if (aborted) {
@@ -804,6 +920,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         },
       };
     } finally {
+      await unregisterAutomationTab(tabId).catch(() => undefined);
       await emitter.clear();
     }
   },

@@ -56,6 +56,8 @@ export default defineContentScript({
     let agentBridge: QuickPanelAgentBridge | null = null;
     let workflowControlRunId: string | null = null;
     let persistEnabled = false;
+    let isAutomationWorkflowTab = false;
+    let automationSeedProgress: FloatingIconWorkflowProgress | null = null;
     let ephemeralSessionId: string | null = null;
     let ephemeralDeleteTimer: ReturnType<typeof setTimeout> | null = null;
     let lastTooltipUrl = '';
@@ -203,6 +205,10 @@ export default defineContentScript({
 
     function refreshTooltipState(): void {
       if (!floatingIcon) return;
+      if (isAutomationWorkflowTab) {
+        floatingIcon.setTooltipState(null);
+        return;
+      }
 
       const platformLabel = platformLabelFromUrl(location.href);
 
@@ -285,6 +291,30 @@ export default defineContentScript({
       });
     }
 
+    async function syncAutomationTabState(): Promise<void> {
+      // Only workflows that seed the floating icon progress UI run on known chat platforms.
+      const platform = inferPlatformFromUrl(location.href);
+      if (!platform) {
+        isAutomationWorkflowTab = false;
+        automationSeedProgress = null;
+        return;
+      }
+
+      try {
+        const resp = (await chrome.runtime.sendMessage({
+          type: 'ruminer.automation_tabs.get',
+        })) as any;
+        const enabled = resp?.ok === true && resp?.result?.enabled === true;
+        isAutomationWorkflowTab = enabled;
+        const progress = resp?.result?.progress;
+        automationSeedProgress =
+          enabled && progress && typeof progress.runId === 'string' ? (progress as any) : null;
+      } catch {
+        isAutomationWorkflowTab = false;
+        automationSeedProgress = null;
+      }
+    }
+
     async function rrv3Request(method: RpcMethod, params?: Record<string, unknown>): Promise<void> {
       await new Promise<void>((resolve, reject) => {
         const port = chrome.runtime.connect({ name: RR_V3_PORT_NAME });
@@ -365,10 +395,35 @@ export default defineContentScript({
      * Initialize floating icon
      */
     async function initFloatingIcon(options?: { force?: boolean }): Promise<void> {
+      await syncAutomationTabState();
+
       // Check if enabled
-      const enabled = options?.force === true ? true : await isFloatingIconEnabled();
+      const enabled =
+        isAutomationWorkflowTab || options?.force === true ? true : await isFloatingIconEnabled();
       if (!enabled) return;
-      if (floatingIcon) return;
+      if (floatingIcon) {
+        // A workflow tab may become "automation" after initial mount (best-effort).
+        if (isAutomationWorkflowTab) {
+          launcher?.dispose();
+          launcher = null;
+          floatingIcon.setTooltipState(null);
+          if (automationSeedProgress) {
+            if (automationSeedProgress.runId) ensureWorkflowControls(automationSeedProgress.runId);
+            floatingIcon.setWorkflowProgress(automationSeedProgress);
+          } else {
+            floatingIcon.setWorkflowProgress({
+              runId: '',
+              status: 'running',
+              percent: 0,
+              finished: 0,
+              total: null,
+              elapsedMs: 0,
+              estimatedTotalMs: null,
+            });
+          }
+        }
+        return;
+      }
 
       persistEnabled = await loadPersistPreference();
 
@@ -384,8 +439,26 @@ export default defineContentScript({
 
       // Show the floating icon
       floatingIcon.show();
-      ensureLauncher();
-      refreshTooltipState();
+      if (isAutomationWorkflowTab) {
+        floatingIcon.setTooltipState(null);
+        if (automationSeedProgress) {
+          if (automationSeedProgress.runId) ensureWorkflowControls(automationSeedProgress.runId);
+          floatingIcon.setWorkflowProgress(automationSeedProgress);
+        } else {
+          floatingIcon.setWorkflowProgress({
+            runId: '',
+            status: 'running',
+            percent: 0,
+            finished: 0,
+            total: null,
+            elapsedMs: 0,
+            estimatedTotalMs: null,
+          });
+        }
+      } else {
+        ensureLauncher();
+        refreshTooltipState();
+      }
 
       // Initial pulse after a delay to draw attention
       setTimeout(() => {
@@ -398,6 +471,7 @@ export default defineContentScript({
      */
     function handleStorageChange(changes: { [key: string]: chrome.storage.StorageChange }): void {
       if (STORAGE_KEY_FLOATING_ICON in changes) {
+        if (isAutomationWorkflowTab) return;
         const enabled =
           changes[STORAGE_KEY_FLOATING_ICON].newValue ?? DEFAULT_FLOATING_ICON_ENABLED;
         if (enabled) {
@@ -443,6 +517,11 @@ export default defineContentScript({
             await initFloatingIcon({ force: true });
             if (!floatingIcon) throw new Error('Floating icon is disabled');
             if (!payload || typeof payload.runId !== 'string') return;
+            if (isAutomationWorkflowTab) {
+              launcher?.dispose();
+              launcher = null;
+              floatingIcon.setTooltipState(null);
+            }
             ensureWorkflowControls(payload.runId);
             floatingIcon.setWorkflowProgress(payload);
           } catch (err) {
@@ -455,14 +534,22 @@ export default defineContentScript({
       }
 
       if (msg?.action === 'ruminer_workflow_clear') {
-        try {
-          floatingIcon?.setWorkflowProgress(null);
-          floatingIcon?.setWorkflowControls(null);
-          workflowControlRunId = null;
-        } catch (err) {
-          console.warn('[QuickPanelContentScript] Workflow clear error:', err);
-        }
-        sendResponse({ success: true });
+        void (async () => {
+          try {
+            floatingIcon?.setWorkflowProgress(null);
+            floatingIcon?.setWorkflowControls(null);
+            workflowControlRunId = null;
+            await syncAutomationTabState();
+            if (!isAutomationWorkflowTab && floatingIcon) {
+              ensureLauncher();
+              refreshTooltipState();
+            }
+          } catch (err) {
+            console.warn('[QuickPanelContentScript] Workflow clear error:', err);
+          } finally {
+            sendResponse({ success: true });
+          }
+        })();
         return true;
       }
 

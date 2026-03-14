@@ -42,4 +42,15 @@ describe('ruminer ingest builtin flows', () => {
       }
     }
   });
+
+  it('chatgpt builtin enables early-stop optimization', () => {
+    const flows = collectBuiltins('2026-03-12T00:00:00.000Z');
+    const chatgpt = flows.find((f) => f.id === 'chatgpt.conversation_scan.v1');
+    expect(chatgpt).toBeTruthy();
+    const scan = chatgpt ? findNode(chatgpt, 'ruminer.scan_and_ingest_conversations') : undefined;
+    expect(scan).toBeTruthy();
+    expect((scan!.config as any)?.platform).toBe('chatgpt');
+    expect((scan!.config as any)?.stopAtFirstUnchangedIngested).toBe(true);
+    expect(Number((scan!.config as any)?.digestThrottleMs || 0)).toBeGreaterThanOrEqual(0);
+  });
 });

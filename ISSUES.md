@@ -23,7 +23,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 - [ ] Actions list above floating icon quickly closes when cursor enters the icon from above.
 - [ ] Claude scan and ingest API calls get 403 errors
 - [ ] Claude scan by DOM goes to a new page every time - optimize by utilizing client-side navigation (e.g. clicking the conversation links in sidebar)
-- [ ] ChatGPT scan workflow is not working
+- [ ] ChatGPT scan workflow has long delay after page loading
 
 ## P0 — Broken / Data-loss / Duplicates
 

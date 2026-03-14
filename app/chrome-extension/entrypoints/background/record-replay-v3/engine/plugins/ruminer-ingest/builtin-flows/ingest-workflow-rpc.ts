@@ -20,6 +20,7 @@ import {
 import { emosUpsertMemory, type EmosSingleMessage } from '../emos-client';
 import { sha256Hex } from '../hash';
 import { ensureBuiltinFlows } from './index';
+import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 
 type WorkflowNotifyRequest = {
   type: 'ruminer.workflow.notify';
@@ -46,6 +47,10 @@ type EnqueueRunsRequest = {
 
 export type RuminerEnqueueRunItem = EnqueueRunsRequest['items'][number];
 
+type AutomationTabsGetRequest = {
+  type: 'ruminer.automation_tabs.get';
+};
+
 type IngestConversationRequest = {
   type: 'ruminer.ingest.ingestConversation';
   platform: ChatPlatform;
@@ -66,6 +71,7 @@ type SupportedWorkflowRpcRequest =
   | WorkflowProgressRequest
   | LedgerGetConversationStatesRequest
   | EnqueueRunsRequest
+  | AutomationTabsGetRequest
   | IngestConversationRequest;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -826,11 +832,13 @@ function isSupportedWorkflowRpcRequest(message: unknown): message is SupportedWo
     message.type === 'ruminer.workflow.progress' ||
     message.type === 'ruminer.ledger.getConversationStates' ||
     message.type === 'ruminer.rr_v3.enqueueRuns' ||
+    message.type === 'ruminer.automation_tabs.get' ||
     message.type === 'ruminer.ingest.ingestConversation'
   );
 }
 
 export function initIngestWorkflowRpc(): void {
+  void initAutomationTabsRegistry();
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (!isSupportedWorkflowRpcRequest(message)) {
       return false;
@@ -862,6 +870,25 @@ export function initIngestWorkflowRpc(): void {
 
         case 'ruminer.rr_v3.enqueueRuns':
           return handleEnqueueRuns(req);
+
+        case 'ruminer.automation_tabs.get': {
+          const state = await getAutomationTabStateForSender(sender);
+          if (!state) {
+            return {
+              ok: true,
+              result: { enabled: false, kind: null, runId: null, progress: null },
+            };
+          }
+          return {
+            ok: true,
+            result: {
+              enabled: true,
+              kind: state.kind,
+              runId: state.runId,
+              progress: state.lastProgress,
+            },
+          };
+        }
 
         case 'ruminer.ingest.ingestConversation':
           return handleIngestConversation(req, sender);

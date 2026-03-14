@@ -377,65 +377,84 @@ const FLOATING_ICON_STYLES = /* css */ `
     padding: 10px;
     color: #f5e6d3;
     text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+    transition: opacity 140ms ease, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .floating-icon-progress-time {
-    font-size: 10px;
+  /* On hover, replace progress text with control buttons (inside the icon). */
+  .floating-icon.workflow-active:hover .floating-icon-progress-text {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  .floating-icon-progress-count {
+    font-size: 8px;
     font-weight: 600;
+    margin-bottom: 3px;
     opacity: 0.9;
   }
 
   .floating-icon-progress-percent {
     font-size: 20px;
     font-weight: 800;
-    margin-top: 4px;
     letter-spacing: -0.02em;
   }
 
-  .floating-icon-progress-count {
-    font-size: 10px;
-    font-weight: 600;
-    margin-top: 4px;
+  .floating-icon-progress-time {
+    font-size: 7px;
+    font-weight: 500;
+    margin-top: 3px;
     opacity: 0.9;
   }
 
   /* Workflow hover controls */
   .floating-icon-workflow-controls {
     position: absolute;
-    bottom: calc(100% + 12px);
-    right: 0;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.92);
     display: none;
-    gap: 8px;
+    gap: 4px;
     align-items: center;
-    padding: 8px;
-    border-radius: 999px;
-    background: rgba(30, 27, 24, 0.9);
-    border: 1px solid rgba(255, 200, 100, 0.18);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-    pointer-events: auto;
+    justify-content: center;
+    padding: 0px;
+    border-radius: 0px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    pointer-events: none;
+    opacity: 0;
+    transition:
+      opacity 140ms ease,
+      transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .floating-icon.workflow-active:hover .floating-icon-workflow-controls {
+  .floating-icon.workflow-active .floating-icon-workflow-controls {
     display: flex;
   }
 
+  .floating-icon.workflow-active:hover .floating-icon-workflow-controls {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+  }
+
   .floating-icon-workflow-button {
-    width: 34px;
-    height: 34px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 200, 100, 0.16);
-    background: linear-gradient(145deg, rgba(50, 45, 40, 0.95), rgba(30, 27, 24, 0.95));
-    color: #e5a93d;
+    width: 24px;
+    height: 24px;
+    border-radius: 99px;
+    border: 1px solid currentColor;
+    background: transparent;
+    --ruminer-workflow-icon-size: 20px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
   }
 
   .floating-icon-workflow-button:hover {
     transform: translateY(-1px);
-    border-color: rgba(229, 169, 61, 0.45);
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
   }
 
   .floating-icon-workflow-button:active {
@@ -448,13 +467,22 @@ const FLOATING_ICON_STYLES = /* css */ `
   }
 
   .floating-icon-workflow-button svg {
-    width: 18px;
-    height: 18px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    width: var(--ruminer-workflow-icon-size);
+    height: var(--ruminer-workflow-icon-size);
+    fill: currentColor;
+    display: block;
+  }
+
+  .floating-icon-workflow-button[data-mode='pause'] {
+    color: #e5a93d;
+  }
+
+  .floating-icon-workflow-button[data-mode='resume'] {
+    color: #22c55e;
+  }
+
+  .floating-icon-workflow-button[data-mode='stop'] {
+    color: #ef4444;
   }
 
   .cow-dark-hole {
@@ -734,7 +762,7 @@ const FLOATING_ICON_STYLES = /* css */ `
 
   .floating-icon-tooltip-action--persist[data-enabled='true'] {
     /* Only change icon color when enabled */
-    --ruminer-action-icon: rgb(98, 237, 64);
+    --ruminer-action-icon: rgb(84, 254, 41);
   }
 
   .floating-icon-tooltip-action--new {
@@ -1190,9 +1218,9 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
         </svg>
       </div>
       <div class="floating-icon-progress-text" aria-hidden="true">
-        <div class="floating-icon-progress-time"></div>
-        <div class="floating-icon-progress-percent"></div>
-        <div class="floating-icon-progress-count"></div>
+      <div class="floating-icon-progress-count"></div>
+      <div class="floating-icon-progress-percent"></div>
+      <div class="floating-icon-progress-time"></div>
       </div>
     `;
 
@@ -1431,6 +1459,8 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
   function setWorkflowProgress(progress: FloatingIconWorkflowProgress | null): void {
     workflowProgress = progress;
+    // Workflow progress overlay is a dedicated mode: suppress hover tooltip while active.
+    if (workflowProgress) setTooltipOpen(false);
     updateWorkflowUi();
   }
 
@@ -1440,9 +1470,11 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   }
 
   function setTooltipOpen(next: boolean): void {
-    tooltipOpen = next;
-
     if (!tooltipElement || !iconElement) return;
+    // While workflow progress is active, keep tooltip closed.
+    if (workflowProgress && next) next = false;
+
+    tooltipOpen = next;
 
     if (tooltipAnimationTimer) clearTimeout(tooltipAnimationTimer);
     tooltipAnimationTimer = null;
@@ -1516,9 +1548,12 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   }
 
   function bindTooltipHoverRetention(): void {
-    if (!iconElement || !tooltipElement) return;
+    const icon = iconElement;
+    const tooltip = tooltipElement;
+    if (!icon || !tooltip) return;
 
-    iconElement.addEventListener('pointerenter', () => {
+    icon.addEventListener('pointerenter', () => {
+      if (workflowProgress) return;
       if (tooltipCloseTimer) {
         clearTimeout(tooltipCloseTimer);
         tooltipCloseTimer = null;
@@ -1526,13 +1561,13 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
       setTooltipOpen(true);
     });
 
-    iconElement.addEventListener('pointerleave', (e: PointerEvent) => {
+    icon.addEventListener('pointerleave', (e: PointerEvent) => {
       const related = e.relatedTarget as Node | null;
-      if (related && tooltipElement.contains(related)) return;
+      if (related && tooltip.contains(related)) return;
       scheduleTooltipClose();
     });
 
-    tooltipElement.addEventListener('pointerenter', (e) => {
+    tooltip.addEventListener('pointerenter', (e) => {
       e.stopPropagation();
       if (tooltipCloseTimer) {
         clearTimeout(tooltipCloseTimer);
@@ -1541,9 +1576,9 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
       setTooltipOpen(true);
     });
 
-    tooltipElement.addEventListener('pointerleave', (e: PointerEvent) => {
+    tooltip.addEventListener('pointerleave', (e: PointerEvent) => {
       const related = e.relatedTarget as Node | null;
-      if (related && iconElement.contains(related)) return;
+      if (related && icon.contains(related)) return;
       scheduleTooltipClose();
     });
   }
@@ -1654,28 +1689,29 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
     const playSvg = /* html */ `
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        <path d="M7 5v14l12-7L7 5z"></path>
       </svg>
     `;
     const pauseSvg = /* html */ `
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <rect x="6" y="4" width="4" height="16"></rect>
-        <rect x="14" y="4" width="4" height="16"></rect>
+        <path d="M6 5h5v14H6V5zm7 0h5v14h-5V5z"></path>
       </svg>
     `;
     const stopSvg = /* html */ `
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        <path d="M5 5h14v14H5V5z"></path>
       </svg>
     `;
 
     if (pauseResumeButton) {
+      pauseResumeButton.dataset.mode = p.status === 'paused' ? 'resume' : 'pause';
       pauseResumeButton.innerHTML = p.status === 'paused' ? playSvg : pauseSvg;
       pauseResumeButton.disabled =
         p.status === 'paused' ? !workflowControls?.onResume : !workflowControls?.onPause;
     }
 
     if (stopButton) {
+      stopButton.dataset.mode = 'stop';
       stopButton.innerHTML = stopSvg;
       stopButton.disabled = !workflowControls?.onStop;
     }

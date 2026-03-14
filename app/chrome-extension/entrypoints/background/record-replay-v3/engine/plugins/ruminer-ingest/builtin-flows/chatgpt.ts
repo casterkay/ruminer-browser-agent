@@ -41,6 +41,8 @@ export function createChatgptBuiltinFlows(nowIso: string): FlowV3[] {
       config: {
         platform: 'chatgpt',
         limit: 100,
+        stopAtFirstUnchangedIngested: true,
+        digestThrottleMs: 150,
       },
       ui: { x: 0, y: 0 },
     },
