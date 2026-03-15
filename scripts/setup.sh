@@ -196,6 +196,16 @@ install_openclaw_plugins() {
   log "OpenClaw plugins installed/enabled + configured (best-effort)."
 }
 
+install_mcp_to_claude() {
+  require_cmd claude
+  claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp || true
+}
+
+install_mcp_to_codex() {
+  require_cmd codex
+  codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp || true
+}
+
 build_extension() {
   require_cmd pnpm
   log "Building Chrome extension (app/chrome-extension)..."
@@ -270,20 +280,11 @@ main() {
     install_openclaw_plugins
   fi
 
+  install_mcp_to_claude || log "Claude Code CLI not found; skipping MCP config for Claude Code."
+  install_mcp_to_codex || log "Codex CLI not found; skipping MCP config for Codex."
+
   log ""
-  log "Next steps:"
-  log "1) Load the extension in chrome://extensions (Developer mode → Load unpacked):"
-  log "   ${ROOT_DIR}/app/chrome-extension/.output/chrome-mv3"
-  log "2) Open the Ruminer sidepanel to start the native host + MCP server."
-  log "3) Sanity test:"
-  log "   - From OpenClaw: call tool get_windows_and_tabs"
-  log "   - From an MCP client: connect to ${RUMINER_MCP_URL} and call get_windows_and_tabs"
-  log ""
-  log "Dev extension ID (allowlisted for native messaging):"
-  log "  ${RUMINER_EXTENSION_ID}"
-  log ""
-  log "MCP endpoint:"
-  log "  ${RUMINER_MCP_URL}"
+  log "Setup complete!"
 }
 
 main "$@"

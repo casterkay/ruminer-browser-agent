@@ -1,5 +1,7 @@
 # Ruminer Browser Agent
 
+[Demo video coming soon!] [Landing page coming soon!]
+
 **The AI agent you love with centralized memory integrating from all your AI chat platforms.**
 
 - Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
@@ -14,46 +16,60 @@
 
 ![Workflow View](assets/screenshots/workflow-view.png)
 
-## Quick links
-
-- Quickstart (dev + smoke): `specs/001-ruminer-browser-agent/quickstart.md`
-- MCP client setup (Codex CLI / Claude Code): `docs/mcp-cli-config.md`
-- Blueprint (architecture + product intent): `.specify/memory/blueprint.md`
-- Feature spec (requirements + scenarios): `specs/001-ruminer-browser-agent/spec.md`
-
-## What it is (today)
+## What it is
 
 Ruminer has three user-facing pillars in one Chrome extension:
 
 1. **Chat tab**: a sidepanel chat UI that connects to OpenClaw Gateway (`chat.*`) via the native server.
 2. **Memory tab**: browse/search your EverMemOS knowledge base (when configured).
-3. **Workflows tab**: run and schedule ingestion workflows (RR‑V3) to import AI chat histories into EverMemOS.
+3. **Workflows tab**: run and schedule ingestion workflows to import AI chat histories into EverMemOS.
 
-It also exposes **browser automation tools over MCP** so other clients (Codex CLI, Claude Code, OpenClaw via `mcp-client`) can control your real Chrome session.
+It also exposes **browser automation tools over MCP** so other clients (Codex CLI, Claude Code, OpenClaw with `mcp-client` plugin) can control your real Chrome session.
 
-## How it works (mental model)
+## System architecture
 
-```text
-MCP clients (Codex / Claude Code / OpenClaw mcp-client)
-            |
-            | Streamable HTTP MCP
-            v
-Ruminer Native Server (http://127.0.0.1:12306/mcp)
-            |
-            | Native Messaging
-            v
-Chrome Extension (MV3 background SW) -> Chrome APIs (tabs, scripting, debugger, ...)
+```mermaid
+flowchart TB
+    subgraph MCP_Clients[MCP Clients]
+        Codex[Codex CLI]
+        ClaudeCode[Claude Code]
+        OpenClawPlugin[OpenClaw mcp-client]
+    end
 
-Sidepanel Chat UI -> Native Server -> OpenClaw Gateway (ws://127.0.0.1:18789)
-Workflows (RR‑V3) ---------------> EverMemOS API (direct, from extension)
+    subgraph OpenClaw[OpenClaw Gateway]
+        Gateway[ws://127.0.0.1:18789]
+    end
+
+    subgraph Ruminer[Ruminer Stack]
+        NativeServer[Native Server<br/>http://127.0.0.1:12306/mcp]
+        Extension[Chrome Extension<br/>Service Worker]
+        Sidepanel[Side-panel UI]
+        Workflows[Workflows]
+    end
+
+    subgraph Chrome[Chrome Browser]
+        APIs[Chrome APIs<br/>tabs, scripting, debugger]
+    end
+
+    subgraph Memory[EverMemOS]
+        EMOS[Memory API]
+    end
+
+    MCP_Clients -->|"Streamable HTTP MCP"| NativeServer
+    NativeServer -->|"Native Messaging"| Extension
+    Extension --> APIs
+
+    Sidepanel -->|"Chat"| NativeServer
+    NativeServer -->|"WebSocket"| Gateway
+
+    Workflows -->|"Direct API"| EMOS
 ```
 
 ### Glossary
 
 - **OpenClaw Gateway**: local control plane for chat + tool runtime (Ruminer sidepanel chat talks to it).
 - **MCP**: Model Context Protocol; here it’s the standard interface your clients use to call browser tools.
-- **EverMemOS (EMOS)**: long‑term memory system where Ruminer can search and ingest conversations.
-- **RR‑V3**: Ruminer’s workflow runtime (queue + leasing) built for MV3 reliability.
+- **EverMemOS**: long‑term agent memory system where Ruminer can search and ingest messages.
 
 ## Getting started (local dev install)
 
@@ -66,9 +82,9 @@ Workflows (RR‑V3) ---------------> EverMemOS API (direct, from extension)
   - `openclaw` CLI (for sidepanel chat + plugin routing)
   - EverMemOS base URL + API key (for memory + ingestion)
 
-### 1) One‑shot setup (recommended)
+### 1) Quick Setup
 
-From the repo root:
+From the repo root, run:
 
 ```bash
 bash scripts/setup.sh
@@ -82,7 +98,7 @@ What it does (high level):
 - Registers the Native Messaging host allowlisted to your derived extension ID
 - Best‑effort installs/enables OpenClaw plugins + writes config (when `openclaw` CLI is available)
 
-### 2) Load the extension (manual)
+### 2) Load the extension
 
 Chrome does not allow “Load unpacked” via script.
 
@@ -92,84 +108,31 @@ Chrome does not allow “Load unpacked” via script.
 4. Select:
    - `app/chrome-extension/.output/chrome-mv3`
 
-### 3) Start OpenClaw Gateway (for sidepanel chat)
+### 3) Configure the extension
 
-Run locally (the extension expects port `18789` by default):
-
-```bash
-openclaw gateway run --port 18789 --force
-```
-
-If you use a custom OpenClaw profile, pass `--profile <name>` consistently to both `openclaw gateway ...`
-and any `openclaw config ...` commands.
-
-### 4) Configure the extension (Options / Settings)
-
-In Ruminer Settings:
+In the Settings tab in Ruminer side panel:
 
 - **OpenClaw Gateway**
   - WS URL: `ws://127.0.0.1:18789`
-  - Token: your Gateway token (if your Gateway requires one)
+  - Token: your Gateway token
 - **EverMemOS**
-  - Base URL + API key (+ tenant/space if your EMOS deployment requires it)
-
-Expected behavior when components are missing:
-
-- Without **EverMemOS**: sidepanel chat still works, but no live memory suggestions; workflows that ingest are disabled.
-- Without **OpenClaw**: the UI still renders, workflows can still ingest via direct EMOS client, but chat is unavailable.
-
-### 5) Configure MCP clients (automation tools)
-
-See `docs/mcp-cli-config.md` for details.
-
-- Codex CLI:
-  - `codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp`
-- Claude Code:
-  - `claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp`
-
-OpenClaw uses the `mcp-client` plugin to route tool calls to Ruminer’s MCP endpoint. The setup script
-attempts to configure this automatically when `openclaw` is installed.
+  - Base URL + API key (+ tenant/space if your EverMemOS deployment requires it)
 
 ## Verify it works (smoke checks)
 
-1. **MCP tool check** (from Codex CLI / Claude Code):
-   - Call `get_windows_and_tabs`
-2. **Sidepanel chat** (requires OpenClaw Gateway):
-   - Open sidepanel → Chat → send a message → see tool calls render inline
-3. **Memory suggestions** (requires EMOS configured):
-   - Type ≥ 3 characters → see debounced suggestions appear quickly
-4. **Workflows** (requires EMOS configured):
+1. **MCP tool check**:
+   - Ask the agent to call a tool (e.g. "List the current tab titles in my browser") in CLI.
+2. **Side panel chat**:
+   - Open Ruminer side panel → Chat → send a message → see tool calls render inline
+3. **Memory suggestions** (requires EverMemOS configured):
+   - Type ≥ 3 characters in message input box → see debounced suggestions appear quickly
+4. **Workflows** (requires EverMemOS configured):
    - Open Workflows tab → run a built‑in workflow → re-run should not duplicate (ledger + stable IDs)
 
-## Safety & permissions (tool groups)
+## Browser tools permissions
 
-Ruminer groups browser tools by side‑effect level: **Observe / Navigate / Interact / Execute / Workflow**.
-You can toggle groups (and sometimes individual tools) in the sidepanel to control what the agent can do.
-
-Disabled tools are enforced in two places:
-
-- **Prompt-layer**: the chat request includes a restriction prompt listing disabled tools.
-- **Runtime-layer**: attempts to call a disabled tool are rejected with a clear error.
-
-## Workflows (RR‑V3) & ingestion
-
-- Ruminer’s ingestion workflows are designed to be **idempotent**: reruns should not create duplicates.
-- Scheduling is **best-effort while the browser is running** (MV3 cannot reliably wake a fully closed Chrome).
-- MVP scope is **AI chat platforms only** (ChatGPT first, then Gemini / Claude / DeepSeek).
-
-## FAQ
-
-**Do I need OpenClaw?**
-Yes for sidepanel chat. Workflows can ingest via direct EMOS client without OpenClaw.
-
-**Do I need EverMemOS?**
-For memory search and ingestion workflows, yes. Chat can still work without it.
-
-**Why a Chrome extension instead of Playwright?**
-Ruminer automates your real, already‑logged‑in browser with your existing profile and state.
-
-**Is anything exposed to the network?**
-Ruminer’s endpoints are intended to be localhost-only by default.
+Ruminer divides browser tools into 5 groups: **Observe / Navigate / Interact / Execute / Workflow**.
+You can toggle groups (and also individual tools) in the message input box to control what tools the agent can use.
 
 ## Developer notes (repo shape)
 
@@ -185,16 +148,6 @@ Typical dev loop:
 pnpm install
 pnpm run dev
 ```
-
-## Legacy docs notice
-
-This codebase is derived from a mature upstream (`mcp-chrome`). Some legacy files may be incomplete or
-out-of-date for Ruminer’s current architecture/product (for example: `README_zh.md`, `docs/ARCHITECTURE.md`,
-`docs/TOOLS.md`). When in doubt, treat:
-
-- `README.md` + `specs/001-ruminer-browser-agent/*` + `.specify/memory/blueprint.md`
-
-as the canonical sources of truth.
 
 ## License
 
