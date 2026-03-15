@@ -1,15 +1,16 @@
 # Ruminer Browser Agent
 
-Turn your everyday Chrome into a **sidepanel-first browser agent**:
+**The AI agent you love with centralized memory integrating from all your AI chat platforms.**
 
-- **Chat** in the sidepanel via **OpenClaw Gateway** (localhost WebSocket)
-- Expose Chrome automation as a **local MCP server** (`http://127.0.0.1:12306/mcp`)
-- **EverMemOS (EMOS)** integration for memory search + ingestion
-- **RR‑V3 workflows** that survive MV3 service worker restarts
+- Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
+- Your user credentials on these platforms stay secure in your own browser, never uploaded to cloud.
+- Freely choose your agent engine with browser automation capabilities: OpenClaw, Claude Code, or Codex.
+- Make your agent understand you deeply via RAG from your centralized EverMemOS memory store.
+- Seamlessly integrated into your Chrome browser with beautiful UI.
 
-> This repo is a **pnpm monorepo** and is **not installable as a single npm package** (legacy `mcp-chrome` docs may suggest otherwise).
+![Chat Sessions View](assets/screenshots/chat-sessions-view.png)
 
-![Ruminer Browser Agent sidepanel](assets/screenshots/hero-sidepanel.png)
+![Workflow View](assets/screenshots/workflow-view.png)
 
 ## Quick links
 

@@ -77,47 +77,6 @@ About the React error #418 you saw in the page console
 
 ———
 
-## Gemini: ends with “Conversation has no extractable
-
-messages”
-
-You’re failing here in the scan node (not ingest), when
-it tries to compute a digest for an existing ledger
-entry and gets messages.length === 0.
-
-There are 3 likely causes, all consistent with the
-current code:
-
-1. DOM extractor mismatch / Shadow DOM / structural
-   drift
-   - app/chrome-extension/inject-scripts/
-     ruminer.gemini-scan.js extracts using the legacy
-     Gemini/Bard structure (#chat-
-     history, .conversation-container, user-query,
-     model-response, etc.). If Gemini moved content
-     behind different nodes or shadow roots,
-     querySelectorAll(...) can return 0 even though the
-     page visually has messages.
-2. Conversation truly has 0 turns (empty chat)
-   - The scan pipeline treats “0 messages” as fatal for
-     existing ledger entries. If Gemini can create a
-     conversation stub with no messages, this will
-     reliably kill the scan.
-3. Timing/readiness gap
-   - getConversationMessages() navigates then only
-     await sleep(400) before attempting scroll/extract.
-     On SPAs, it’s easy to land on the right URL (your
-     diagnostics href is correct) but still have the
-     transcript not populated yet.
-
-Also note: your diagnostics dom.ready.\* is based on
-#chat-history / chat-history selectors inside
-collectDomDiagnostics(...) in scan-and-ingest-all.ts,
-which is Gemini-centric and doesn’t actually verify
-“messages exist”.
-
-———
-
 ## Claude: ends with “Conversation has no extractable
 
 messages”, diagnostics show href=https://claude.ai/new
