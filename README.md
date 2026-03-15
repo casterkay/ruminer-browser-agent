@@ -140,20 +140,13 @@ In the `Settings` tab in Ruminer side panel:
 4. **Workflows** (requires EverMemOS configured):
    - Open Workflows tab → run a built‑in workflow → re-run should not duplicate (ledger + stable IDs)
 
-## Developer notes (repo shape)
+## Developer Notes
 
 This is a pnpm workspace with key packages:
 
 - `app/chrome-extension`: MV3 extension (Vue 3 + WXT + Tailwind)
 - `app/native-server`: Fastify server + Native Messaging host + MCP transport
 - `packages/shared`: shared types + tool schemas
-
-Typical dev loop:
-
-```bash
-pnpm install
-pnpm run dev
-```
 
 ## License
 
