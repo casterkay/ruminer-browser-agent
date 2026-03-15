@@ -8,7 +8,9 @@
 - Make your agent understand you deeply via RAG from your centralized EverMemOS memory store.
 - Seamlessly integrated into your Chrome browser with beautiful UI.
 
-![Chat Sessions View](assets/screenshots/chat-sessions-view.png)
+![Chat Session](assets/screenshots/chat-session.png)
+
+![Memory View](assets/screenshots/memory-view.png)
 
 ![Workflow View](assets/screenshots/workflow-view.png)
 
