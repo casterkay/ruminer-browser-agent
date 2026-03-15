@@ -2,7 +2,7 @@
 
 [Demo video coming soon!] [Landing page coming soon!]
 
-**The AI agent you love with centralized memory integrating from all your AI chat platforms.**
+**The AI agent you love with central long-term memory integrating from all your AI chat platforms.**
 
 - Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
 - Your user credentials on these platforms stay secure in your own browser, never uploaded to cloud.
