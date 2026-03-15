@@ -6,8 +6,8 @@
 
 - Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
 - Your user credentials on these platforms stay secure in your own browser, never uploaded to cloud.
-- Freely choose your CLI agent engines: OpenClaw, Claude Code, or Codex.
-- Make your agent understand you deeply via RAG from your centralized EverMemOS memory store.
+- Freely choose your AI agent backend: OpenClaw, Claude Code, or Codex.
+- Make your agent understand you deeply and faithfully via RAG from your centralized EverMemOS memory store.
 - Seamlessly integrated into your Chrome browser with beautiful UI and powerful automation.
 
 ![Chat Session](assets/screenshots/chat-session.png)
