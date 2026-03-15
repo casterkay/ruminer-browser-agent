@@ -1034,12 +1034,15 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let stopButton: HTMLButtonElement | null = null;
 
   let isVisible = false;
+  let isHiding = false;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let isDragging = false;
   let hasDragged = false;
   let dragStartX = 0;
   let dragStartY = 0;
   let currentBottom = options.initialBottom ?? 24;
   let currentRight = options.initialRight ?? 24;
+  let hostObserver: MutationObserver | null = null;
 
   // Try to load saved position
   const savedPosition = loadSavedPosition();
@@ -1669,16 +1672,23 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     iconElement.classList.add('workflow-active');
 
     const pct = Math.max(0, Math.min(100, Math.floor(p.percent)));
-    const totalCountText = p.total === null ? '--' : String(Math.max(0, Math.floor(p.total)));
-    const finishedText = String(Math.max(0, Math.floor(p.finished)));
+    const finishedCount = Math.max(0, Math.floor(p.finished));
+    const totalCount = p.total === null ? null : Math.max(0, Math.floor(p.total));
+    const remainingCountText =
+      totalCount === null ? '--' : String(Math.max(0, Math.floor(totalCount - finishedCount)));
+    const finishedText = String(finishedCount);
     const elapsedText = formatDurationShort(p.elapsedMs);
-    const totalTimeText =
-      p.estimatedTotalMs === null ? '--:--' : formatDurationShort(p.estimatedTotalMs);
+    const remainingMs =
+      p.estimatedTotalMs === null
+        ? null
+        : Math.max(0, Math.floor(p.estimatedTotalMs - p.elapsedMs));
+    const remainingTimeText = remainingMs === null ? '--:--' : formatDurationShort(remainingMs);
 
-    if (progressTimeElement) progressTimeElement.textContent = `${elapsedText}/${totalTimeText}`;
+    if (progressTimeElement)
+      progressTimeElement.textContent = `${elapsedText}-${remainingTimeText}`;
     if (progressPercentElement) progressPercentElement.textContent = `${pct}%`;
     if (progressCountElement)
-      progressCountElement.textContent = `${finishedText}/${totalCountText}`;
+      progressCountElement.textContent = `${finishedText}-${remainingCountText}`;
 
     if (progressRingFg) {
       const r = 44;
@@ -1732,6 +1742,43 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     }, 500);
   }
 
+  function resolveHostMountRoot(): HTMLElement {
+    // Prefer <html> to avoid interfering with apps that treat <body> as the React root (hydration).
+    return document.documentElement || document.body;
+  }
+
+  function ensureHostAttached(): void {
+    if (!hostElement) return;
+    const root = resolveHostMountRoot();
+    if (hostElement.isConnected && root.contains(hostElement)) return;
+    try {
+      root.appendChild(hostElement);
+    } catch {
+      try {
+        document.body?.appendChild(hostElement);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function ensureHostObserver(): void {
+    if (hostObserver) return;
+    if (!hostElement) return;
+    hostObserver = new MutationObserver(() => {
+      if (!isVisible) return;
+      if (isHiding) return;
+      if (!hostElement) return;
+      if (hostElement.isConnected) return;
+      ensureHostAttached();
+    });
+    try {
+      hostObserver.observe(document, { childList: true, subtree: true });
+    } catch {
+      // ignore
+    }
+  }
+
   /**
    * Show the floating icon
    */
@@ -1741,7 +1788,15 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     createShadowDOM();
 
     if (hostElement) {
-      document.body.appendChild(hostElement);
+      isHiding = false;
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+      iconElement?.classList.remove('exiting');
+      iconElement?.classList.add('entering');
+      ensureHostAttached();
+      ensureHostObserver();
       isVisible = true;
     }
   }
@@ -1755,9 +1810,13 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     iconElement.classList.remove('breathing');
     iconElement.classList.add('exiting');
 
-    setTimeout(() => {
+    isHiding = true;
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
       hostElement?.remove();
       isVisible = false;
+      isHiding = false;
     }, 300);
   }
 
@@ -1825,6 +1884,17 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
    * Dispose and cleanup
    */
   function dispose(): void {
+    if (hostObserver) {
+      try {
+        hostObserver.disconnect();
+      } catch {
+        // ignore
+      }
+      hostObserver = null;
+    }
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = null;
+    isHiding = false;
     if (hostElement) {
       hostElement.remove();
       hostElement = null;

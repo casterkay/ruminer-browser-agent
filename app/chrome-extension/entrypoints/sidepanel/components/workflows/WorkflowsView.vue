@@ -609,67 +609,73 @@
 
             <!-- Scanner result -->
             <div v-else-if="isScannerResult" class="space-y-3">
-              <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">
-                Conversations ({{ resultModalScannerConversations.length }})
+              <div class="rounded-lg p-3 border" :style="sectionStyle">
+                <div class="text-sm font-medium" :style="{ color: 'var(--ac-text)' }">Summary</div>
+                <div class="text-xs mt-1" :style="{ color: 'var(--ac-text-muted)' }">
+                  Scanned: {{ resultModalScannerOutputs?.scanned ?? '—' }} • Ingested:
+                  {{ resultModalScannerOutputs?.ingested ?? '—' }} • Skipped:
+                  {{ resultModalScannerOutputs?.skipped ?? '—' }} • Failed:
+                  {{ resultModalScannerOutputs?.failed ?? '—' }}
+                </div>
+                <div
+                  v-if="resultModalScannerOutputs?.aborted === true"
+                  class="mt-2 text-xs px-2 py-1 rounded"
+                  :style="{
+                    backgroundColor: 'var(--ac-warning-light, #fef3c7)',
+                    color: 'var(--ac-warning, #d97706)',
+                  }"
+                >
+                  Aborted by user.
+                </div>
               </div>
 
               <div
-                v-if="resultModalScannerConversations.length === 0"
-                class="text-xs"
-                :style="{ color: 'var(--ac-text-muted)' }"
+                v-for="conv in resultModalScannerConversations"
+                :key="conv.sessionId"
+                class="flex items-center justify-between gap-3 p-3 rounded-lg border"
+                :style="{
+                  borderColor: 'var(--ac-border)',
+                  backgroundColor: 'var(--ac-surface)',
+                }"
               >
-                No enqueued conversations found in progress events.
-              </div>
-
-              <div v-else class="space-y-2">
-                <div
-                  v-for="conv in resultModalScannerConversations"
-                  :key="conv.sessionId"
-                  class="flex items-center justify-between gap-3 p-3 rounded-lg border"
-                  :style="{
-                    borderColor: 'var(--ac-border)',
-                    backgroundColor: 'var(--ac-surface)',
-                  }"
-                >
-                  <div class="min-w-0">
-                    <div class="text-sm truncate" :style="{ color: 'var(--ac-text)' }">
-                      {{ conv.title || conv.conversationId || conv.sessionId }}
-                    </div>
-                    <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
-                      <span v-if="conv.platform">{{ conv.platform }} • </span>
-                      <span
-                        >{{
-                          sessionSummariesById[conv.sessionId]?.messageCount ?? '—'
-                        }}
-                        messages</span
-                      >
-                      <span class="mx-1">•</span>
-                      <span>{{
-                        sessionSummariesById[conv.sessionId]?.exists ? 'Saved' : 'Pending'
-                      }}</span>
-                    </div>
-                    <div v-if="conv.url" class="mt-1">
-                      <button
-                        class="text-xs px-2 py-1 rounded"
-                        :style="queueButtonStyle"
-                        @click="openRunUrl(String(conv.url))"
-                        title="Open source page"
-                      >
-                        Open source page
-                      </button>
-                    </div>
+                <div class="min-w-0">
+                  <div class="text-sm truncate" :style="{ color: 'var(--ac-text)' }">
+                    {{ conv.title || conv.conversationId || conv.sessionId }}
                   </div>
-
-                  <button
-                    class="text-xs px-2 py-1 rounded flex-shrink-0"
-                    :style="newButtonStyle"
-                    :disabled="sessionSummariesById[conv.sessionId]?.exists !== true"
-                    @click="openChatSessionById(conv.sessionId)"
-                    title="Open saved session in Chat"
-                  >
-                    Open in Chat
-                  </button>
+                  <div class="text-xs mt-0.5" :style="{ color: 'var(--ac-text-subtle)' }">
+                    <span v-if="conv.platform">{{ conv.platform }} • </span>
+                    <span
+                      >{{
+                        sessionSummariesById[conv.sessionId]?.messageCount ?? '—'
+                      }}
+                      messages</span
+                    >
+                    <span class="mx-1">•</span>
+                    <span>{{
+                      sessionSummariesById[conv.sessionId]?.exists ? 'Saved' : 'Pending'
+                    }}</span>
+                  </div>
+                  <div v-if="conv.url" class="mt-1">
+                    <button
+                      class="text-xs px-2 py-1 rounded"
+                      :style="queueButtonStyle"
+                      @click="openRunUrl(String(conv.url))"
+                      title="Open source page"
+                    >
+                      Open source page
+                    </button>
+                  </div>
                 </div>
+
+                <button
+                  class="text-xs px-2 py-1 rounded flex-shrink-0"
+                  :style="newButtonStyle"
+                  :disabled="sessionSummariesById[conv.sessionId]?.exists !== true"
+                  @click="openChatSessionById(conv.sessionId)"
+                  title="Open saved session in Chat"
+                >
+                  Open in Chat
+                </button>
               </div>
             </div>
 
@@ -1401,6 +1407,29 @@ function extractScannerConversations(events: any[]): ScannerConversationLite[] {
 const resultModalScannerConversations = computed(() =>
   extractScannerConversations(resultModalEvents.value),
 );
+
+function findLatestRunSucceededOutputs(events: any[]): Record<string, unknown> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (String(e?.type || '') !== 'run.succeeded') continue;
+    const outputs = (e as any)?.outputs;
+    if (isPlainRecord(outputs)) return outputs as Record<string, unknown>;
+  }
+  return null;
+}
+
+const resultModalScannerOutputs = computed<Record<string, any> | null>(() => {
+  if (!isScannerResult.value) return null;
+  const out = findLatestRunSucceededOutputs(resultModalEvents.value);
+  if (!out) return null;
+  return {
+    scanned: typeof (out as any).scanned === 'number' ? (out as any).scanned : null,
+    ingested: typeof (out as any).ingested === 'number' ? (out as any).ingested : null,
+    skipped: typeof (out as any).skipped === 'number' ? (out as any).skipped : null,
+    failed: typeof (out as any).failed === 'number' ? (out as any).failed : null,
+    aborted: (out as any).aborted === true,
+  };
+});
 
 const resultModalIngest = computed<any | null>(() =>
   findLatestIngestResult(resultModalEvents.value),

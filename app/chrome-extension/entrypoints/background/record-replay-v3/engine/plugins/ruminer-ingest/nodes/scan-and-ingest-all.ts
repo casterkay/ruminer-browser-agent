@@ -24,19 +24,23 @@ import {
 import { toErrorResult } from '../utils';
 
 /**
- * Workflow procedure (scan + ingest, fail-fast):
+ * Workflow procedure (scan → ingest, fail-fast):
  *
  * - Load the entire conversation ledger into memory.
- * - Scan newest → oldest:
- *   - Extract + normalize the full message list for each conversation.
- *   - Compute a single digest for the whole message list.
- *   - Stop scanning at the first conversation where `status='ingested'` and `ledger.digest === computedDigest`.
- *   - Keep earlier conversations (messages + digest) in memory only; do not mutate the ledger during scanning.
- * - Ingest oldest → newest among the scanned conversations:
- *   - If digest matches ledger, skip ingestion.
- *   - Otherwise ingest (best-effort suffix optimization via prefix digest + count).
- *   - After each conversation: upsert ledger `status='ingested'` + digest/count; on failure upsert `status='failed'`
- *     (preserving previous digest/count) and fail the workflow run immediately.
+ * - Scan newest → oldest (build a "to-process" list without mutating the ledger):
+ *   - For new conversations (not in ledger): add to `scanned` immediately without fetching messages/digest.
+ *   - For existing conversations: fetch messages + compute digest and stop scanning at the first conversation where
+ *     `status='ingested'` and `ledger.digest === computedDigest`. If stop criterion isn't met, keep messages+digest
+ *     snapshot in `scanned` (to avoid re-fetching during ingest).
+ * - Ingest phase processes `scanned` in reverse order (oldest → newest):
+ *   - Only fetch messages + compute digest if not already cached in `scanned`.
+ *   - If digest mismatches ledger (or ledger missing), run ingestion (EMOS + local session upserts).
+ *   - Always upsert ledger `status='ingested'` + digest/count after processing. On ingestion failure, upsert
+ *     `status='failed'` (preserving previous digest/count) and fail the workflow run immediately.
+ *
+ * Progress semantics:
+ * - Scan phase: `finished=0`, `total=scanned.length` (total grows, finished fixed).
+ * - Ingest phase: `finished=processedCount`, `total=scanned.length` (total fixed, finished grows).
  */
 const scanAndIngestConfigSchema = z.object({
   platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
@@ -69,9 +73,11 @@ type ScannedConversation = {
   conversationId: string;
   conversationUrl: string;
   conversationTitle: string | null;
-  messages: ConversationMessage[];
-  digest: string;
-  messageCount: number;
+  snapshot?: {
+    messages: ConversationMessage[];
+    digest: string;
+    messageCount: number;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,6 +164,75 @@ function scanScriptPath(platform: ChatPlatform): string {
 function scanExecutionWorld(): chrome.scripting.ExecutionWorld {
   // Uses chrome.tabs.sendMessage RPC; injected script must run in ISOLATED world.
   return 'ISOLATED';
+}
+
+type DomDiagnostics = {
+  href: string | null;
+  title: string | null;
+  ready: {
+    chatHistory: boolean;
+    transcriptRoot: boolean;
+  };
+  counts: {
+    anchors: number;
+    buttons: number;
+    forms: number;
+  };
+  hrefSamples: string[];
+};
+
+async function collectDomDiagnostics(tabId: number): Promise<DomDiagnostics | null> {
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      world: scanExecutionWorld(),
+      func: () => {
+        const uniq = <T>(arr: T[]) => Array.from(new Set(arr));
+        const anchors = Array.from(document.querySelectorAll('a[href]'))
+          .map((a) => String(a.getAttribute('href') || '').trim())
+          .filter(Boolean);
+
+        const hrefSamples = uniq(anchors)
+          .filter((h) => {
+            // Prefer links that look like app routes rather than externals.
+            if (h.startsWith('http:') || h.startsWith('https:')) {
+              try {
+                return new URL(h).hostname === location.hostname;
+              } catch {
+                return false;
+              }
+            }
+            return h.startsWith('/') || h.startsWith('#') || h.startsWith('?') || h.startsWith('.');
+          })
+          .slice(0, 30);
+
+        return {
+          href: typeof location?.href === 'string' ? location.href : null,
+          title: typeof document?.title === 'string' ? document.title : null,
+          ready: {
+            chatHistory: Boolean(document.querySelector('#chat-history')),
+            transcriptRoot: Boolean(
+              document.querySelector('#chat-history') ||
+              document.querySelector('chat-history') ||
+              document.querySelector('[data-test-id*="chat-history"]') ||
+              document.querySelector('[data-testid*="chat-history"]'),
+            ),
+          },
+          counts: {
+            anchors: anchors.length,
+            buttons: document.querySelectorAll('button').length,
+            forms: document.querySelectorAll('form').length,
+          },
+          hrefSamples,
+        };
+      },
+    });
+    const value = res?.[0]?.result as any;
+    if (!isRecord(value)) return null;
+    return value as DomDiagnostics;
+  } catch {
+    return null;
+  }
 }
 
 async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
@@ -513,6 +588,29 @@ function createProgressEmitter(args: { tabId: number; runId: string; platform: C
   return { emit, clear };
 }
 
+function createStructuredProgressLogger(ctx: {
+  log: (level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: any) => void;
+}) {
+  let lastAt = 0;
+  let lastKey = '';
+
+  function emit(data: Record<string, unknown>): void {
+    const now = Date.now();
+    const key = JSON.stringify(data);
+    if (key === lastKey && now - lastAt < 1_000) return;
+    if (now - lastAt < 750) return;
+    lastAt = now;
+    lastKey = key;
+    try {
+      ctx.log('info', 'ruminer.scan_and_ingest.progress', data);
+    } catch {
+      // ignore
+    }
+  }
+
+  return { emit };
+}
+
 export const scanAndEnqueueNodeDefinition: NodeDefinition<
   'ruminer.scan_and_ingest_conversations',
   ScanAndIngestConfig
@@ -540,11 +638,12 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
     let lastStepAt = runStartedAt;
     let emaMsPerStep: number | null = null;
 
-    let scanChecked = 0; // conversations scanned (digest computed + ledger compared)
-    let ingestDone = 0; // conversations processed in ingest phase (including skip)
-    let scanTotal: number | null = null;
     let aborted = false;
     let paused = false;
+    const structuredLogger = createStructuredProgressLogger(ctx);
+    let phase: 'scan' | 'ingest' = 'scan';
+    let ingestProcessed = 0;
+    const scanned: ScannedConversation[] = [];
 
     function onStepCompleted(): void {
       const now = Date.now();
@@ -554,35 +653,23 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       emaMsPerStep = emaMsPerStep === null ? clamped : emaMsPerStep * 0.8 + clamped * 0.2;
     }
 
-    function totalStepsEstimate(scannedToIngest: number): number | null {
-      if (scanTotal === null) return null;
-      // We scan scanTotal, then ingest up to scannedToIngest.
-      return scanTotal + scannedToIngest;
-    }
-
-    function finishedSteps(): number {
-      return scanChecked + ingestDone;
-    }
-
-    function computeEstimatedTotalMs(now: number, scannedToIngest: number): number | null {
-      const total = totalStepsEstimate(scannedToIngest);
-      if (total === null) return null;
+    function computeEstimatedTotalMs(now: number): number | null {
+      if (phase !== 'ingest') return null;
       if (emaMsPerStep === null) return null;
+      const total = scanned.length;
+      if (total <= 0) return null;
       const elapsed = now - runStartedAt;
       const estimate = Math.max(elapsed, Math.floor(emaMsPerStep * total));
       return estimate;
     }
 
-    async function emitProgress(
-      scannedToIngest: number,
-      opts?: { force?: boolean },
-    ): Promise<void> {
+    async function emitProgress(opts?: { force?: boolean }): Promise<void> {
       const now = Date.now();
-      const total = totalStepsEstimate(scannedToIngest);
-      const finished = finishedSteps();
+      const total = scanned.length;
+      const finished = phase === 'scan' ? 0 : ingestProcessed;
       const percent =
-        total && total > 0 ? clampInt((finished / total) * 100, 0, 100) : total === 0 ? 100 : 0;
-      const estimatedTotalMs = computeEstimatedTotalMs(now, scannedToIngest);
+        total > 0 ? clampInt((finished / total) * 100, 0, 100) : phase === 'ingest' ? 100 : 0;
+      const estimatedTotalMs = computeEstimatedTotalMs(now);
       await emitter.emit(
         {
           runId: ctx.runId,
@@ -596,6 +683,20 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         },
         opts,
       );
+
+      structuredLogger.emit({
+        platform,
+        mode: platform === 'chatgpt' ? 'api' : 'dom',
+        phase,
+        scannedTotal: scanned.length,
+        convProcessed: phase === 'scan' ? undefined : ingestProcessed,
+        convIngested: undefined,
+        convSkipped: undefined,
+        convFailed: undefined,
+        finished,
+        total,
+        percent,
+      });
     }
 
     async function cooperativeGate(): Promise<boolean> {
@@ -610,7 +711,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
         if (isPaused !== paused) {
           paused = isPaused;
-          await emitProgress(0, { force: true });
+          await emitProgress({ force: true });
         }
 
         if (!isPaused) return true;
@@ -627,7 +728,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           status: 'running',
           percent: 0,
           finished: 0,
-          total: null,
+          total: 0,
           elapsedMs: 0,
           estimatedTotalMs: null,
         },
@@ -674,8 +775,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         );
       }
 
-      const scanned: ScannedConversation[] = [];
-
       // ===== Build conversation iteration order =====
       const allConversations: ConversationListItem[] = [];
 
@@ -693,7 +792,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               limit: listPageSize,
             });
             if (list.items.length > 0) allConversations.push(...list.items);
-            await emitProgress(scanned.length);
+            await emitProgress();
             if (listThrottleMs > 0) await sleep(listThrottleMs);
             if (list.nextOffset === null) break;
             offset = list.nextOffset;
@@ -716,11 +815,10 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             });
           }
 
-          scanTotal = allConversations.length;
-          await emitProgress(scanned.length, { force: true });
+          await emitProgress({ force: true });
         } else {
           // DOM list: do not pre-scroll the entire list; fetch one-by-one by offset.
-          scanTotal = null;
+          // No-op: scanTotal is implicitly `scanned.length`.
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -741,13 +839,29 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         };
       }
 
-      // ===== Scan loop: fetch messages + digest, compare ledger, stop on first unchanged+ingested =====
+      // ===== Scan phase: build scanned list (new convos without snapshot; existing convos snapshot + stop check) =====
       try {
         if (platform === 'chatgpt') {
           for (const c of allConversations) {
             if (!(await cooperativeGate())) {
               aborted = true;
               break;
+            }
+
+            const groupId = toGroupId(platform, c.conversationId);
+            const entry = ledgerByGroupId.get(groupId);
+
+            // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
+            if (!entry) {
+              scanned.push({
+                groupId,
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+                conversationTitle: c.conversationTitle,
+              });
+              onStepCompleted();
+              await emitProgress();
+              continue;
             }
 
             if (digestThrottleMs > 0) await sleep(digestThrottleMs);
@@ -765,8 +879,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             }
 
             const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
-            const groupId = toGroupId(platform, conv.conversationId);
-            const entry = ledgerByGroupId.get(groupId);
 
             if (shouldStopScan(entry, digest)) {
               break;
@@ -774,17 +886,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             scanned.push({
               groupId,
-              conversationId: conv.conversationId,
+              conversationId: c.conversationId,
               conversationUrl: c.conversationUrl,
               conversationTitle: c.conversationTitle,
-              messages,
-              digest,
-              messageCount,
+              snapshot: { messages, digest, messageCount },
             });
-
-            scanChecked += 1;
             onStepCompleted();
-            await emitProgress(scanned.length);
+            await emitProgress();
           }
         } else {
           let offset = 0;
@@ -796,7 +904,35 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             const list = await callListConversations(tabId, platform, { offset, limit: 1 });
             const c = list.items[0];
-            if (!c) break;
+            if (!c) {
+              if (offset === 0) {
+                const probe = await probeScanApi(tabId);
+                const dom = await collectDomDiagnostics(tabId);
+                const diag = { probe, dom };
+                throw new Error(
+                  `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
+                );
+              }
+              break;
+            }
+
+            const groupId = toGroupId(platform, c.conversationId);
+            const entry = ledgerByGroupId.get(groupId);
+
+            // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
+            if (!entry) {
+              scanned.push({
+                groupId,
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+                conversationTitle: c.conversationTitle,
+              });
+              onStepCompleted();
+              await emitProgress();
+              offset += 1;
+              if (listThrottleMs > 0) await sleep(listThrottleMs);
+              continue;
+            }
 
             if (digestThrottleMs > 0) await sleep(digestThrottleMs);
 
@@ -807,14 +943,16 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
+              const probe = await probeScanApi(tabId);
+              const dom = await collectDomDiagnostics(tabId);
               throw new Error(
-                `Conversation has no extractable messages (conversationId=${conv.conversationId})`,
+                `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
+                  conv.conversationUrl || c.conversationUrl || '',
+                )}; diagnostics=${JSON.stringify({ probe, dom })})`,
               );
             }
 
             const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
-            const groupId = toGroupId(platform, conv.conversationId);
-            const entry = ledgerByGroupId.get(groupId);
 
             if (shouldStopScan(entry, digest)) {
               break;
@@ -822,17 +960,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             scanned.push({
               groupId,
-              conversationId: conv.conversationId,
+              conversationId: c.conversationId,
               conversationUrl: c.conversationUrl,
               conversationTitle: c.conversationTitle,
-              messages,
-              digest,
-              messageCount,
+              snapshot: { messages, digest, messageCount },
             });
-
-            scanChecked += 1;
             onStepCompleted();
-            await emitProgress(scanned.length);
+            await emitProgress();
 
             offset += 1;
             if (listThrottleMs > 0) await sleep(listThrottleMs);
@@ -850,11 +984,21 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       if (aborted) {
         return {
           status: 'succeeded',
-          outputs: { scanned: scanChecked, ingested: 0, failed: 0, skipped: 0, aborted: true },
+          outputs: {
+            scanned: scanned.length,
+            ingested: 0,
+            failed: 0,
+            skipped: 0,
+            aborted: true,
+          },
         };
       }
 
-      // ===== Ingest phase: from memory, reverse order =====
+      // ===== Ingest phase: process scanned list in reverse order (oldest → newest) =====
+      phase = 'ingest';
+      ingestProcessed = 0;
+      await emitProgress({ force: true });
+
       let ingested = 0;
       let skipped = 0;
       let failed = 0;
@@ -867,10 +1011,112 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
         const item = scanned[i];
         const existing = ledgerByGroupId.get(item.groupId);
-        const ledgerDigest = toTrimmedLedgerDigest(existing);
 
-        // If digest matches, skip ingestion but still promote status + persist digest/count.
-        if (ledgerDigest && ledgerDigest === item.digest) {
+        try {
+          // Only fetch + digest if not already cached in the scan phase.
+          if (!item.snapshot) {
+            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+
+            const conv = await callConversationMessages(tabId, platform, {
+              conversationId: item.conversationId,
+              conversationUrl: item.conversationUrl,
+            });
+
+            const messages = normalizeConversationMessages(conv.messages);
+            if (messages.length === 0) {
+              const probe = await probeScanApi(tabId);
+              const dom = await collectDomDiagnostics(tabId);
+              throw new Error(
+                `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
+                  conv.conversationUrl || item.conversationUrl || '',
+                )}; diagnostics=${JSON.stringify({ probe, dom })})`,
+              );
+            }
+
+            const computed = await computeConversationDigestFromMessages(messages);
+            item.snapshot = {
+              messages,
+              digest: computed.digest,
+              messageCount: computed.messageCount,
+            };
+          }
+
+          const { messages, digest, messageCount } = item.snapshot;
+          const ledgerDigest = toTrimmedLedgerDigest(existing);
+          const digestsMatch = Boolean(ledgerDigest && ledgerDigest === digest);
+
+          if (!existing || !digestsMatch) {
+            // Prefix-only optimization for appended messages: if old digest matches new prefix, ingest suffix only.
+            let baseIndex = 0;
+            let messagesToIngest = messages;
+            const oldCount = toLedgerCount(existing);
+            if (
+              existing?.status === 'ingested' &&
+              ledgerDigest &&
+              oldCount &&
+              oldCount <= messageCount
+            ) {
+              const prefix = messages.slice(0, oldCount);
+              const { digest: prefixDigest } = await computeConversationDigestFromMessages(prefix);
+              if (prefixDigest === ledgerDigest) {
+                baseIndex = oldCount;
+                messagesToIngest = messages.slice(oldCount);
+              }
+            }
+
+            const ingestResp = await ruminerIngestConversation({
+              platform,
+              conversationId: item.conversationId,
+              runId: ctx.runId,
+              baseIndex,
+              messageCount,
+              conversationTitle: item.conversationTitle,
+              conversationUrl: item.conversationUrl,
+              messages: messagesToIngest.map((m) => ({ role: m.role, content: m.content })),
+            });
+
+            if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {
+              const err =
+                isRecord(ingestResp) && typeof (ingestResp as any).error === 'string'
+                  ? String((ingestResp as any).error || 'Ingest failed')
+                  : 'Ingest failed';
+              const nowIso = new Date().toISOString();
+              const nextFailed = buildFailedLedgerEntry({
+                existing,
+                nowIso,
+                platform,
+                conversationId: item.conversationId,
+                conversationUrl: item.conversationUrl,
+                conversationTitle: item.conversationTitle,
+                error: err,
+              });
+              await upsertConversationEntry(nextFailed);
+              ledgerByGroupId.set(item.groupId, nextFailed);
+              failed += 1;
+              structuredLogger.emit({
+                platform,
+                mode: platform === 'chatgpt' ? 'api' : 'dom',
+                phase,
+                scannedTotal: scanned.length,
+                convProcessed: ingestProcessed,
+                convIngested: ingested,
+                convSkipped: skipped,
+                convFailed: failed,
+              });
+              // Ingest failure must fail the entire workflow immediately.
+              return toErrorResult(RR_ERROR_CODES.NETWORK_REQUEST_FAILED, `Ingest failed: ${err}`, {
+                error: err,
+                platform,
+                conversationId: item.conversationId,
+                conversationUrl: item.conversationUrl,
+              });
+            }
+
+            ingested += 1;
+          } else {
+            skipped += 1;
+          }
+
           const nowIso = new Date().toISOString();
           const nextOk = buildIngestedLedgerEntry({
             existing,
@@ -879,52 +1125,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             conversationId: item.conversationId,
             conversationUrl: item.conversationUrl,
             conversationTitle: item.conversationTitle,
-            digest: item.digest,
-            messageCount: item.messageCount,
+            digest,
+            messageCount,
           });
           await upsertConversationEntry(nextOk);
           ledgerByGroupId.set(item.groupId, nextOk);
-          skipped += 1;
-          ingestDone += 1;
-          onStepCompleted();
-          await emitProgress(scanned.length);
-          continue;
-        }
-
-        // Prefix-only optimization for appended messages: if old digest matches new prefix, ingest suffix only.
-        let baseIndex = 0;
-        let messagesToIngest = item.messages;
-        const oldCount = toLedgerCount(existing);
-        if (
-          existing?.status === 'ingested' &&
-          ledgerDigest &&
-          oldCount &&
-          oldCount <= item.messageCount
-        ) {
-          const prefix = item.messages.slice(0, oldCount);
-          const { digest: prefixDigest } = await computeConversationDigestFromMessages(prefix);
-          if (prefixDigest === ledgerDigest) {
-            baseIndex = oldCount;
-            messagesToIngest = item.messages.slice(oldCount);
-          }
-        }
-
-        const ingestResp = await ruminerIngestConversation({
-          platform,
-          conversationId: item.conversationId,
-          runId: ctx.runId,
-          baseIndex,
-          messageCount: item.messageCount,
-          conversationTitle: item.conversationTitle,
-          conversationUrl: item.conversationUrl,
-          messages: messagesToIngest.map((m) => ({ role: m.role, content: m.content })),
-        });
-
-        if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {
-          const err =
-            isRecord(ingestResp) && typeof (ingestResp as any).error === 'string'
-              ? String((ingestResp as any).error || 'Ingest failed')
-              : 'Ingest failed';
+        } catch (e) {
+          const err = e instanceof Error ? e.message : String(e);
           const nowIso = new Date().toISOString();
           const nextFailed = buildFailedLedgerEntry({
             existing,
@@ -938,40 +1145,44 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           await upsertConversationEntry(nextFailed);
           ledgerByGroupId.set(item.groupId, nextFailed);
           failed += 1;
-          // Ingest failure must fail the entire workflow immediately.
-          return toErrorResult(RR_ERROR_CODES.NETWORK_REQUEST_FAILED, `Ingest failed: ${err}`, {
+          structuredLogger.emit({
+            platform,
+            mode: platform === 'chatgpt' ? 'api' : 'dom',
+            phase,
+            scannedTotal: scanned.length,
+            convProcessed: ingestProcessed,
+            convIngested: ingested,
+            convSkipped: skipped,
+            convFailed: failed,
+          });
+          return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Ingest failed: ${err}`, {
             error: err,
             platform,
             conversationId: item.conversationId,
             conversationUrl: item.conversationUrl,
           });
+        } finally {
+          ingestProcessed += 1;
+          onStepCompleted();
+          await emitProgress();
+          structuredLogger.emit({
+            platform,
+            mode: platform === 'chatgpt' ? 'api' : 'dom',
+            phase,
+            scannedTotal: scanned.length,
+            convProcessed: ingestProcessed,
+            convIngested: ingested,
+            convSkipped: skipped,
+            convFailed: failed,
+          });
         }
-
-        const nowIso = new Date().toISOString();
-        const nextOk = buildIngestedLedgerEntry({
-          existing,
-          nowIso,
-          platform,
-          conversationId: item.conversationId,
-          conversationUrl: item.conversationUrl,
-          conversationTitle: item.conversationTitle,
-          digest: item.digest,
-          messageCount: item.messageCount,
-        });
-        await upsertConversationEntry(nextOk);
-        ledgerByGroupId.set(item.groupId, nextOk);
-
-        ingested += 1;
-        ingestDone += 1;
-        onStepCompleted();
-        await emitProgress(scanned.length);
       }
 
       if (aborted) {
         return {
           status: 'succeeded',
           outputs: {
-            scanned: scanChecked,
+            scanned: scanned.length,
             ingested,
             skipped,
             failed,
@@ -983,7 +1194,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       return {
         status: 'succeeded',
         outputs: {
-          scanned: scanChecked,
+          scanned: scanned.length,
           ingested,
           skipped,
           failed,
