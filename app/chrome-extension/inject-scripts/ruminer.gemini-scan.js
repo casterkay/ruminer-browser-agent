@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-13.2';
+  const VERSION = '2026-03-15.2';
   const LOG = '[ruminer.gemini-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -80,9 +80,17 @@
                   value.ok === false &&
                   typeof value.error === 'string'
                 ) {
+                  const diagnostics =
+                    value &&
+                    typeof value === 'object' &&
+                    value.diagnostics &&
+                    typeof value.diagnostics === 'object'
+                      ? value.diagnostics
+                      : undefined;
                   sendResponse({
                     ok: false,
                     error: String(value.error || 'listConversations failed'),
+                    ...(diagnostics ? { diagnostics } : {}),
                   });
                   return;
                 }
@@ -111,9 +119,17 @@
                   value.ok === false &&
                   typeof value.error === 'string'
                 ) {
+                  const diagnostics =
+                    value &&
+                    typeof value === 'object' &&
+                    value.diagnostics &&
+                    typeof value.diagnostics === 'object'
+                      ? value.diagnostics
+                      : undefined;
                   sendResponse({
                     ok: false,
                     error: String(value.error || 'getConversationMessages failed'),
+                    ...(diagnostics ? { diagnostics } : {}),
                   });
                   return;
                 }
@@ -136,10 +152,37 @@
   installRpc();
   if (sameApi) return;
 
-  const normalizeContent = (s) =>
+  const SELECTORS = {
+    // Incremental extractor defaults (mirrors gemini-export conversation_extractor.js).
+    turnContainers: '#chat-history .conversation-container',
+    userContainer: 'user-query',
+    userLine: '.query-text-line',
+    userParagraph: '.query-text p',
+    userText: '.query-text',
+    modelContent: '.response-container-content, model-response',
+    modelMarkdown: '.model-response-text .markdown',
+  };
+
+  const READY_POLL_MS = 400;
+  const READY_TIMEOUT_MS = 20_000;
+  const SCROLL_STEP_SLEEP_MS = 220;
+  const MAX_SCROLL_STEPS = 300;
+  const STABILITY_CHECKS = 3;
+
+  const getNodeText = (node) => {
+    if (!node) return '';
+    return String(node.innerText || node.textContent || '').trim();
+  };
+
+  // Matches gemini-export normalizeText(): CRLF→LF, collapse excessive blank lines, trim.
+  const normalizeText = (s) =>
     String(s || '')
       .replace(/\r\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
+
+  // Backwards-compat internal helper name (used by hashing utilities below).
+  const normalizeContent = normalizeText;
 
   const bytesToHex = (buffer) =>
     Array.from(new Uint8Array(buffer))
@@ -184,7 +227,7 @@
     return sha256Hex(
       stableJson({
         role: String(role || ''),
-        content: normalizeContent(content),
+        content: normalizeText(content),
       }),
     );
   };
@@ -251,53 +294,360 @@
     return out;
   };
 
-  const findTranscriptScroller = () => {
-    const root = document.querySelector('#chat-history');
-    if (!root) return document.scrollingElement || document.documentElement;
-    let current = root;
-    for (let i = 0; i < 20 && current; i++) {
-      const parent = current.parentElement;
-      if (!parent) break;
-      let style;
-      try {
-        style = getComputedStyle(parent);
-      } catch {
-        style = null;
-      }
-      const overflowY = style ? style.overflowY : '';
-      const scrollable =
-        overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay'
-          ? parent.scrollHeight > parent.clientHeight + 20
-          : false;
-      if (scrollable) return parent;
-      current = parent;
-    }
-    return document.scrollingElement || document.documentElement;
+  const findTranscriptRoot = () => {
+    return (
+      document.querySelector('#chat-history') ||
+      document.querySelector('chat-history') ||
+      document.querySelector('[data-test-id*="chat-history"]') ||
+      document.querySelector('[data-testid*="chat-history"]') ||
+      null
+    );
   };
 
-  const extractConversationMessages = () => {
-    const containers = Array.from(
-      document.querySelectorAll('#chat-history .conversation-container'),
-    );
+  const isMapRelatedElement = (element) => {
+    if (!element || typeof element.matches !== 'function') return false;
+    if (element.matches('maps, .map, .gm-style, .gm-style-moc, .gm-style-cc, .gmnoprint'))
+      return true;
+    return Boolean(element.closest('maps, .gm-style, .gm-style-moc, .gm-style-cc, .gmnoprint'));
+  };
 
-    const messages = [];
-    for (const c of containers) {
-      const userNode =
-        c.querySelector('user-query .query-text-line') ||
-        c.querySelector('user-query .query-text p') ||
-        c.querySelector('user-query .query-text');
-      const userText = userNode ? normalizeContent(userNode.textContent || '') : '';
-      if (userText) messages.push({ role: 'user', content: userText });
+  const containsChatMarkers = (element) => {
+    if (!element || typeof element.querySelector !== 'function') return false;
+    const selectorPool = [
+      '#chat-history',
+      '.chat-history-scroll-container',
+      'chat-history',
+      'infinite-scroller',
+      '[data-test-id="chat-history-container"]',
+      'user-query',
+      'model-response',
+      '.conversation-container',
+    ].filter(Boolean);
 
-      const modelNode =
-        c.querySelector('.model-response-text .markdown') ||
-        c.querySelector('.response-container-content') ||
-        c.querySelector('model-response');
-      const modelText = modelNode ? normalizeContent(modelNode.textContent || '') : '';
-      if (modelText) messages.push({ role: 'assistant', content: modelText });
+    try {
+      return Boolean(element.querySelector(selectorPool.join(', ')));
+    } catch {
+      return false;
+    }
+  };
+
+  const isUsableScrollerElement = (element) => {
+    if (!element || element.nodeType !== 1) return false;
+    if (isMapRelatedElement(element)) return false;
+
+    if (element === document.documentElement || element === document.body) {
+      const root = document.scrollingElement || document.documentElement;
+      return root && root.scrollHeight > root.clientHeight + 20;
     }
 
-    return messages;
+    let style;
+    try {
+      style = window.getComputedStyle(element);
+    } catch {
+      return false;
+    }
+
+    if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+    if (!['auto', 'scroll', 'overlay'].includes(style.overflowY)) return false;
+    if (element.scrollHeight <= element.clientHeight + 20) return false;
+
+    const rect = element.getBoundingClientRect();
+    if (!rect || rect.height < 120 || rect.width < 120) return false;
+
+    return true;
+  };
+
+  const getScrollerCandidateScore = (element) => {
+    if (!isUsableScrollerElement(element)) return Number.NEGATIVE_INFINITY;
+
+    let score = Math.max(0, element.scrollHeight - element.clientHeight);
+    const rect = element.getBoundingClientRect();
+    const markerBonus = containsChatMarkers(element) ? 5000 : 0;
+
+    if (rect.height >= window.innerHeight * 0.5) score += 1400;
+    if (rect.width >= window.innerWidth * 0.35) score += 400;
+    if (markerBonus) score += markerBonus;
+
+    if (
+      element.matches(
+        [
+          '.chat-scrollable-container',
+          '.chat-history-scroll-container',
+          'chat-history-scroll-container',
+          'mat-sidenav-content',
+          'infinite-scroller',
+          '[data-test-id="chat-history-container"]',
+        ].join(', '),
+      )
+    ) {
+      score += 1200;
+    }
+
+    if (element.id === 'chat-history' || element.closest('#chat-history')) {
+      score += 700;
+    }
+
+    return score;
+  };
+
+  const pickBestScroller = (candidates) => {
+    const unique = [];
+    const seen = new Set();
+    for (const el of candidates) {
+      if (!el || seen.has(el)) continue;
+      seen.add(el);
+      unique.push(el);
+    }
+
+    let best = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const el of unique) {
+      const score = getScrollerCandidateScore(el);
+      if (score > bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    return best;
+  };
+
+  const getTranscriptScroller = () => {
+    // Strategy 1: known direct selectors (from gemini-export scroller.js).
+    const directSelectors = [
+      '.chat-scrollable-container',
+      '.chat-history-scroll-container',
+      'chat-history-scroll-container',
+      'infinite-scroller',
+      '[data-test-id="chat-history-container"]',
+      '#chat-history',
+      'chat-history',
+      'main',
+      'mat-sidenav-content',
+      '.chat-history',
+    ];
+
+    const directCandidates = [];
+    for (const sel of directSelectors) {
+      try {
+        document.querySelectorAll(sel).forEach((el) => directCandidates.push(el));
+      } catch {}
+    }
+
+    const pickedDirect = pickBestScroller(directCandidates);
+    if (pickedDirect) return pickedDirect;
+
+    // Strategy 2: walk up from message nodes and score usable scrollers.
+    const messageNodes = Array.from(
+      document.querySelectorAll(
+        [
+          '#chat-history .conversation-container',
+          '#chat-history user-query',
+          '#chat-history model-response',
+          '.conversation-container',
+          'user-query',
+          'model-response',
+        ].join(', '),
+      ),
+    ).slice(0, 80);
+
+    if (messageNodes.length > 0) {
+      const ancestorCandidates = [];
+      for (const node of messageNodes) {
+        let current = node;
+        let depth = 0;
+        while (current && depth < 14) {
+          ancestorCandidates.push(current);
+          current = current.parentElement;
+          depth++;
+        }
+      }
+      const pickedAncestor = pickBestScroller(ancestorCandidates);
+      if (pickedAncestor) return pickedAncestor;
+    }
+
+    // Strategy 3: fallback.
+    return document.scrollingElement || document.documentElement || document.body;
+  };
+
+  const createTurnInfo = (index) => ({
+    firstSeenSeq: index,
+    userText: null,
+    assistantText: null,
+  });
+
+  const isProbablyVisible = (element) => {
+    if (!element || element.nodeType !== 1) return false;
+    let style;
+    try {
+      style = window.getComputedStyle(element);
+    } catch {
+      style = null;
+    }
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = element.getBoundingClientRect?.();
+    if (!rect) return true;
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const extractConversationIncremental = (collectedByContainer, allocateFirstSeenSeq) => {
+    if (!collectedByContainer || typeof collectedByContainer.get !== 'function') return false;
+
+    let changed = false;
+    const containers = Array.from(document.querySelectorAll(SELECTORS.turnContainers));
+
+    containers.forEach((container, idx) => {
+      if (!isProbablyVisible(container)) return;
+
+      let info = collectedByContainer.get(container);
+      if (!info) {
+        const firstSeenSeq =
+          typeof allocateFirstSeenSeq === 'function' ? allocateFirstSeenSeq() : idx;
+        info = createTurnInfo(firstSeenSeq);
+        collectedByContainer.set(container, info);
+        changed = true;
+      }
+
+      const hasUserText = typeof info.userText === 'string' && info.userText.trim();
+      const hasAssistantText = typeof info.assistantText === 'string' && info.assistantText.trim();
+
+      if (!hasUserText) {
+        let userTexts = [];
+        const lines = Array.from(
+          container.querySelectorAll(`${SELECTORS.userContainer} ${SELECTORS.userLine}`),
+        );
+        if (lines.length > 0) {
+          userTexts = lines.map((el) => normalizeText(getNodeText(el)));
+        } else {
+          const paragraphs = Array.from(
+            container.querySelectorAll(`${SELECTORS.userContainer} ${SELECTORS.userParagraph}`),
+          );
+          if (paragraphs.length > 0) {
+            userTexts = paragraphs.map((el) => normalizeText(getNodeText(el)));
+          } else {
+            const userTextNode = container.querySelector(
+              `${SELECTORS.userContainer} ${SELECTORS.userText}`,
+            );
+            if (userTextNode) {
+              userTexts = [normalizeText(getNodeText(userTextNode))];
+            } else {
+              const userContainerNode = container.querySelector(SELECTORS.userContainer);
+              if (userContainerNode) userTexts = [normalizeText(getNodeText(userContainerNode))];
+            }
+          }
+        }
+
+        userTexts = userTexts.filter(Boolean);
+        if (userTexts.length > 0) {
+          const combinedUserText = normalizeText(userTexts.join('\n'));
+          if (combinedUserText) {
+            info.userText = combinedUserText;
+            changed = true;
+          }
+        }
+      }
+
+      if (!hasAssistantText) {
+        const modelRoot = container.querySelector(SELECTORS.modelContent);
+        if (modelRoot) {
+          const markdownNode = modelRoot.querySelector(SELECTORS.modelMarkdown);
+          const assistantText = markdownNode
+            ? normalizeText(getNodeText(markdownNode))
+            : normalizeText(getNodeText(modelRoot));
+          if (assistantText) {
+            info.assistantText = assistantText;
+            changed = true;
+          }
+        }
+      }
+    });
+
+    return changed;
+  };
+
+  const createIncrementalCollector = () => {
+    const collectedByContainer = new Map();
+
+    let nextFirstSeenSeq = 0;
+    const extractOnce = () =>
+      extractConversationIncremental(collectedByContainer, () => nextFirstSeenSeq++);
+
+    const hasAnyNonEmptyTurn = () => {
+      for (const info of collectedByContainer.values()) {
+        const u = typeof info.userText === 'string' ? info.userText.trim() : '';
+        const a = typeof info.assistantText === 'string' ? info.assistantText.trim() : '';
+        if (u || a) return true;
+      }
+      return false;
+    };
+
+    const toSortedTurns = () =>
+      Array.from(collectedByContainer.values()).sort((a, b) => {
+        const sa =
+          typeof a.firstSeenSeq === 'number' && Number.isFinite(a.firstSeenSeq)
+            ? a.firstSeenSeq
+            : 0;
+        const sb =
+          typeof b.firstSeenSeq === 'number' && Number.isFinite(b.firstSeenSeq)
+            ? b.firstSeenSeq
+            : 0;
+        // We discover newest → oldest while scrolling up; emit oldest → newest.
+        return sb - sa;
+      });
+
+    const toMessages = () => {
+      const turns = toSortedTurns();
+      const out = [];
+      for (const t of turns) {
+        const userText = typeof t.userText === 'string' ? normalizeText(t.userText) : '';
+        const assistantText =
+          typeof t.assistantText === 'string' ? normalizeText(t.assistantText) : '';
+        if (userText) out.push({ role: 'user', content: userText });
+        if (assistantText) out.push({ role: 'assistant', content: assistantText });
+      }
+
+      // Remove consecutive exact duplicates (role + content) to reduce rare virtualization artifacts.
+      const deduped = [];
+      let last = null;
+      for (const m of out) {
+        if (
+          last &&
+          last.role === m.role &&
+          typeof last.content === 'string' &&
+          typeof m.content === 'string' &&
+          last.content === m.content
+        ) {
+          continue;
+        }
+        deduped.push(m);
+        last = m;
+      }
+      return deduped;
+    };
+
+    return {
+      collectedByContainer,
+      extractOnce,
+      hasAnyNonEmptyTurn,
+      toMessages,
+    };
+  };
+
+  const scrollerGetters = (scroller) => {
+    const root = scroller || document.scrollingElement || document.documentElement;
+    const getScrollTop = () => Math.max(0, Math.floor(root.scrollTop || 0));
+    const getScrollHeight = () => Math.max(0, Math.floor(root.scrollHeight || 0));
+    const getClientHeight = () => Math.max(0, Math.floor(root.clientHeight || 0));
+    const setScrollTop = (top) => {
+      const next = Math.max(0, Math.floor(top || 0));
+      try {
+        root.scrollTo({ top: next, behavior: 'auto' });
+      } catch {
+        try {
+          root.scrollTop = next;
+        } catch {}
+      }
+    };
+    return { root, getScrollTop, getScrollHeight, getClientHeight, setScrollTop };
   };
 
   const openConversationInPlace = async (url) => {
@@ -320,7 +670,7 @@
 
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      if (location.pathname === targetPath && document.querySelector('#chat-history')) return;
+      if (location.pathname === targetPath) return true;
       await sleep(200);
     }
     return true;
@@ -401,27 +751,101 @@
   async function getConversationMessages({ conversationId, conversationUrl }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const opened = await openConversationInPlace(url);
-    if (opened === false) return { ok: false, error: 'navigation_started' };
-    await sleep(400);
-
-    // Best-effort: scroll up to materialize older virtualized turns before extraction.
-    const scroller = findTranscriptScroller();
-    let stable = 0;
-    for (let i = 0; i < 120; i++) {
-      const beforeTop = scroller.scrollTop;
-      scroller.scrollTop = Math.max(
-        0,
-        scroller.scrollTop - Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
-      );
-      await sleep(220);
-      const afterTop = scroller.scrollTop;
-      if (afterTop === beforeTop) stable += 1;
-      else stable = 0;
-      if (stable >= 5) break;
+    let target;
+    try {
+      target = new URL(url, location.origin);
+    } catch {
+      throw new Error(`Invalid conversationUrl: ${url}`);
     }
 
-    const msgs = extractConversationMessages();
+    const targetPath = target.pathname;
+
+    // Phase A — Navigate (router-friendly <a>.click() when possible).
+    const opened = await openConversationInPlace(url);
+    if (opened === false) return { ok: false, error: 'navigation_started' };
+
+    const collector = createIncrementalCollector();
+
+    // Phase B — Hydration-ready poll (400ms retry).
+    const readyDeadline = Date.now() + READY_TIMEOUT_MS;
+    let lastContainerCount = 0;
+    while (Date.now() < readyDeadline) {
+      if (location.pathname !== targetPath) {
+        await sleep(READY_POLL_MS);
+        continue;
+      }
+
+      collector.extractOnce();
+      try {
+        lastContainerCount = document.querySelectorAll(SELECTORS.turnContainers).length;
+      } catch {
+        lastContainerCount = 0;
+      }
+
+      if (collector.hasAnyNonEmptyTurn()) break;
+      await sleep(READY_POLL_MS);
+    }
+
+    if (!collector.hasAnyNonEmptyTurn()) {
+      const root = findTranscriptRoot();
+      const diagnostics = {
+        href: String(location.href || ''),
+        targetPath,
+        currentPath: String(location.pathname || ''),
+        readyTimeoutMs: READY_TIMEOUT_MS,
+        pollMs: READY_POLL_MS,
+        hasTranscriptRoot: Boolean(root),
+        containerSelector: SELECTORS.turnContainers,
+        containerCount: lastContainerCount,
+      };
+      const error = `transcript_not_ready:timeout (targetPath=${targetPath}, currentPath=${String(location.pathname || '')}, hasTranscriptRoot=${Boolean(root)}, containerCount=${lastContainerCount})`;
+      return { ok: false, error, diagnostics };
+    }
+
+    // Phase C — Full incremental capture (virtualization-safe).
+    const scroller = getTranscriptScroller();
+    const { getScrollTop, getScrollHeight, getClientHeight, setScrollTop } =
+      scrollerGetters(scroller);
+
+    // Single-direction capture: collect while scrolling up until top stability.
+    // Assumption: after opening a conversation, Gemini is already at/near the end (no missing content below).
+    let topStable = 0;
+    let lastSize = collector.collectedByContainer.size;
+    let lastScrollHeight = -1;
+    let noMove = 0;
+
+    for (let i = 0; i < MAX_SCROLL_STEPS; i++) {
+      collector.extractOnce();
+
+      const beforeTop = getScrollTop();
+      const clientH = getClientHeight();
+      const step = Math.max(240, Math.floor(clientH * 0.9));
+      const nextTop = Math.max(0, beforeTop - step);
+
+      if (beforeTop > 0) setScrollTop(nextTop);
+      await sleep(SCROLL_STEP_SLEEP_MS);
+      collector.extractOnce();
+
+      const afterTop = getScrollTop();
+      const afterScrollH = getScrollHeight();
+      const sizeNow = collector.collectedByContainer.size;
+      const atTopNow = afterTop <= 0;
+
+      if (afterTop === beforeTop) noMove += 1;
+      else noMove = 0;
+
+      if (atTopNow && sizeNow === lastSize && afterScrollH === lastScrollHeight) topStable += 1;
+      else topStable = 0;
+
+      lastSize = sizeNow;
+      lastScrollHeight = afterScrollH;
+
+      if (topStable >= STABILITY_CHECKS) break;
+      if (noMove >= 5 && beforeTop > 0) break;
+    }
+
+    // Phase D — Build output message list.
+    const msgs = collector.toMessages();
 
     return {
       conversationId: String(conversationId || '').trim() || parseConversationId(url) || null,

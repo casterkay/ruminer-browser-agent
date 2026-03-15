@@ -18,12 +18,222 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 - [ ] Attached images are not read by agent.
 - [ ] Replace floating icon animation with CSS image sprites or WebM.
 - [ ] Add a new tool for agent to freely modify the DOM.
-- [ ] OpenClaw and Codex still cannot use Ruminer MCP tools.
 - [ ] Design and implement the system for agent-driven workflow development.
-- [ ] Actions list above floating icon quickly closes when cursor enters the icon from above.
 - [ ] Claude scan and ingest API calls get 403 errors
 - [ ] Claude scan by DOM goes to a new page every time - optimize by utilizing client-side navigation (e.g. clicking the conversation links in sidebar)
 - [ ] ChatGPT scan workflow has long delay after page loading
+
+---
+
+What’s actually happening in the pipeline (why “scan
+flow” fails the way it does)
+
+- The built-in flow node is
+  ruminer.scan_and_ingest_conversations in app/chrome-
+  extension/entrypoints/background/record-replay-v3/
+  engine/plugins/ruminer-ingest/nodes/scan-and-ingest-
+  all.ts.
+- For non-ChatGPT platforms (Gemini/Claude/DeepSeek),
+  scan iterates offset=0..N and when it hits a
+  conversation that already exists in the ledger it
+  calls getConversationMessages() and then hard-fails
+  the entire run if normalizeConversationMessages(...)
+  returns an empty array (“Conversation has no
+  extractable messages…”).
+- For ChatGPT, there’s an extra prefetch list phase
+  where it fetches all conversations first, but progress
+  reporting is still based on scanned.length (which
+  stays 0 during the whole list prefetch).
+
+———
+
+## ChatGPT: “stuck with no scan progress”
+
+Root cause: progress semantics, not necessarily a hang.
+
+- In scan-and-ingest-all.ts, ChatGPT does:
+  1. List all conversations into allConversations
+     (pagination loop)
+  2. Only afterwards starts “scan phase” where
+     scanned.push(...) happens
+- Progress (percent/total/finished) is computed from
+  scanned.length, so during step (1) the UI/logs will
+  show total=0, percent=0 repeatedly even though real
+  work is happening. That matches your log spam of
+  ruminer.scan_and_ingest.progress while looking
+  “stuck”.
+
+About the React error #418 you saw in the page console
+
+- The scan script injection happens after
+  waitForTabComplete(...) (so after load completes), and
+  the scan script itself doesn’t mutate the DOM (it
+  mostly fetches /backend-api/...). On that evidence
+  alone, the React hydration error is not well-explained
+  by ruminer.chatgpt-scan.js specifically, and could be
+  incidental or caused by other extension behavior on
+  ChatGPT pages. I can’t prove causality from the code +
+  log snippet you provided.
+
+———
+
+## Gemini: ends with “Conversation has no extractable
+
+messages”
+
+You’re failing here in the scan node (not ingest), when
+it tries to compute a digest for an existing ledger
+entry and gets messages.length === 0.
+
+There are 3 likely causes, all consistent with the
+current code:
+
+1. DOM extractor mismatch / Shadow DOM / structural
+   drift
+   - app/chrome-extension/inject-scripts/
+     ruminer.gemini-scan.js extracts using the legacy
+     Gemini/Bard structure (#chat-
+     history, .conversation-container, user-query,
+     model-response, etc.). If Gemini moved content
+     behind different nodes or shadow roots,
+     querySelectorAll(...) can return 0 even though the
+     page visually has messages.
+2. Conversation truly has 0 turns (empty chat)
+   - The scan pipeline treats “0 messages” as fatal for
+     existing ledger entries. If Gemini can create a
+     conversation stub with no messages, this will
+     reliably kill the scan.
+3. Timing/readiness gap
+   - getConversationMessages() navigates then only
+     await sleep(400) before attempting scroll/extract.
+     On SPAs, it’s easy to land on the right URL (your
+     diagnostics href is correct) but still have the
+     transcript not populated yet.
+
+Also note: your diagnostics dom.ready.\* is based on
+#chat-history / chat-history selectors inside
+collectDomDiagnostics(...) in scan-and-ingest-all.ts,
+which is Gemini-centric and doesn’t actually verify
+“messages exist”.
+
+———
+
+## Claude: ends with “Conversation has no extractable
+
+messages”, diagnostics show href=https://claude.ai/new
+
+This one has a stronger smoking gun than Gemini: you’re
+not even on the conversation page when extraction runs.
+
+### Primary root cause: navigation via synthetic click
+
+is unreliable
+
+- In app/chrome-extension/inject-scripts/ruminer.claude-
+  scan.js, openConversationInPlace() prefers a.click()
+  when it finds a matching sidebar link, and only does
+  location.assign(url) if no anchor is found.
+- Many apps (and Claude can be one) ignore non-user-
+  initiated clicks (event.isTrusted === false) for
+  navigation. If so:
+  - a.click() does nothing
+  - openConversationInPlace() times out after 15s and
+    returns true (not a failure)
+  - extraction runs on whatever route you were on
+    (often /new)
+- That matches your diagnostics: conversationUrl was /
+  chat/<id>, but the tab href is still /new.
+
+### Secondary root cause: the “API first” strategy
+
+silently degrades into a broken DOM fallback
+
+- getConversationMessages() tries API fetch via /api/
+  organizations/.../chat_conversations/.... If that
+  fails (CORS, auth, org resolution, endpoint drift), it
+  catches and falls back to DOM extraction.
+- The DOM extractor (extractMessagesFromDom) relies on
+  [data-message-author-role] or fuzzy [data-
+  testid*="assistant"]-style queries which may not match
+  Claude’s current DOM reliably, so even if navigation
+  worked you can still get [].
+
+### Another subtle contributor: extra headers can make
+
+API fetch more fragile
+
+- Your fetchJson() in Claude scan adds headers like x-
+  requested-with and x-csrf-token. If the fetch is
+  treated as cross-origin in the extension execution
+  context, those headers can force preflight/CORS paths
+  that a simpler Accept: application/json fetch (like
+  the reference exporter) might avoid.
+
+(Reference you pointed to: /Users/tcai/Projects/Ruminer/
+\_ref/\_browser_agent_refs/claude-exporter/chrome/
+content.js uses a much simpler fetch pattern and avoids
+click-navigation entirely.)
+
+———
+
+## DeepSeek: ends with error (likely same two classes of
+
+problems)
+
+From app/chrome-extension/inject-scripts/
+ruminer.deepseek-scan.js:
+
+### Likely cause A: brittle selectors
+
+- It depends on hashed classnames like .fbb737a4 for
+  user turns, which are inherently unstable across
+  releases.
+- Even if this happened to match the exporter you
+  referenced, any UI update can zero it out.
+
+### Likely cause B: same synthetic-click navigation
+
+failure mode as Claude
+
+- openConversationInPlace() also prefers a.click() when
+  it finds a matching anchor, and returns true on
+  timeout.
+- If DeepSeek’s router ignores untrusted clicks, you’ll
+  extract from the wrong page and get 0 messages.
+
+(Your reference exporter at /Users/tcai/Projects/
+Ruminer/\_ref/\_browser_agent_refs/deepseek-chat-exporter/
+content.js doesn’t solve “scan all conversations”; it
+mainly extracts from the current conversation page, so
+it sidesteps the hardest part: reliable cross-
+conversation navigation + readiness.)
+
+———
+
+## Cross-cutting design issues (shared root causes)
+
+1. Click-based SPA navigation is not reliable (a.click()
+   can be ignored)
+   - Claude failure strongly indicates this. Gemini/
+     DeepSeek are exposed to the same risk.
+2. “Timeout == success” in openConversationInPlace()
+   - Returning true after failing to navigate makes the
+     pipeline proceed and then fail later with “no
+     extractable messages”, losing the real root cause.
+3. Hard-fail on empty messages in scan-and-ingest-all.ts
+   - Any empty chat, transient load race, DOM drift, or
+     nav failure immediately kills the entire scan.
+4. Non-platform-specific DOM diagnostics
+   - collectDomDiagnostics() is basically Gemini-
+     flavored (#chat-history), so Claude/DeepSeek
+     readiness booleans are misleading.
+5. ISOLATED-world fetch/origin/CORS uncertainty
+   - Your own comment in ingest-conversation.ts
+     acknowledges some platforms may need MAIN-world
+     fetch semantics or an ISOLATED↔MAIN bridge. Claude
+     API fetch is the most likely to be impacted.
+
+---
 
 ## P0 — Broken / Data-loss / Duplicates
 

@@ -1,79 +1,95 @@
-# CLI MCP Configuration Guide
+# CLI MCP Configuration Guide (Codex CLI + Claude Code)
 
-This guide explains how to configure Codex CLI and Claude Code to connect to the Chrome MCP Server.
+This guide explains how to configure **Codex CLI** and **Claude Code** to connect to Ruminer’s local MCP server
+(Chrome automation tools exposed over Streamable HTTP).
 
 ## Overview
 
-The Chrome MCP Server exposes its MCP interface at `http://127.0.0.1:12306/mcp` (default port).
-Both Codex CLI and Claude Code can connect to this endpoint to use Chrome browser control tools.
+Ruminer exposes its MCP endpoint at:
 
-## Codex CLI Configuration
+- `http://127.0.0.1:12306/mcp` (default)
 
-### Option 1: HTTP MCP Server (Recommended)
+After configuration, your CLI MCP client should be able to call tools such as:
 
-Run terminal command:
+- `get_windows_and_tabs`
+- `chrome_navigate`
+- `chrome_get_web_content`
+- `chrome_click_element`
+- `chrome_read_page`
+
+Tool names are defined in `packages/shared/src/tools.ts`.
+
+## Codex CLI
+
+Run:
 
 ```bash
 codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp
 ```
 
-### Option 2: Via Environment Variable
+## Claude Code
 
-Set the MCP URL via environment variable before running codex:
-
-```bash
-export MCP_HTTP_PORT=12306
-```
-
-## Claude Code Configuration
-
-Run terminal command:
+Run:
 
 ```bash
 claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp
 ```
 
-## Verifying Connection
+## OpenClaw (mcp-client plugin)
 
-After configuration, the CLI tools should be able to see and use Chrome MCP tools such as:
+If you use OpenClaw and want it to route tool calls to Ruminer, install/enable the `mcp-client` plugin and
+point it at Ruminer’s MCP URL.
 
-- `chrome_get_windows_and_tabs` - Get browser window and tab information
-- `chrome_navigate` - Navigate to a URL
-- `chrome_click_element` - Click on page elements
-- `chrome_get_page_content` - Get page content
-- And more...
+From the repo root:
+
+```bash
+openclaw plugins install ./app/openclaw-extensions/mcp-client || true
+openclaw plugins enable mcp-client || true
+
+# Auto-write config (best-effort)
+openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp" || true
+
+# Ensure plugins and their tools are enabled in config (best-effort).
+openclaw config set plugins.allow '["mcp-client", "evermemos"]' --strict-json || true
+openclaw config set plugins.entries.mcp-client.enabled true || true
+openclaw config set tools.alsoAllow '["mcp-client"]' --strict-json || true
+
+openclaw gateway restart || true
+```
+
+If you’re doing a local dev install, `bash scripts/setup.sh` runs an equivalent sequence (best-effort) when
+`openclaw` is available.
+
+## Verify connection
+
+From your CLI client, try:
+
+- `get_windows_and_tabs`
+
+If it succeeds, the MCP transport is connected and the extension/native host bridge is working.
 
 ## Troubleshooting
 
-### Connection Refused
+### Connection refused / timeout
 
-If you get "connection refused" errors:
+1. Confirm the extension is loaded (`chrome://extensions` → Developer mode → Load unpacked).
+2. Confirm the Native Messaging host is registered (run `bash scripts/setup.sh` again).
+3. Confirm Ruminer is using the expected port (default `12306`).
+4. Run:
+   - `mcp-chrome-bridge doctor`
 
-1. Ensure the Chrome extension is installed and the native server is running
-2. Check that the port matches (default: 12306)
-3. Verify no firewall is blocking localhost connections
-4. Run `mcp-chrome-bridge doctor` to diagnose issues
+### Tools don’t appear / tool list is empty
 
-### Tools Not Appearing
+1. Restart the CLI tool after updating MCP config.
+2. Confirm you’re pointing at the correct URL:
+   - `http://127.0.0.1:12306/mcp`
 
-If MCP tools don't appear in the CLI:
+### Port conflicts (12306 already in use)
 
-1. Restart the CLI tool after configuration changes
-2. Check the configuration file syntax (valid JSON)
-3. Ensure the MCP server URL is accessible
+If you change Ruminer’s MCP port, you must update your CLI MCP URL to match.
 
-### Port Conflicts
+If you are using the `mcp-chrome-bridge` stdio helper and need to rewrite its local config, use:
 
-If port 12306 is already in use:
-
-1. Set a custom port in the extension settings
-2. Update the CLI configuration to match the new port
-3. Run `mcp-chrome-bridge update-port <new-port>` to update the stdio config
-
-## Environment Variables
-
-| Variable                     | Description                            | Default |
-| ---------------------------- | -------------------------------------- | ------- |
-| `MCP_HTTP_PORT`              | HTTP port for MCP server               | 12306   |
-| `MCP_ALLOWED_WORKSPACE_BASE` | Additional allowed workspace directory | (none)  |
-| `CHROME_MCP_NODE_PATH`       | Override Node.js executable path       | (auto)  |
+```bash
+mcp-chrome-bridge update-port <new-port>
+```
