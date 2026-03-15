@@ -33,7 +33,7 @@ flowchart TB
     subgraph MCP_Clients[MCP Clients]
         Codex[Codex CLI]
         ClaudeCode[Claude Code]
-        OpenClawPlugin[OpenClaw mcp-client]
+        OpenClawPlugin[OpenClaw]
     end
 
     subgraph OpenClaw[OpenClaw Gateway]
@@ -41,28 +41,39 @@ flowchart TB
     end
 
     subgraph Ruminer[Ruminer Stack]
-        NativeServer[Native Server<br/>http://127.0.0.1:12306/mcp]
+        NativeServer[Messaging Server]
+        McpServer[MCP Server<br/>http://127.0.0.1:12306/mcp]
         Extension[Chrome Extension<br/>Service Worker]
-        Sidepanel[Side-panel UI]
-        Workflows[Workflows]
+        Sidepanel[Side Panel UI]
+        Workflows[Ingestion Workflows]
     end
 
-    subgraph Chrome[Chrome Browser]
-        APIs[Chrome APIs<br/>tabs, scripting, debugger]
+    subgraph Chrome[Chrome Browser Session]
+        APIs[Chrome APIs<br/>tabs, scrolling, click]
     end
 
     subgraph Memory[EverMemOS]
-        EMOS[Memory API]
+        EMOS[Memories API]
     end
 
-    MCP_Clients -->|"Streamable HTTP MCP"| NativeServer
-    NativeServer -->|"Native Messaging"| Extension
-    Extension --> APIs
+    subgraph AIPlatforms[AI Chat Platforms]
+        ChatPlatforms[ChatGPT, Gemini, Claude, DeepSeek]
+    end
 
-    Sidepanel -->|"Chat"| NativeServer
-    NativeServer -->|"WebSocket"| Gateway
+    MCP_Clients <-->|"Streamable HTTP"| McpServer
+    APIs <-->|"Browser Tools"| McpServer
+    EMOS -->|"RAG Tools"| McpServer
 
-    Workflows -->|"Direct API"| EMOS
+    NativeServer <-->|"Native Messaging"| Extension
+    Extension <--> APIs
+
+    Sidepanel <-->|"Chat"| NativeServer
+    NativeServer <-->|"WebSocket"| Gateway
+
+    Workflows -->|"Memory Upsert"| EMOS
+    EMOS -->|"Memory Search"| Sidepanel
+
+    AIPlatforms -->|"Conversation Data"| Workflows
 ```
 
 ### Glossary
