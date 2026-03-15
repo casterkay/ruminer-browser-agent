@@ -16,16 +16,6 @@
 
 ![Workflow View](assets/screenshots/workflow-view.png)
 
-## What it is
-
-Ruminer has three user-facing pillars in one Chrome extension:
-
-1. **Chat tab**: a sidepanel chat UI that connects to OpenClaw Gateway (`chat.*`) via the native server.
-2. **Memory tab**: browse/search your EverMemOS knowledge base (when configured).
-3. **Workflows tab**: run and schedule ingestion workflows to import AI chat histories into EverMemOS.
-
-It also exposes **browser automation tools over MCP** so other clients (Codex CLI, Claude Code, OpenClaw with `mcp-client` plugin) can control your real Chrome session.
-
 ## System architecture
 
 ```mermaid
@@ -49,7 +39,7 @@ flowchart TB
     end
 
     subgraph Chrome[Chrome Browser Session]
-        APIs[Chrome APIs<br/>tabs, scrolling, click]
+        APIs[Chrome APIs<br/>tabs, read page, scrolling, click]
     end
 
     subgraph Memory[EverMemOS]
@@ -76,13 +66,22 @@ flowchart TB
     AIPlatforms -->|"Conversation Data"| Workflows
 ```
 
+The Ruminer UI has three major pillars in one Chrome extension:
+
+1. **Chat tab**: communicate with your CLI agents via native server, providing MCP tools for browser operations and EverMemOS RAG.
+   - You can toggle tool groups (Memory / Observe / Navigate / Interact / Execute / Workflow) in the message input box to control which ones the agent can use.
+2. **Memory tab**: browse/search/manage your EverMemOS memory store.
+   - Memories can be grouped by AI chat platforms they are ingested from.
+3. **Workflows tab**: create, edit, and schedule automation workflows to import messages into EverMemOS or accomplish other tasks in browser.
+   - Coming soon: agent-driven workflow development by autonomously interacting with the browser and editing the workflow graph!
+
 ### Glossary
 
 - **OpenClaw Gateway**: local control plane for chat + tool runtime (Ruminer sidepanel chat talks to it).
 - **MCP**: Model Context Protocol; here it’s the standard interface your clients use to call browser tools.
 - **EverMemOS**: long‑term agent memory system where Ruminer can search and ingest messages.
 
-## Getting started (local dev install)
+## Getting Started (local dev)
 
 ### Prerequisites
 
@@ -93,7 +92,7 @@ flowchart TB
   - `openclaw` CLI (for sidepanel chat + plugin routing)
   - EverMemOS base URL + API key (for memory + ingestion)
 
-### 1) Quick Setup
+### 1) Quick setup
 
 From the repo root, run:
 
@@ -121,15 +120,16 @@ Chrome does not allow “Load unpacked” via script.
 
 ### 3) Configure the extension
 
-In the Settings tab in Ruminer side panel:
+In the `Settings` tab in Ruminer side panel:
 
 - **OpenClaw Gateway**
   - WS URL: `ws://127.0.0.1:18789`
   - Token: your Gateway token
 - **EverMemOS**
-  - Base URL + API key (+ tenant/space if your EverMemOS deployment requires it)
+  - Base URL
+  - API key
 
-## Verify it works (smoke checks)
+## Verify It Works
 
 1. **MCP tool check**:
    - Ask the agent to call a tool (e.g. "List the current tab titles in my browser") in CLI.
@@ -139,11 +139,6 @@ In the Settings tab in Ruminer side panel:
    - Type ≥ 3 characters in message input box → see debounced suggestions appear quickly
 4. **Workflows** (requires EverMemOS configured):
    - Open Workflows tab → run a built‑in workflow → re-run should not duplicate (ledger + stable IDs)
-
-## Browser tools permissions
-
-Ruminer divides browser tools into 5 groups: **Observe / Navigate / Interact / Execute / Workflow**.
-You can toggle groups (and also individual tools) in the message input box to control what tools the agent can use.
 
 ## Developer notes (repo shape)
 
