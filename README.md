@@ -16,7 +16,7 @@
 
 ![Workflow View](assets/screenshots/workflow-view.png)
 
-## System architecture
+## System Architecture
 
 ```mermaid
 flowchart TB
