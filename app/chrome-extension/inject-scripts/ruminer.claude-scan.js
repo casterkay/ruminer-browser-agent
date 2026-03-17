@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'claude';
-  const VERSION = '2026-03-13.7';
+  const VERSION = '2026-03-17.3';
   const LOG = '[ruminer.claude-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -262,9 +262,32 @@
     return Array.from(new Set(ids));
   };
 
+  let cachedOrgIds = null;
+  let cachedOrgIdsPromise = null;
+
   const fetchOrganizationIds = async () => {
-    const data = await fetchJson('/api/organizations');
-    return pickOrgIds(data);
+    if (Array.isArray(cachedOrgIds)) return cachedOrgIds;
+    if (cachedOrgIdsPromise) return cachedOrgIdsPromise;
+
+    cachedOrgIdsPromise = Promise.resolve()
+      .then(async () => {
+        const data = await fetchJson('/api/organizations');
+        const ids = pickOrgIds(data);
+        cachedOrgIds = ids;
+        return ids;
+      })
+      .finally(() => {
+        cachedOrgIdsPromise = null;
+      });
+    return cachedOrgIdsPromise;
+  };
+
+  const pickConversationList = (data) => {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    if (Array.isArray(data.conversations)) return data.conversations;
+    if (Array.isArray(data.items)) return data.items;
+    return [];
   };
 
   const extractTextFromMessage = (msg) => {
@@ -315,15 +338,30 @@
     return chain;
   };
 
-  const fetchConversationViaApi = async ({ conversationId }) => {
-    const orgIds = await fetchOrganizationIds();
-    if (!orgIds || orgIds.length === 0)
-      throw new Error('Failed to resolve Claude organization ids');
+  // Claude conversations shown in the current UI context almost always belong to the same org.
+  // Resolve the working org once, then prefer it to avoid N×403 spam and repeated work.
+  let preferredOrgId = null;
+  let lockedOrgId = null;
+  const forbiddenOrgIds = new Set();
 
-    let lastErr = '';
-    for (const orgId of orgIds) {
+  const normalizeConversationListItem = (it) => {
+    if (!it || typeof it !== 'object') return null;
+    const id = it.uuid || it.id;
+    const conversationId = id ? String(id).trim() : '';
+    if (!conversationId) return null;
+    const conversationUrl = new URL(`/chat/${encodeURIComponent(conversationId)}`, location.origin)
+      .toString()
+      .trim();
+    const titleRaw = it.name || it.title || it.summary || null;
+    const conversationTitle =
+      typeof titleRaw === 'string' && titleRaw.trim() ? titleRaw.trim() : null;
+    return { conversationId, conversationUrl, conversationTitle };
+  };
+
+  const fetchConversationViaApi = async ({ conversationId }) => {
+    if (lockedOrgId && !forbiddenOrgIds.has(lockedOrgId)) {
       const url = `/api/organizations/${encodeURIComponent(
-        orgId,
+        lockedOrgId,
       )}/chat_conversations/${encodeURIComponent(
         conversationId,
       )}?tree=True&rendering_mode=messages&render_all_tools=true`;
@@ -331,11 +369,103 @@
         return await fetchJson(url);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        // If the locked org starts returning auth/404 errors, unlock and fall back to probing.
+        if (String(msg || '').includes('HTTP 403') || String(msg || '').includes('HTTP 404')) {
+          forbiddenOrgIds.add(lockedOrgId);
+          lockedOrgId = null;
+        } else {
+          throw e;
+        }
+      }
+    }
+
+    const orgIds = await fetchOrganizationIds();
+    if (!orgIds || orgIds.length === 0)
+      throw new Error('Failed to resolve Claude organization ids');
+
+    let lastErr = '';
+    const candidates = [];
+    if (preferredOrgId && !forbiddenOrgIds.has(preferredOrgId)) candidates.push(preferredOrgId);
+    for (const orgId of orgIds) {
+      if (!orgId) continue;
+      if (orgId === preferredOrgId) continue;
+      if (forbiddenOrgIds.has(orgId)) continue;
+      candidates.push(orgId);
+    }
+
+    for (const orgId of candidates) {
+      const url = `/api/organizations/${encodeURIComponent(
+        orgId,
+      )}/chat_conversations/${encodeURIComponent(
+        conversationId,
+      )}?tree=True&rendering_mode=messages&render_all_tools=true`;
+      try {
+        const conv = await fetchJson(url);
+        preferredOrgId = orgId;
+        return conv;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         lastErr = msg;
-        if (String(msg || '').includes('HTTP 403')) continue;
+        if (String(msg || '').includes('HTTP 403')) {
+          // Once we have a preferred org, a 403 from other orgs is almost certainly irrelevant.
+          if (preferredOrgId) forbiddenOrgIds.add(orgId);
+          continue;
+        }
       }
     }
     throw new Error(lastErr ? `Claude API fetch failed: ${lastErr}` : 'Claude API fetch failed');
+  };
+
+  let cachedConversationList = null;
+  let cachedConversationListPromise = null;
+
+  const fetchAllConversationsViaApi = async () => {
+    if (Array.isArray(cachedConversationList)) return cachedConversationList;
+    if (cachedConversationListPromise) return cachedConversationListPromise;
+
+    cachedConversationListPromise = Promise.resolve()
+      .then(async () => {
+        const orgIds = await fetchOrganizationIds();
+        if (!orgIds || orgIds.length === 0)
+          throw new Error('Failed to resolve Claude organization ids');
+
+        let lastErr = '';
+        const candidates = [];
+        if (preferredOrgId && !forbiddenOrgIds.has(preferredOrgId)) candidates.push(preferredOrgId);
+        for (const orgId of orgIds) {
+          if (!orgId) continue;
+          if (orgId === preferredOrgId) continue;
+          if (forbiddenOrgIds.has(orgId)) continue;
+          candidates.push(orgId);
+        }
+
+        for (const orgId of candidates) {
+          const url = `/api/organizations/${encodeURIComponent(orgId)}/chat_conversations`;
+          try {
+            const data = await fetchJson(url);
+            const raw = pickConversationList(data);
+            const items = raw.map(normalizeConversationListItem).filter(Boolean);
+            cachedConversationList = items;
+            preferredOrgId = orgId;
+            lockedOrgId = orgId;
+            return items;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            lastErr = msg;
+            if (String(msg || '').includes('HTTP 403')) {
+              if (preferredOrgId) forbiddenOrgIds.add(orgId);
+              continue;
+            }
+          }
+        }
+
+        throw new Error(lastErr ? `Claude API list failed: ${lastErr}` : 'Claude API list failed');
+      })
+      .finally(() => {
+        cachedConversationListPromise = null;
+      });
+
+    return cachedConversationListPromise;
   };
 
   const findSidebarScroller = () => {
@@ -345,54 +475,6 @@
       if (el && el.scrollHeight > el.clientHeight) return el;
     }
     return document.scrollingElement || document.documentElement;
-  };
-
-  const collectSidebarConversations = async () => {
-    const scroller = findSidebarScroller();
-    const seen = new Set();
-    const out = [];
-    let stable = 0;
-    let lastCount = 0;
-
-    for (let i = 0; i < 80; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href.includes('/chat/')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
-        }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        seen.add(id);
-        out.push({
-          conversationId: id,
-          conversationUrl: url.toString(),
-          conversationTitle: title,
-        });
-      }
-
-      if (out.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = out.length;
-
-      if (stable >= 5) break;
-      if (scroller) {
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
-        );
-      }
-      await sleep(200);
-    }
-
-    return out;
   };
 
   const extractMessagesFromDom = () => {
@@ -531,11 +613,19 @@
   async function listConversations({ offset, limit }) {
     const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
     const LIM = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
-    const target = OFF + LIM;
-    await ensureSidebarCacheSize(target);
-    const slice = sidebarCache.items.slice(OFF, OFF + LIM);
-    const nextOffset = slice.length > 0 ? OFF + slice.length : sidebarCache.done ? null : OFF;
-    return { items: slice, nextOffset };
+    try {
+      const all = await fetchAllConversationsViaApi();
+      const slice = all.slice(OFF, OFF + LIM);
+      const nextOffset = OFF + slice.length < all.length ? OFF + slice.length : null;
+      return { items: slice, nextOffset };
+    } catch (e) {
+      // Fallback: Claude list API is unexpectedly unavailable; degrade to DOM sidebar scan.
+      const target = OFF + LIM;
+      await ensureSidebarCacheSize(target);
+      const slice = sidebarCache.items.slice(OFF, OFF + LIM);
+      const nextOffset = slice.length > 0 ? OFF + slice.length : sidebarCache.done ? null : OFF;
+      return { items: slice, nextOffset };
+    }
   }
 
   async function getConversationMessages({ conversationId, conversationUrl }) {

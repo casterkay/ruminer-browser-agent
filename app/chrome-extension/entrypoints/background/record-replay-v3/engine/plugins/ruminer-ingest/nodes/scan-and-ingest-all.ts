@@ -21,6 +21,7 @@ import {
   normalizeConversationMessages,
   type ConversationMessage,
 } from '../conversation-digest';
+import { sha256Hex } from '../hash';
 import { toErrorResult } from '../utils';
 
 /**
@@ -471,6 +472,14 @@ function toLedgerCount(entry: ConversationLedgerEntry | undefined): number | nul
   return Math.max(0, Math.floor(n));
 }
 
+let emptyDigestPromise: Promise<string> | null = null;
+function emptyConversationDigest(): Promise<string> {
+  // The user request is explicit: treat empty conversations as ingested with sha256('').
+  // Cache to avoid recomputing during a long scan run.
+  emptyDigestPromise ??= sha256Hex('');
+  return emptyDigestPromise;
+}
+
 function buildIngestedLedgerEntry(args: {
   existing: ConversationLedgerEntry | undefined;
   nowIso: string;
@@ -873,6 +882,25 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
+              const rawIsEmpty =
+                Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
+              if (rawIsEmpty) {
+                const digest = await emptyConversationDigest();
+                const messageCount = 0;
+
+                // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
+                scanned.push({
+                  groupId,
+                  conversationId: c.conversationId,
+                  conversationUrl: c.conversationUrl,
+                  conversationTitle: c.conversationTitle,
+                  snapshot: { messages: [], digest, messageCount },
+                });
+                onStepCompleted();
+                await emitProgress();
+                continue;
+              }
+
               throw new Error(
                 `Conversation has no extractable messages (conversationId=${conv.conversationId})`,
               );
@@ -943,6 +971,28 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
+              const rawIsEmpty =
+                Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
+              if (rawIsEmpty) {
+                const digest = await emptyConversationDigest();
+                const messageCount = 0;
+
+                // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
+                scanned.push({
+                  groupId,
+                  conversationId: c.conversationId,
+                  conversationUrl: c.conversationUrl,
+                  conversationTitle: c.conversationTitle,
+                  snapshot: { messages: [], digest, messageCount },
+                });
+                onStepCompleted();
+                await emitProgress();
+
+                offset += 1;
+                if (listThrottleMs > 0) await sleep(listThrottleMs);
+                continue;
+              }
+
               const probe = await probeScanApi(tabId);
               const dom = await collectDomDiagnostics(tabId);
               throw new Error(
@@ -1024,28 +1074,41 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
-              const probe = await probeScanApi(tabId);
-              const dom = await collectDomDiagnostics(tabId);
-              throw new Error(
-                `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
-                  conv.conversationUrl || item.conversationUrl || '',
-                )}; diagnostics=${JSON.stringify({ probe, dom })})`,
-              );
+              const rawIsEmpty =
+                Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
+              if (rawIsEmpty) {
+                const digest = await emptyConversationDigest();
+                item.snapshot = { messages: [], digest, messageCount: 0 };
+              } else {
+                const probe = await probeScanApi(tabId);
+                const dom = await collectDomDiagnostics(tabId);
+                throw new Error(
+                  `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
+                    conv.conversationUrl || item.conversationUrl || '',
+                  )}; diagnostics=${JSON.stringify({ probe, dom })})`,
+                );
+              }
             }
 
-            const computed = await computeConversationDigestFromMessages(messages);
-            item.snapshot = {
-              messages,
-              digest: computed.digest,
-              messageCount: computed.messageCount,
-            };
+            if (!item.snapshot) {
+              const computed = await computeConversationDigestFromMessages(messages);
+              item.snapshot = {
+                messages,
+                digest: computed.digest,
+                messageCount: computed.messageCount,
+              };
+            }
           }
 
           const { messages, digest, messageCount } = item.snapshot;
           const ledgerDigest = toTrimmedLedgerDigest(existing);
           const digestsMatch = Boolean(ledgerDigest && ledgerDigest === digest);
 
-          if (!existing || !digestsMatch) {
+          if (messageCount === 0) {
+            // Empty conversations exist (e.g. created then abandoned / deleted content).
+            // Persist an "ingested" empty digest to avoid retrying forever.
+            skipped += 1;
+          } else if (!existing || !digestsMatch) {
             // Prefix-only optimization for appended messages: if old digest matches new prefix, ingest suffix only.
             let baseIndex = 0;
             let messagesToIngest = messages;

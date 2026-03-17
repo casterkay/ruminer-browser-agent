@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-15.2';
+  const VERSION = '2026-03-17.4';
   const LOG = '[ruminer.gemini-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -22,11 +22,20 @@
 
   const installRpc = () => {
     const rpc = window.__RUMINER_SCAN_RPC__;
-    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
-    window.__RUMINER_SCAN_RPC__ = { platform: PLATFORM, version: VERSION };
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION && rpc.installed === true)
+      return;
+
+    // Avoid accumulating duplicate listeners across reinjection / version bumps.
+    try {
+      if (rpc && typeof rpc.listener === 'function')
+        chrome.runtime.onMessage.removeListener(rpc.listener);
+    } catch {}
+
+    const nextRpc = { platform: PLATFORM, version: VERSION, installed: false, listener: null };
+    window.__RUMINER_SCAN_RPC__ = nextRpc;
 
     try {
-      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      const listener = (request, _sender, sendResponse) => {
         try {
           if (!request || typeof request.action !== 'string') return false;
 
@@ -145,7 +154,11 @@
           return false;
         }
         return false;
-      });
+      };
+
+      nextRpc.listener = listener;
+      chrome.runtime.onMessage.addListener(listener);
+      nextRpc.installed = true;
     } catch {}
   };
 
@@ -155,6 +168,7 @@
   const SELECTORS = {
     // Incremental extractor defaults (mirrors gemini-export conversation_extractor.js).
     turnContainers: '#chat-history .conversation-container',
+    turnContainer: '.conversation-container',
     userContainer: 'user-query',
     userLine: '.query-text-line',
     userParagraph: '.query-text p',
@@ -166,12 +180,139 @@
   const READY_POLL_MS = 400;
   const READY_TIMEOUT_MS = 20_000;
   const SCROLL_STEP_SLEEP_MS = 220;
-  const MAX_SCROLL_STEPS = 300;
+  const MAX_SCROLL_STEPS = 900;
   const STABILITY_CHECKS = 3;
+  const TOP_IDLE_STABLE_MS = 1_000;
+  const TOP_MAX_WAIT_MS = 2_000;
+  const TOP_IDLE_SLEEP_MS = 520;
+
+  const extractTextPreserveNewlines = (root) => {
+    if (!root) return '';
+    const NodeCtor = typeof Node !== 'undefined' ? Node : null;
+    const TEXT_NODE = NodeCtor ? NodeCtor.TEXT_NODE : 3;
+    const ELEMENT_NODE = NodeCtor ? NodeCtor.ELEMENT_NODE : 1;
+
+    const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+    const PARA_BREAK_TAGS = new Set([
+      'P',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'H5',
+      'H6',
+      'PRE',
+      'BLOCKQUOTE',
+      'TABLE',
+    ]);
+    const LINE_BREAK_TAGS = new Set([
+      'DIV',
+      'SECTION',
+      'ARTICLE',
+      'HEADER',
+      'FOOTER',
+      'ASIDE',
+      'NAV',
+      'UL',
+      'OL',
+      'LI',
+      'TR',
+      'HR',
+    ]);
+
+    const ensureTrailingNewlines = (buf, count) => {
+      if (count <= 0) return buf;
+      let trailing = 0;
+      for (let i = buf.length - 1; i >= 0; i--) {
+        if (buf[i] !== '\n') break;
+        trailing++;
+      }
+      if (trailing >= count) return buf;
+      return buf + '\n'.repeat(count - trailing);
+    };
+
+    const ensureLeadingNewlineIfNeeded = (buf) => {
+      if (!buf) return buf;
+      const last = buf[buf.length - 1];
+      return last === '\n' ? buf : buf + '\n';
+    };
+
+    let out = '';
+
+    const visit = (node) => {
+      if (!node) return;
+      const t = node.nodeType;
+      if (t === TEXT_NODE) {
+        const v = node.nodeValue;
+        if (typeof v === 'string' && v) out += v;
+        return;
+      }
+      if (t !== ELEMENT_NODE) return;
+
+      const el = node;
+      const tag = String(el.tagName || '').toUpperCase();
+      if (!tag || SKIP_TAGS.has(tag)) return;
+
+      // Skip content that is explicitly hidden.
+      if (el.hasAttribute?.('hidden')) return;
+      const ariaHidden = el.getAttribute?.('aria-hidden');
+      if (ariaHidden === 'true') return;
+
+      if (tag === 'BR') {
+        out = ensureTrailingNewlines(out, 1);
+        return;
+      }
+
+      // Preserve preformatted blocks (code, tables rendered as <pre>, etc).
+      if (tag === 'PRE') {
+        out = ensureLeadingNewlineIfNeeded(out);
+        const txt = el.textContent;
+        if (typeof txt === 'string' && txt) out += txt;
+        out = ensureTrailingNewlines(out, 2);
+        return;
+      }
+
+      const isLineBreak = LINE_BREAK_TAGS.has(tag) || PARA_BREAK_TAGS.has(tag);
+      if (isLineBreak) out = ensureTrailingNewlines(out, 1);
+
+      const children = el.childNodes;
+      if (children && children.length) {
+        for (let i = 0; i < children.length; i++) visit(children[i]);
+      }
+
+      if (PARA_BREAK_TAGS.has(tag)) out = ensureTrailingNewlines(out, 2);
+      else if (isLineBreak) out = ensureTrailingNewlines(out, 1);
+    };
+
+    try {
+      visit(root);
+    } catch {
+      // Fallback: best-effort, may lose formatting.
+      try {
+        return String(root.textContent || '');
+      } catch {
+        return '';
+      }
+    }
+
+    return out;
+  };
 
   const getNodeText = (node) => {
-    if (!node) return '';
-    return String(node.innerText || node.textContent || '').trim();
+    const structured = extractTextPreserveNewlines(node);
+    const s = typeof structured === 'string' ? structured : String(structured || '');
+
+    // Gemini's DOM sometimes uses non-semantic inline tags (e.g. spans) with block layout.
+    // `innerText` reflects rendered line breaks in those cases, so use it when it adds meaningful newlines.
+    try {
+      const it = node && typeof node.innerText === 'string' ? node.innerText : '';
+      if (typeof it === 'string') {
+        if (it.trim() && !s.trim()) return it;
+        if (it.includes('\n') && !s.includes('\n')) return it;
+      }
+    } catch {}
+
+    return s;
   };
 
   // Matches gemini-export normalizeText(): CRLF→LF, collapse excessive blank lines, trim.
@@ -181,58 +322,123 @@
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-  // Backwards-compat internal helper name (used by hashing utilities below).
-  const normalizeContent = normalizeText;
-
-  const bytesToHex = (buffer) =>
-    Array.from(new Uint8Array(buffer))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-
-  const sha256Hex = async (input) => {
-    const enc = new TextEncoder();
-    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
-    return bytesToHex(digest);
+  const sleep = (ms) => {
+    const n = typeof ms === 'number' && Number.isFinite(ms) ? Math.floor(ms) : 0;
+    // Clamp to signed 32-bit (setTimeout max in most browsers).
+    const safe = Math.max(0, Math.min(0x7fffffff, n));
+    return new Promise((r) => setTimeout(r, safe));
   };
 
-  const stableJson = (value) => {
-    const seen = new Set();
-    const normalize = (v) => {
-      if (v === null) return null;
-      if (v === undefined) return undefined;
-      const t = typeof v;
-      if (t === 'string' || t === 'boolean') return v;
-      if (t === 'number') return Number.isFinite(v) ? v : null;
-      if (t !== 'object') return String(v);
-      if (seen.has(v)) throw new Error('stableJson: circular');
-      seen.add(v);
-      try {
-        if (Array.isArray(v)) return v.map((x) => normalize(x));
-        const keys = Object.keys(v).sort();
-        const out = {};
-        for (const k of keys) {
-          const nv = normalize(v[k]);
-          if (nv === undefined) continue;
-          out[k] = nv;
-        }
-        return out;
-      } finally {
-        seen.delete(v);
-      }
+  const getElementKey = (() => {
+    const keys = new WeakMap();
+    let next = 1;
+    return (el) => {
+      if (!el || (typeof el !== 'object' && typeof el !== 'function')) return null;
+      const existing = keys.get(el);
+      if (existing) return existing;
+      const id = next++;
+      keys.set(el, id);
+      return id;
     };
-    return JSON.stringify(normalize(value));
+  })();
+
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+  const getSentinelTurnContainer = (scrollerRoot) => {
+    const vw = Math.max(0, window.innerWidth || document.documentElement?.clientWidth || 0);
+    const vh = Math.max(0, window.innerHeight || document.documentElement?.clientHeight || 0);
+    if (!(vw > 0 && vh > 0)) return null;
+
+    let rect = null;
+    try {
+      if (
+        scrollerRoot &&
+        scrollerRoot !== document.documentElement &&
+        scrollerRoot !== document.body &&
+        typeof scrollerRoot.getBoundingClientRect === 'function'
+      ) {
+        rect = scrollerRoot.getBoundingClientRect();
+      }
+    } catch {
+      rect = null;
+    }
+
+    const r = rect
+      ? {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        }
+      : { left: 0, top: 0, width: vw, height: vh };
+
+    const xs = [
+      r.left + r.width * 0.5,
+      r.left + Math.min(48, r.width * 0.2),
+      r.left + Math.max(16, r.width * 0.35),
+    ]
+      .filter((x) => Number.isFinite(x))
+      .map((x) => clamp(Math.floor(x), 1, vw - 2));
+
+    const ys = [r.top + 24, r.top + 64, r.top + 120, r.top + 180]
+      .filter((y) => Number.isFinite(y))
+      .map((y) => clamp(Math.floor(y), 1, vh - 2));
+
+    for (const y of ys) {
+      for (const x of xs) {
+        const el = document.elementFromPoint(x, y);
+        if (!el) continue;
+        try {
+          const container =
+            el.closest?.(SELECTORS.turnContainer) || el.closest?.(SELECTORS.turnContainers) || null;
+          if (container) return container;
+        } catch {}
+      }
+    }
+    return null;
   };
 
-  const hashMessage = async (role, content) => {
-    return sha256Hex(
-      stableJson({
-        role: String(role || ''),
-        content: normalizeText(content),
-      }),
-    );
+  const nextSiblingOrAncestorSibling = (el, stopAt) => {
+    let cur = el;
+    while (cur && cur !== stopAt) {
+      if (cur.nextElementSibling) return cur.nextElementSibling;
+      cur = cur.parentElement;
+    }
+    return null;
   };
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
+  const findNextTurnContainer = (fromEl, transcriptRoot) => {
+    let cursor = fromEl;
+    while (cursor) {
+      const candidate = nextSiblingOrAncestorSibling(cursor, transcriptRoot);
+      if (!candidate) return null;
+      try {
+        if (candidate.matches?.(SELECTORS.turnContainer)) return candidate;
+        const found = candidate.querySelector?.(SELECTORS.turnContainer);
+        if (found) return found;
+      } catch {}
+      cursor = candidate;
+    }
+    return null;
+  };
+
+  const collectTurnContainersFromSentinel = (sentinelContainer, maxCount = 4) => {
+    if (!sentinelContainer || sentinelContainer.nodeType !== 1) return [];
+    const transcriptRoot =
+      sentinelContainer.closest?.('#chat-history') || findTranscriptRoot() || document.body;
+
+    const out = [];
+    out.push(sentinelContainer);
+
+    let cur = sentinelContainer;
+    while (out.length < maxCount) {
+      const next = findNextTurnContainer(cur, transcriptRoot);
+      if (!next) break;
+      out.push(next);
+      cur = next;
+    }
+    return out;
+  };
 
   const findSidebarScroller = () => {
     const candidates = [
@@ -248,50 +454,6 @@
       if (el && el.scrollHeight > el.clientHeight) return el;
     }
     return document.scrollingElement || document.documentElement;
-  };
-
-  const collectSidebarConversations = async () => {
-    const scroller = findSidebarScroller();
-    const seen = new Set();
-    const out = [];
-    let stable = 0;
-    let lastCount = 0;
-
-    for (let i = 0; i < 80; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href.includes('/app/')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
-        }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        seen.add(id);
-        out.push({ conversationId: id, conversationUrl: url.toString(), conversationTitle: title });
-      }
-
-      if (out.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = out.length;
-
-      if (stable >= 5) break;
-      if (scroller) {
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
-        );
-      }
-      await sleep(200);
-    }
-
-    return out;
   };
 
   const findTranscriptRoot = () => {
@@ -475,7 +637,7 @@
     assistantText: null,
   });
 
-  const isProbablyVisible = (element) => {
+  const isProbablyRenderable = (element, requireVisibleRect) => {
     if (!element || element.nodeType !== 1) return false;
     let style;
     try {
@@ -484,19 +646,26 @@
       style = null;
     }
     if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    if (!requireVisibleRect) return true;
     const rect = element.getBoundingClientRect?.();
     if (!rect) return true;
     return rect.width > 0 && rect.height > 0;
   };
 
-  const extractConversationIncremental = (collectedByContainer, allocateFirstSeenSeq) => {
+  const extractConversationIncremental = (
+    collectedByContainer,
+    allocateFirstSeenSeq,
+    containers,
+    options = {},
+  ) => {
     if (!collectedByContainer || typeof collectedByContainer.get !== 'function') return false;
+    if (!Array.isArray(containers) || containers.length === 0) return false;
 
+    const requireVisibleRect = options && options.requireVisibleRect === true;
     let changed = false;
-    const containers = Array.from(document.querySelectorAll(SELECTORS.turnContainers));
 
     containers.forEach((container, idx) => {
-      if (!isProbablyVisible(container)) return;
+      if (!isProbablyRenderable(container, requireVisibleRect)) return;
 
       let info = collectedByContainer.get(container);
       if (!info) {
@@ -568,8 +737,18 @@
     const collectedByContainer = new Map();
 
     let nextFirstSeenSeq = 0;
-    const extractOnce = () =>
-      extractConversationIncremental(collectedByContainer, () => nextFirstSeenSeq++);
+    const allocateSeq = () => nextFirstSeenSeq++;
+    const extractOnce = () => {
+      const containers = Array.from(document.querySelectorAll(SELECTORS.turnContainers));
+      return extractConversationIncremental(collectedByContainer, allocateSeq, containers, {
+        requireVisibleRect: true,
+      });
+    };
+    const extractNearSentinel = (sentinelContainer, maxCount = 4) => {
+      const list = collectTurnContainersFromSentinel(sentinelContainer, maxCount);
+      if (!list || list.length === 0) return false;
+      return extractConversationIncremental(collectedByContainer, allocateSeq, list);
+    };
 
     const hasAnyNonEmptyTurn = () => {
       for (const info of collectedByContainer.values()) {
@@ -627,6 +806,7 @@
     return {
       collectedByContainer,
       extractOnce,
+      extractNearSentinel,
       hasAnyNonEmptyTurn,
       toMessages,
     };
@@ -650,8 +830,9 @@
     return { root, getScrollTop, getScrollHeight, getClientHeight, setScrollTop };
   };
 
-  const openConversationInPlace = async (url) => {
-    const targetPath = new URL(url, location.origin).pathname;
+  const openConversationInPlace = async (targetUrl) => {
+    const targetPath = targetUrl.pathname;
+    if (location.pathname === targetPath) return { ok: true, alreadyThere: true };
     const anchors = Array.from(document.querySelectorAll('a[href]'));
     const a = anchors.find((x) => {
       try {
@@ -663,17 +844,11 @@
     });
     if (a) {
       a.click();
-    } else {
-      location.assign(url);
-      return false;
+      return { ok: true, clicked: true };
     }
 
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-      if (location.pathname === targetPath) return true;
-      await sleep(200);
-    }
-    return true;
+    location.assign(targetUrl.toString());
+    return { ok: false, error: 'navigation_started' };
   };
 
   const sidebarCache = {
@@ -687,11 +862,20 @@
     if (sidebarCache.items.length >= targetCount) return;
 
     const scroller = findSidebarScroller();
+    let queryRoot =
+      scroller && typeof scroller.querySelectorAll === 'function'
+        ? scroller
+        : document.documentElement || document;
+    try {
+      if (queryRoot !== document.documentElement && !queryRoot.querySelector('a[href*="/app/"]')) {
+        queryRoot = document.documentElement || document;
+      }
+    } catch {}
     let stable = 0;
     let lastCount = sidebarCache.items.length;
 
     for (let i = 0; i < 80 && sidebarCache.items.length < targetCount; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
+      const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
       for (const a of anchors) {
         const href = String(a.getAttribute('href') || '');
         if (!href.includes('/app/')) continue;
@@ -731,16 +915,15 @@
       }
       await sleep(200);
     }
-
-    if (sidebarCache.items.length === lastCount) {
-      // Could not grow further; treat as done.
-      sidebarCache.done = true;
-    }
   }
 
   async function listConversations({ offset, limit }) {
-    const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
-    const LIM = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
+    const OFF =
+      typeof offset === 'number' && Number.isFinite(offset)
+        ? clamp(Math.floor(offset), 0, 1_000_000)
+        : 0;
+    const LIM =
+      typeof limit === 'number' && Number.isFinite(limit) ? clamp(Math.floor(limit), 1, 200) : 100;
     const target = OFF + LIM;
     await ensureSidebarCacheSize(target);
     const slice = sidebarCache.items.slice(OFF, OFF + LIM);
@@ -758,11 +941,23 @@
       throw new Error(`Invalid conversationUrl: ${url}`);
     }
 
+    if (target.origin !== location.origin) {
+      return {
+        ok: false,
+        error: 'cross_origin_not_allowed',
+        diagnostics: {
+          conversationUrl: url,
+          targetOrigin: target.origin,
+          currentOrigin: location.origin,
+        },
+      };
+    }
+
     const targetPath = target.pathname;
 
     // Phase A — Navigate (router-friendly <a>.click() when possible).
-    const opened = await openConversationInPlace(url);
-    if (opened === false) return { ok: false, error: 'navigation_started' };
+    const nav = await openConversationInPlace(target);
+    if (!nav.ok) return nav;
 
     const collector = createIncrementalCollector();
 
@@ -804,7 +999,7 @@
 
     // Phase C — Full incremental capture (virtualization-safe).
     const scroller = getTranscriptScroller();
-    const { getScrollTop, getScrollHeight, getClientHeight, setScrollTop } =
+    const { root, getScrollTop, getScrollHeight, getClientHeight, setScrollTop } =
       scrollerGetters(scroller);
 
     // Single-direction capture: collect while scrolling up until top stability.
@@ -813,9 +1008,42 @@
     let lastSize = collector.collectedByContainer.size;
     let lastScrollHeight = -1;
     let noMove = 0;
+    let lastCollectorChangeAt = Date.now();
+    let atTopSince = null;
+    let lastSentinelKey = null;
+    let lastExtractAt = 0;
+    let lastFallbackFullScanAt = 0;
+
+    const maybeExtractNearSentinel = (sentinelContainer, force = false) => {
+      const now = Date.now();
+      if (!sentinelContainer) return false;
+
+      const key = getElementKey(sentinelContainer);
+      const sameSentinel = key && lastSentinelKey === key;
+      if (!force) {
+        // If the sentinel hasn't changed, throttle extraction to still catch hydration.
+        if (sameSentinel && now - lastExtractAt < 700) return false;
+      }
+
+      const changed = collector.extractNearSentinel(sentinelContainer, 4);
+      if (key) lastSentinelKey = key;
+      lastExtractAt = now;
+      if (changed) lastCollectorChangeAt = now;
+      return changed;
+    };
 
     for (let i = 0; i < MAX_SCROLL_STEPS; i++) {
-      collector.extractOnce();
+      const sentinelBefore = getSentinelTurnContainer(root);
+      if (sentinelBefore) {
+        maybeExtractNearSentinel(sentinelBefore, i === 0);
+      } else {
+        const now = Date.now();
+        // Sentinel missing can happen due to overlays/sticky headers; avoid hammering a full scan.
+        if (now - lastFallbackFullScanAt >= 1_200) {
+          if (collector.extractOnce()) lastCollectorChangeAt = now;
+          lastFallbackFullScanAt = now;
+        }
+      }
 
       const beforeTop = getScrollTop();
       const clientH = getClientHeight();
@@ -823,16 +1051,48 @@
       const nextTop = Math.max(0, beforeTop - step);
 
       if (beforeTop > 0) setScrollTop(nextTop);
-      await sleep(SCROLL_STEP_SLEEP_MS);
-      collector.extractOnce();
+
+      const idleMs = Date.now() - lastCollectorChangeAt;
+      const sleepMs =
+        beforeTop <= 0 && idleMs >= 600
+          ? Math.max(SCROLL_STEP_SLEEP_MS, TOP_IDLE_SLEEP_MS)
+          : SCROLL_STEP_SLEEP_MS;
+      await sleep(sleepMs);
 
       const afterTop = getScrollTop();
       const afterScrollH = getScrollHeight();
       const sizeNow = collector.collectedByContainer.size;
-      const atTopNow = afterTop <= 0;
+      const atTopNow = afterTop <= 10;
+      const now = Date.now();
+
+      const sentinelAfter = getSentinelTurnContainer(root);
+      if (sentinelAfter) {
+        // If scrollHeight changed, force an extract even if sentinel identity didn't.
+        const scrollHeightChanged = afterScrollH !== lastScrollHeight;
+        maybeExtractNearSentinel(sentinelAfter, scrollHeightChanged);
+      } else if (now - lastFallbackFullScanAt >= 1_200) {
+        if (collector.extractOnce()) lastCollectorChangeAt = now;
+        lastFallbackFullScanAt = now;
+      }
 
       if (afterTop === beforeTop) noMove += 1;
       else noMove = 0;
+
+      if (atTopNow) {
+        if (atTopSince === null) atTopSince = now;
+        // At the very top, force periodic extraction to catch late prepends/hydration even if the sentinel
+        // element doesn't change (some UIs mutate content within the same container).
+        if (now - lastExtractAt >= 500) {
+          const topSentinel = sentinelAfter || sentinelBefore;
+          if (topSentinel) maybeExtractNearSentinel(topSentinel, true);
+        }
+        // Gemini often keeps reflowing (images/markdown) even after the message list is complete.
+        // Waiting for scrollHeight to be stable can therefore stall for seconds while we are already done.
+        if (now - lastCollectorChangeAt >= TOP_IDLE_STABLE_MS) break;
+        if (now - atTopSince >= TOP_MAX_WAIT_MS) break;
+      } else {
+        atTopSince = null;
+      }
 
       if (atTopNow && sizeNow === lastSize && afterScrollH === lastScrollHeight) topStable += 1;
       else topStable = 0;
@@ -843,6 +1103,11 @@
       if (topStable >= STABILITY_CHECKS) break;
       if (noMove >= 5 && beforeTop > 0) break;
     }
+
+    // One last pass to capture any late-hydrated text before materializing messages.
+    const finalSentinel = getSentinelTurnContainer(root);
+    if (finalSentinel) collector.extractNearSentinel(finalSentinel, 4);
+    else collector.extractOnce();
 
     // Phase D — Build output message list.
     const msgs = collector.toMessages();

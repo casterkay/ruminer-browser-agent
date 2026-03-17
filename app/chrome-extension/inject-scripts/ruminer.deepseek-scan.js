@@ -141,108 +141,15 @@
       .replace(/\r\n/g, '\n')
       .trim();
 
-  const bytesToHex = (buffer) =>
-    Array.from(new Uint8Array(buffer))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-
-  const sha256Hex = async (input) => {
-    const enc = new TextEncoder();
-    const digest = await crypto.subtle.digest('SHA-256', enc.encode(String(input || '')));
-    return bytesToHex(digest);
-  };
-
-  const stableJson = (value) => {
-    const seen = new Set();
-    const normalize = (v) => {
-      if (v === null) return null;
-      if (v === undefined) return undefined;
-      const t = typeof v;
-      if (t === 'string' || t === 'boolean') return v;
-      if (t === 'number') return Number.isFinite(v) ? v : null;
-      if (t !== 'object') return String(v);
-      if (seen.has(v)) throw new Error('stableJson: circular');
-      seen.add(v);
-      try {
-        if (Array.isArray(v)) return v.map((x) => normalize(x));
-        const keys = Object.keys(v).sort();
-        const out = {};
-        for (const k of keys) {
-          const nv = normalize(v[k]);
-          if (nv === undefined) continue;
-          out[k] = nv;
-        }
-        return out;
-      } finally {
-        seen.delete(v);
-      }
-    };
-    return JSON.stringify(normalize(value));
-  };
-
-  const hashMessage = async (role, content) => {
-    return sha256Hex(
-      stableJson({
-        role: String(role || ''),
-        content: normalizeContent(content),
-      }),
-    );
-  };
-
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
 
   const findSidebarScroller = () => {
-    const candidates = ['nav', 'aside', '[data-testid*="sidebar"]', '[class*="sidebar"]'];
+    const candidates = ['nav', 'aside', '[class*="scroll-area"]'];
     for (const sel of candidates) {
       const el = document.querySelector(sel);
       if (el && el.scrollHeight > el.clientHeight) return el;
     }
     return document.scrollingElement || document.documentElement;
-  };
-
-  const collectSidebarConversations = async () => {
-    const scroller = findSidebarScroller();
-    const seen = new Set();
-    const out = [];
-    let stable = 0;
-    let lastCount = 0;
-
-    for (let i = 0; i < 120; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href) continue;
-        if (!href.includes('chat') && !href.includes('c') && !href.includes('id=')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
-        }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        seen.add(id);
-        out.push({ conversationId: id, conversationUrl: url.toString(), conversationTitle: title });
-      }
-
-      if (out.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = out.length;
-
-      if (stable >= 5) break;
-      if (scroller) {
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
-        );
-      }
-      await sleep(200);
-    }
-
-    return out;
   };
 
   const compareDomOrder = (a, b) => {
