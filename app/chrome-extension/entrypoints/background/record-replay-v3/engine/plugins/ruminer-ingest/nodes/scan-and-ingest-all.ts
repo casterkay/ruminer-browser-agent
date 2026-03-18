@@ -6,11 +6,6 @@ import { createRunsStore } from '@/entrypoints/background/record-replay-v3/stora
 import { RR_ERROR_CODES } from '../../../../domain/errors';
 import type { NodeDefinition } from '../../types';
 import {
-  listConversationEntries,
-  upsertConversationEntry,
-  type ConversationLedgerEntry,
-} from '../conversation-ledger';
-import {
   registerAutomationTab,
   setAutomationTabLastProgress,
   unregisterAutomationTab,
@@ -21,6 +16,11 @@ import {
   normalizeConversationMessages,
   type ConversationMessage,
 } from '../conversation-digest';
+import {
+  listConversationEntries,
+  upsertConversationEntry,
+  type ConversationLedgerEntry,
+} from '../conversation-ledger';
 import { sha256Hex } from '../hash';
 import { toErrorResult } from '../utils';
 
@@ -930,18 +930,45 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               break;
             }
 
-            const list = await callListConversations(tabId, platform, { offset, limit: 1 });
-            const c = list.items[0];
+            let list = await callListConversations(tabId, platform, { offset, limit: 1 });
+            let c = list.items[0];
             if (!c) {
               if (offset === 0) {
-                const probe = await probeScanApi(tabId);
-                const dom = await collectDomDiagnostics(tabId);
-                const diag = { probe, dom };
-                throw new Error(
-                  `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
-                );
+                const dom0 = await collectDomDiagnostics(tabId);
+                const shouldRetryForLoadingUi =
+                  dom0 !== null &&
+                  dom0.counts.anchors === 0 &&
+                  dom0.counts.buttons === 0 &&
+                  dom0.counts.forms === 0;
+
+                // Some SPAs can render a mostly-empty DOM while the sidebar is still loading.
+                // Treat "no conversations at offset=0" as a transient state and retry briefly before failing.
+                if (shouldRetryForLoadingUi) {
+                  const deadline = Date.now() + 10_000;
+                  while (Date.now() < deadline) {
+                    if (!(await cooperativeGate())) {
+                      aborted = true;
+                      break;
+                    }
+                    await sleep(500);
+                    list = await callListConversations(tabId, platform, { offset, limit: 1 });
+                    c = list.items[0];
+                    if (c) break;
+                  }
+                }
+
+                if (aborted) break;
+
+                if (!c) {
+                  const probe = await probeScanApi(tabId);
+                  const dom = dom0 ?? (await collectDomDiagnostics(tabId));
+                  const diag = { probe, dom };
+                  throw new Error(
+                    `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
+                  );
+                }
               }
-              break;
+              if (!c) break;
             }
 
             const groupId = toGroupId(platform, c.conversationId);

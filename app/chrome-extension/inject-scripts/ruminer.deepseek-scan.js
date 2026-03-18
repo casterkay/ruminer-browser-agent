@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'deepseek';
-  const VERSION = '2026-03-13.2';
+  const VERSION = '2026-03-18.1';
   const LOG = '[ruminer.deepseek-scan]';
 
   const existing = window.__RUMINER_SCAN__;
@@ -152,6 +152,43 @@
     return document.scrollingElement || document.documentElement;
   };
 
+  const sidebarCache = {
+    items: [],
+    seen: new Set(),
+    done: false,
+  };
+
+  const collectConversationLinksOnce = () => {
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    let added = 0;
+
+    for (const a of anchors) {
+      const href = String(a.getAttribute('href') || '');
+      if (!href.includes('/chat/')) continue;
+      let url;
+      try {
+        url = new URL(href, location.origin);
+      } catch {
+        continue;
+      }
+      if (url.hostname !== location.hostname) continue;
+      const id = parseConversationId(url.toString());
+      if (!id) continue;
+      if (sidebarCache.seen.has(id)) continue;
+
+      const title = String(a.textContent || '').trim() || null;
+      sidebarCache.seen.add(id);
+      sidebarCache.items.push({
+        conversationId: id,
+        conversationUrl: url.toString(),
+        conversationTitle: title,
+      });
+      added += 1;
+    }
+
+    return { added, totalAnchors: anchors.length };
+  };
+
   const compareDomOrder = (a, b) => {
     if (a === b) return 0;
     const pos = a.compareDocumentPosition(b);
@@ -198,64 +235,60 @@
     return true;
   };
 
-  const sidebarCache = {
-    items: [],
-    seen: new Set(),
-    done: false,
-  };
-
   async function ensureSidebarCacheSize(targetCount) {
     if (sidebarCache.done) return;
     if (sidebarCache.items.length >= targetCount) return;
 
     const scroller = findSidebarScroller();
-    let stable = 0;
-    let lastCount = sidebarCache.items.length;
+    const start = Date.now();
+    const missing = Math.max(1, targetCount - sidebarCache.items.length);
+    const baseWaitMs = sidebarCache.items.length === 0 ? 20_000 : 8_000;
+    const perMissingMs = sidebarCache.items.length === 0 ? 0 : 1_200;
+    const maxWaitMs = Math.min(60_000, baseWaitMs + missing * perMissingMs);
+    const deadline = start + maxWaitMs;
 
-    for (let i = 0; i < 80 && sidebarCache.items.length < targetCount; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href.includes('/chat/')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
+    let stableNoNew = 0;
+    let lastProgressAt = Date.now();
+    let didScroll = false;
+
+    while (Date.now() < deadline && sidebarCache.items.length < targetCount) {
+      const { added, totalAnchors } = collectConversationLinksOnce();
+
+      if (added > 0) {
+        lastProgressAt = Date.now();
+        stableNoNew = 0;
+      } else {
+        const pageLooksReady = totalAnchors > 0 || didScroll || sidebarCache.items.length > 0;
+        if (pageLooksReady) stableNoNew += 1;
+      }
+
+      if (sidebarCache.items.length >= targetCount) break;
+
+      // Avoid prematurely giving up while the sidebar is still rendering.
+      const quietMs = Date.now() - lastProgressAt;
+      if (sidebarCache.items.length > 0 && stableNoNew >= 8 && quietMs > 1500) {
+        const canScroll = scroller && scroller.scrollHeight > scroller.clientHeight + 8;
+        const atBottom =
+          !canScroll ||
+          (scroller &&
+            scroller.scrollTop + scroller.clientHeight >= Math.max(0, scroller.scrollHeight - 4));
+        if (atBottom) {
+          sidebarCache.done = true;
+          break;
         }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (sidebarCache.seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        sidebarCache.seen.add(id);
-        sidebarCache.items.push({
-          conversationId: id,
-          conversationUrl: url.toString(),
-          conversationTitle: title,
-        });
       }
 
-      if (sidebarCache.items.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = sidebarCache.items.length;
-
-      if (stable >= 5) {
-        sidebarCache.done = true;
-        break;
-      }
-
-      if (scroller) {
+      // Grace period: let the app finish loading before we start scrolling the sidebar.
+      if (scroller && Date.now() - start > 3000) {
+        const beforeTop = scroller.scrollTop;
         scroller.scrollTop = Math.min(
           scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
+          scroller.scrollTop + Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
         );
+        if (scroller.scrollTop !== beforeTop) didScroll = true;
       }
-      await sleep(200);
-    }
 
-    if (sidebarCache.items.length === lastCount) {
-      sidebarCache.done = true;
+      await sleep(250);
     }
   }
 
