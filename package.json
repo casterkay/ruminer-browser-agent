@@ -2,7 +2,7 @@
   "name": "mcp-chrome-bridge-monorepo",
   "version": "1.0.0",
   "private": true,
-  "author": "hangye",
+  "author": "poetrycoder",
   "type": "module",
   "scripts": {
     "build:shared": "pnpm --filter chrome-mcp-shared build",

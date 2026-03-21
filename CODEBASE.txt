@@ -38,8 +38,6 @@ app/
 │   │   │   └── messages.json
 │   │   └── zh_TW
 │   │       └── messages.json
-│   ├── assets
-│   │   └── vue.svg
 │   ├── common
 │   │   ├── agent-models.ts
 │   │   ├── chat-platforms.ts
@@ -450,4 +448,4 @@ app/
         ├── package.json
         └── tools.ts
 
-99 directories, 327 files
+98 directories, 326 files
