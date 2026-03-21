@@ -11,7 +11,7 @@ export const NATIVE_HOST = {
 
 // Chrome Extension Icons
 export const ICONS = {
-  NOTIFICATION: 'icon/48.png',
+  NOTIFICATION: 'icon/128.png',
 } as const;
 
 // Timeouts and Delays (in milliseconds)

@@ -10,6 +10,7 @@ import {
 } from '@/entrypoints/background/record-replay-v3/engine/transport/events-bus';
 import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 
+import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 import { getConversationStates } from '../conversation-ledger';
 import {
   createEmosRequestContext,
@@ -18,7 +19,6 @@ import {
   type EmosSingleMessage,
 } from '../emos-client';
 import { ensureBuiltinFlows } from './index';
-import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 
 type WorkflowNotifyRequest = {
   type: 'ruminer.workflow.notify';

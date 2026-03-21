@@ -1,3 +1,4 @@
+import { NOTIFICATIONS } from '@/common/constants';
 import { cleanupModelCache } from '@/utils/semantic-similarity-engine';
 import { initElementMarkerListeners } from './element-marker';
 import { initNativeHostListener } from './native-host';
@@ -14,7 +15,6 @@ import {
 import { initStorageManagerListener } from './storage-manager';
 import { openAgentChatSidepanel } from './utils/sidepanel';
 import { initWebEditorListeners } from './web-editor';
-import { NOTIFICATIONS } from '@/common/constants';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';

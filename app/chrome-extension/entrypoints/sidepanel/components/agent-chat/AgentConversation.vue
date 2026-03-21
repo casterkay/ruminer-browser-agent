@@ -226,7 +226,7 @@ function formatSource(suggestion: MemorySuggestion): string {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 12rem 1.25rem;
+  padding: 8rem 1.25rem;
 }
 
 .empty-state-inner {
@@ -240,7 +240,7 @@ function formatSource(suggestion: MemorySuggestion): string {
   width: 108px;
   height: 108px;
   border-radius: var(--ac-radius-card);
-  opacity: 0.95;
+  /* opacity: 0.95; */
 }
 
 .memory-suggestion-layout {

@@ -107,13 +107,12 @@ export interface FloatingIconManager {
 // Constants
 // ============================================================
 
-const LOG_PREFIX = '[FloatingIcon]';
 const ICON_SIZE = 96;
 const DRAG_THRESHOLD = 5;
 const SPRITE_SHEET_PUBLIC_PATH = 'icon/logo-spritesheet.png';
 const SPRITE_SHEET_COLS = 6;
 const SPRITE_SHEET_ROWS = 5;
-const SPRITE_SHEET_TOTAL_FRAMES = 6 * 4 + 2;
+const SPRITE_SHEET_TOTAL_FRAMES = 6 * 4 + 4;
 const SPRITE_SHEET_FPS = 36;
 
 // ============================================================
