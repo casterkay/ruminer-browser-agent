@@ -239,7 +239,7 @@ async function collectDomDiagnostics(tabId: number): Promise<DomDiagnostics | nu
 async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId, frameIds: [0] },
-    files: [scanScriptPath(platform)],
+    files: ['inject-scripts/ruminer.scan-core.js', scanScriptPath(platform)],
     world: scanExecutionWorld(),
   });
 }

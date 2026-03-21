@@ -108,8 +108,13 @@ export interface FloatingIconManager {
 // ============================================================
 
 const LOG_PREFIX = '[FloatingIcon]';
-const ICON_SIZE = 64;
+const ICON_SIZE = 96;
 const DRAG_THRESHOLD = 5;
+const SPRITE_SHEET_PUBLIC_PATH = 'icon/logo-spritesheet.png';
+const SPRITE_SHEET_COLS = 6;
+const SPRITE_SHEET_ROWS = 5;
+const SPRITE_SHEET_TOTAL_FRAMES = 6 * 4 + 2;
+const SPRITE_SHEET_FPS = 36;
 
 // ============================================================
 // Styles
@@ -132,6 +137,7 @@ const FLOATING_ICON_STYLES = /* css */ `
   .floating-icon {
     width: ${ICON_SIZE}px;
     height: ${ICON_SIZE}px;
+    position: relative;
     border-radius: 50%;
     /* Rich charcoal background to make the golden logo pop like the reference image */
     background: linear-gradient(145deg, #2a2622 0%, #171513 100%);
@@ -168,6 +174,24 @@ const FLOATING_ICON_STYLES = /* css */ `
     box-shadow:
       0 12px 32px rgba(229, 169, 61, 0.15),
       0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  .floating-icon:hover .floating-icon-em-field {
+    opacity: 1;
+  }
+
+  .floating-icon:hover .floating-icon-em-field::before {
+    animation-duration: 5.9s;
+  }
+
+  .floating-icon:hover .floating-icon-em-field::after {
+    opacity: 0.3;
+  }
+
+  .floating-icon:hover .floating-icon-aura {
+    filter:
+      drop-shadow(0 0 12px rgba(72, 245, 255, 0.26))
+      drop-shadow(0 0 34px rgba(72, 245, 255, 0.12));
   }
 
   /* When tooltip is open, avoid translateY hover shift (can cause “open then close” flicker). */
@@ -259,29 +283,6 @@ const FLOATING_ICON_STYLES = /* css */ `
     animation: icon-float 3s ease-in-out infinite;
   }
 
-  /* Ruminating jaw animation */
-  @keyframes cow-ruminate {
-    0%, 36%, 100% {
-      transform: translateY(0);
-    }
-    8% {
-      transform: translateY(2px);
-    }
-    16% {
-      transform: translateY(0);
-    }
-    24% {
-      transform: translateY(1.5px);
-    }
-    32% {
-      transform: translateY(0);
-    }
-  }
-
-  .floating-icon.breathing .cow-jaw {
-    animation: cow-ruminate 4s ease-in-out infinite;
-  }
-
   /* Ripple effect on click */
   .floating-icon-ripple {
     position: absolute;
@@ -309,23 +310,128 @@ const FLOATING_ICON_STYLES = /* css */ `
     animation: ripple-effect 0.5s ease-out forwards;
   }
 
-  /* Icon SVG styling */
-  /* ========================================================
-     Icon SVG Animating Graphics (Geometric Cow Style)
-     ======================================================== */
-  
-  .floating-icon-svg {
-    width: 48px;
-    height: 48px;
+  /* Icon art (Aura + Sprite Sheet) */
+  .floating-icon-art {
+    /* Maximize visible sprite size inside the circular button while keeping a small padding. */
+    width: calc(100% - 12px);
+    height: calc(100% - 12px);
+    position: relative;
+    transition: opacity 0.24s ease, transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1);
+  }
+
+  /* Electromagnetic background field (behind aura + sprite) */
+  .floating-icon-em-field {
+    position: absolute;
+    inset: -14px;
+    pointer-events: none;
+    border-radius: 999px;
+    opacity: 0.9;
+    mix-blend-mode: screen;
+    will-change: transform, opacity;
+  }
+
+  .floating-icon-em-field::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(
+        circle at 50% 45%,
+        rgba(72, 245, 255, 0.26) 0%,
+        rgba(72, 245, 255, 0.12) 24%,
+        rgba(72, 245, 255, 0.04) 42%,
+        transparent 68%
+      ),
+      conic-gradient(
+        from 20deg,
+        transparent 0deg,
+        rgba(72, 245, 255, 0.16) 42deg,
+        transparent 92deg,
+        rgba(229, 169, 61, 0.12) 138deg,
+        transparent 206deg,
+        rgba(72, 245, 255, 0.14) 268deg,
+        transparent 360deg
+      );
+    filter: blur(10px) saturate(1.15);
+    animation: em-field-rotate 7.2s linear infinite;
+  }
+
+  .floating-icon-em-field::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(
+        circle at 50% 50%,
+        rgba(72, 245, 255, 0.08) 0%,
+        transparent 52%,
+        rgba(72, 245, 255, 0.10) 64%,
+        transparent 74%
+      ),
+      repeating-linear-gradient(
+        90deg,
+        rgba(72, 245, 255, 0.0) 0px,
+        rgba(72, 245, 255, 0.0) 10px,
+        rgba(72, 245, 255, 0.10) 14px,
+        rgba(72, 245, 255, 0.0) 20px
+      );
+    opacity: 0.22;
+    filter: blur(0.5px);
+    animation: em-field-scan 2.9s ease-in-out infinite;
+  }
+
+  @keyframes em-field-rotate {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes em-field-scan {
+    0%, 100% {
+      opacity: 0.18;
+      transform: rotate(-6deg) translateY(0px);
+    }
+    55% {
+      opacity: 0.28;
+      transform: rotate(9deg) translateY(-1px);
+    }
+  }
+
+  .floating-icon-aura {
+    position: absolute;
+    /* Slightly larger than the sprite so it reads as a background halo. */
+    inset: -10px;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.95;
+    color: rgba(72, 245, 255, 0.92);
+    filter:
+      drop-shadow(0 0 10px rgba(72, 245, 255, 0.18))
+      drop-shadow(0 0 26px rgba(72, 245, 255, 0.10));
+  }
+
+  .floating-icon-aura svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .floating-icon-sprite {
+    width: 100%;
+    height: 100%;
+    background-image: var(--ruminer-sprite-url);
+    background-repeat: no-repeat;
+    background-size: ${SPRITE_SHEET_COLS * 100}% ${SPRITE_SHEET_ROWS * 100}%;
+    background-position: 0% 0%;
+    transform: translateY(5%);
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    will-change: transform, background-position;
   }
 
-  .floating-icon:hover .floating-icon-svg {
-    transform: scale(1.02);
-  }
-
-  .floating-icon.workflow-active .floating-icon-svg {
+  .floating-icon.workflow-active .floating-icon-art {
     opacity: 0.14;
     transform: scale(0.98);
   }
@@ -485,72 +591,89 @@ const FLOATING_ICON_STYLES = /* css */ `
     color: #ef4444;
   }
 
-  .cow-dark-hole {
-    fill: #110f0e; /* Deep dark to simulate negative space */
-    transition: fill 0.4s ease;
-  }
-
-  /* -- Jaw Morph Animation -- */
-  .cow-jaw {
-    /* Base: Closed crescent shape below the snout */
-    d: path('M 42,81 C 42,83 50,86 58,81 C 55,84 45,84 42,81 Z');
-    transition: d 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  
-  .floating-icon:hover .cow-jaw {
-    /* Hover: Massive open U-shape jaw */
-    d: path('M 37,76 C 37,100 63,100 63,76 C 55,90 45,90 37,76 Z');
-  }
-
-  /* -- Mouth Cavity (Dark void behind the jaw) -- */
-  .cow-mouth-cavity {
-    opacity: 0;
-    transform-origin: 50% 77%;
-    transform: scale(0.3);
-    transition: opacity 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .floating-icon:hover .cow-mouth-cavity {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  /* -- Tongue -- */
-  .cow-tongue {
-    opacity: 0;
-    transform-origin: 50% 90%;
-    transform: scale(0.5) translateY(4px);
-    transition: opacity 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .floating-icon:hover .cow-tongue {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-    transition-delay: 0.1s; /* Tongue pops up slightly after jaw opens */
-  }
-
   /* -- Aura Animations -- */
-  .aura-group {
+  .aura-spin-slow,
+  .aura-spin-fast {
     transform-origin: 50% 50%;
-    animation: aura-spin 30s linear infinite;
+    animation-name: aura-spin;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  .aura-spin-slow {
+    animation-duration: 22s;
+  }
+
+  .aura-spin-fast {
+    animation-duration: 12s;
+    animation-direction: reverse;
   }
 
   @keyframes aura-spin {
-    100% { transform: rotate(360deg); }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
-  .aura-line {
-    stroke-dasharray: 40;
-    stroke-dashoffset: 80;
-    animation: aura-flow 3s linear infinite;
+  .aura-dash {
+    stroke-dasharray: 8 10;
+    stroke-dashoffset: 0;
+    animation: aura-dash-flow 2.8s linear infinite;
   }
 
-  .floating-icon:hover .aura-line {
-    animation-duration: 1.5s; /* Speeds up on hover */
+  @keyframes aura-dash-flow {
+    to {
+      stroke-dashoffset: -72;
+    }
   }
 
-  @keyframes aura-flow {
-    to { stroke-dashoffset: 0; }
+  .aura-arc {
+    transform-origin: 50% 50%;
+    animation: aura-arc-flicker 2.4s ease-in-out infinite;
+  }
+
+  @keyframes aura-arc-flicker {
+    0%, 100% {
+      opacity: 0.10;
+      stroke-width: 0.8;
+    }
+    18% {
+      opacity: 0.52;
+      stroke-width: 1.25;
+    }
+    42% {
+      opacity: 0.16;
+      stroke-width: 0.75;
+    }
+    66% {
+      opacity: 0.72;
+      stroke-width: 1.35;
+    }
+  }
+
+  .aura-spark {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: aura-spark-pop 1.9s ease-in-out infinite;
+  }
+
+  @keyframes aura-spark-pop {
+    0%, 100% {
+      opacity: 0.18;
+      transform: scale(0.85);
+    }
+    40% {
+      opacity: 0.85;
+      transform: scale(1.12);
+    }
+    70% {
+      opacity: 0.32;
+      transform: scale(0.95);
+    }
+  }
+
+  .aura-accent {
+    stroke: rgba(229, 169, 61, 0.55);
   }
 
   /* Tooltip (interactive quick actions; vertical list; one item per row) */
@@ -849,8 +972,9 @@ const FLOATING_ICON_STYLES = /* css */ `
 
   /* Reduced motion preference */
   @media (prefers-reduced-motion: reduce) {
-    .floating-icon, .floating-icon:hover, .floating-icon-svg, 
-    .cow-jaw, .cow-tongue, .cow-mouth-cavity, .aura-group, .aura-line,
+    .floating-icon, .floating-icon:hover, .floating-icon-art,
+    .floating-icon-em-field, .floating-icon-aura, .floating-icon-sprite,
+    .aura-spin-slow, .aura-spin-fast, .aura-dash, .aura-arc, .aura-spark,
     .floating-icon-tooltip, .floating-icon-tooltip-row, .floating-icon-tooltip-action {
       transition: none !important;
       animation: none !important;
@@ -859,82 +983,50 @@ const FLOATING_ICON_STYLES = /* css */ `
 `;
 
 // ============================================================
-// SVG Icon (Geometric Cow + Aura)
+// Icon Art (Aura SVG + Sprite Sheet)
 // ============================================================
 
-const RUMINER_ICON_SVG = /* svg */ `
-  <svg class="floating-icon-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    
-    <!-- Magical Aura Background -->
-    <g class="aura-group" stroke="currentColor" fill="none" stroke-width="0.75" stroke-linecap="round">
-      <circle cx="50" cy="50" r="38" opacity="0.15" />
-      <circle cx="50" cy="50" r="46" opacity="0.08" />
-      
-      <!-- Flowing magical lines -->
-      <path d="M 12,55 C 5,60 5,75 22,82" class="aura-line" opacity="0.4" />
-      <path d="M 88,55 C 95,60 95,75 78,82" class="aura-line" opacity="0.4" />
-      <path d="M 18,45 C 5,50 5,60 12,68" class="aura-line" opacity="0.2" style="animation-delay: -1s" />
-      <path d="M 82,45 C 95,50 95,60 88,68" class="aura-line" opacity="0.2" style="animation-delay: -1s" />
-      
-      <!-- Sparkle Dots -->
-      <circle cx="15" cy="45" r="1.5" fill="currentColor" stroke="none" opacity="0.6" />
-      <circle cx="10" cy="58" r="1" fill="currentColor" stroke="none" opacity="0.4" />
-      <circle cx="20" cy="72" r="1.5" fill="currentColor" stroke="none" opacity="0.5" />
-      <circle cx="28" cy="85" r="1" fill="currentColor" stroke="none" opacity="0.3" />
-      
-      <circle cx="85" cy="45" r="1.5" fill="currentColor" stroke="none" opacity="0.6" />
-      <circle cx="90" cy="58" r="1" fill="currentColor" stroke="none" opacity="0.4" />
-      <circle cx="80" cy="72" r="1.5" fill="currentColor" stroke="none" opacity="0.5" />
-      <circle cx="72" cy="85" r="1" fill="currentColor" stroke="none" opacity="0.3" />
-    </g>
+const RUMINER_ICON_HTML = /* html */ `
+  <div class="floating-icon-art" aria-hidden="true">
+    <div class="floating-icon-em-field" aria-hidden="true"></div>
+    <div class="floating-icon-aura" aria-hidden="true">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <g stroke="currentColor" fill="none" stroke-linecap="round">
+          <g class="aura-spin-slow" stroke-width="0.9">
+            <circle class="aura-dash" cx="50" cy="50" r="44" opacity="0.18" />
+            <circle cx="50" cy="50" r="38" opacity="0.10" />
+            <circle class="aura-accent aura-dash" cx="50" cy="50" r="46" opacity="0.08" />
+          </g>
 
-    <!-- Main Cow Geometry -->
-    <g fill="currentColor">
-      
-      <!-- Center Face / Nose Bridge / Snout -->
-      <path d="M 38,25 
-               Q 50,22 62,25 
-               C 60,35 55,40 56,48 
-               C 57,55 68,62 68,68 
-               C 68,75 60,78 50,78 
-               C 40,78 32,75 32,68 
-               C 32,62 43,55 44,48 
-               C 45,40 40,35 38,25 Z" />
-      
-      <!-- Left Horn (Majestic curve) -->
-      <path d="M 38,26 C 20,24 10,12 2,16 C 12,20 22,32 35,32 Z" />
-      
-      <!-- Right Horn -->
-      <path d="M 62,26 C 80,24 90,12 98,16 C 88,20 78,32 65,32 Z" />
-      
-      <!-- Left Ear (Separated leaf shape) -->
-      <path d="M 35,35 C 20,35 5,42 2,46 C 12,50 22,46 28,42 C 22,42 15,44 12,44 C 20,40 30,38 35,35 Z" />
-      
-      <!-- Right Ear -->
-      <path d="M 65,35 C 80,35 95,42 98,46 C 88,50 78,46 72,42 C 78,42 85,44 88,44 C 80,40 70,38 65,35 Z" />
-      
-      <!-- Left Cheek (Creates the negative-space eye) -->
-      <path d="M 38,40 C 42,42 42,50 35,60 C 32,58 30,50 38,40 Z" />
-      
-      <!-- Right Cheek -->
-      <path d="M 62,40 C 58,42 58,50 65,60 C 68,58 70,50 62,40 Z" />
-    </g>
+          <g class="aura-spin-fast" stroke-width="1.05" opacity="0.55">
+            <path class="aura-arc" d="M 50 6 A 44 44 0 0 1 85 22" style="animation-delay: -0.6s" />
+            <path class="aura-arc" d="M 94 50 A 44 44 0 0 1 78 84" style="animation-delay: -1.4s" />
+            <path class="aura-arc" d="M 50 94 A 44 44 0 0 1 16 78" style="animation-delay: -0.2s" />
+            <path class="aura-arc" d="M 6 50 A 44 44 0 0 1 22 16" style="animation-delay: -1.0s" />
+          </g>
 
-    <!-- Nostrils (Solid dark cutouts) -->
-    <circle cx="43" cy="68" r="3.5" class="cow-dark-hole" />
-    <circle cx="57" cy="68" r="3.5" class="cow-dark-hole" />
+          <g class="aura-spin-slow" stroke-width="0.95" opacity="0.35">
+            <path class="aura-arc" d="M 12 56 C 5 60 6 76 24 84" style="animation-delay: -0.8s" />
+            <path class="aura-arc" d="M 88 56 C 95 60 94 76 76 84" style="animation-delay: -1.2s" />
+            <path class="aura-arc" d="M 18 44 C 6 50 6 60 12 68" style="animation-delay: -0.3s" />
+            <path class="aura-arc" d="M 82 44 C 94 50 94 60 88 68" style="animation-delay: -1.6s" />
+          </g>
+        </g>
 
-    <!-- Open Mouth Cavity (Hidden until jaw drops) -->
-    <path class="cow-mouth-cavity cow-dark-hole" d="M 37,76 C 37,92 63,92 63,76 Z" />
-
-    <!-- Tongue (Scales up on hover inside the mouth cavity) -->
-    <path class="cow-tongue" fill="currentColor" d="M 45,84 Q 50,81 55,84 Q 55,88 50,88 Q 45,88 45,84 Z" />
-
-    <!-- Morphing Jaw / Lower Lip -->
-    <!-- Managed entirely by CSS path 'd' attribute for silky smooth morph -->
-    <path class="cow-jaw" fill="currentColor" />
-
-  </svg>
+        <g fill="currentColor" stroke="none">
+          <circle class="aura-spark" cx="14" cy="44" r="1.5" style="animation-delay: -0.2s" />
+          <circle class="aura-spark" cx="10" cy="58" r="1.0" style="animation-delay: -1.0s" />
+          <circle class="aura-spark" cx="21" cy="72" r="1.4" style="animation-delay: -1.4s" />
+          <circle class="aura-spark" cx="29" cy="85" r="1.0" style="animation-delay: -0.6s" />
+          <circle class="aura-spark" cx="86" cy="44" r="1.5" style="animation-delay: -1.2s" />
+          <circle class="aura-spark" cx="90" cy="58" r="1.0" style="animation-delay: -0.4s" />
+          <circle class="aura-spark" cx="79" cy="72" r="1.4" style="animation-delay: -1.6s" />
+          <circle class="aura-spark" cx="71" cy="85" r="1.0" style="animation-delay: -0.9s" />
+        </g>
+      </svg>
+    </div>
+    <div class="floating-icon-sprite" aria-hidden="true"></div>
+  </div>
 `;
 
 // ============================================================
@@ -1003,6 +1095,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let shadowRoot: ShadowRoot | null = null;
   let containerElement: HTMLElement | null = null;
   let iconElement: HTMLElement | null = null;
+  let spriteElement: HTMLElement | null = null;
   let tooltipElement: HTMLElement | null = null;
   let tooltipGreetingElement: HTMLElement | null = null;
   let tooltipListElement: HTMLElement | null = null;
@@ -1044,11 +1137,140 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let currentRight = options.initialRight ?? 24;
   let hostObserver: MutationObserver | null = null;
 
+  let spriteFrameIndex = 0;
+  let spriteAnimationRaf: number | null = null;
+  let spriteAnimationLastTs: number | null = null;
+  let spriteAnimationTarget: number | null = null;
+
   // Try to load saved position
   const savedPosition = loadSavedPosition();
   if (savedPosition) {
     currentBottom = savedPosition.bottom;
     currentRight = savedPosition.right;
+  }
+
+  function prefersReducedMotion(): boolean {
+    try {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  function resolveAssetUrl(path: string): string {
+    try {
+      const chromeRuntime = (globalThis as any)?.chrome?.runtime;
+      if (chromeRuntime?.getURL) return chromeRuntime.getURL(path);
+    } catch {
+      // ignore
+    }
+    return path;
+  }
+
+  function setSpriteFrame(nextFrame: number): void {
+    spriteFrameIndex = Math.min(Math.max(Math.floor(nextFrame), 0), SPRITE_SHEET_TOTAL_FRAMES - 1);
+    if (!spriteElement) return;
+
+    const col = spriteFrameIndex % SPRITE_SHEET_COLS;
+    const row = Math.floor(spriteFrameIndex / SPRITE_SHEET_COLS);
+    const colPct = SPRITE_SHEET_COLS <= 1 ? 0 : (col * 100) / (SPRITE_SHEET_COLS - 1);
+    const rowPct = SPRITE_SHEET_ROWS <= 1 ? 0 : (row * 100) / (SPRITE_SHEET_ROWS - 1);
+    spriteElement.style.backgroundPosition = `${colPct}% ${rowPct}%`;
+  }
+
+  function stopSpriteAnimation(): void {
+    if (spriteAnimationRaf != null) {
+      cancelAnimationFrame(spriteAnimationRaf);
+      spriteAnimationRaf = null;
+    }
+    spriteAnimationLastTs = null;
+    spriteAnimationTarget = null;
+  }
+
+  function playSpriteTo(targetFrame: number): void {
+    const clampedTarget = Math.min(
+      Math.max(Math.floor(targetFrame), 0),
+      SPRITE_SHEET_TOTAL_FRAMES - 1,
+    );
+
+    if (!spriteElement) return;
+
+    if (prefersReducedMotion()) {
+      stopSpriteAnimation();
+      setSpriteFrame(clampedTarget);
+      return;
+    }
+
+    if (spriteFrameIndex === clampedTarget) {
+      stopSpriteAnimation();
+      return;
+    }
+
+    stopSpriteAnimation();
+    spriteAnimationTarget = clampedTarget;
+
+    const direction = spriteFrameIndex < clampedTarget ? 1 : -1;
+    const frameStepMs = 1000 / SPRITE_SHEET_FPS;
+
+    const tick = (ts: number) => {
+      if (!spriteElement || spriteAnimationTarget == null) {
+        stopSpriteAnimation();
+        return;
+      }
+
+      if (spriteAnimationLastTs == null) spriteAnimationLastTs = ts;
+      const elapsed = ts - spriteAnimationLastTs;
+
+      if (elapsed >= frameStepMs) {
+        const maxCatchUpSteps = 6;
+        const stepCount = Math.min(maxCatchUpSteps, Math.floor(elapsed / frameStepMs));
+        spriteAnimationLastTs += stepCount * frameStepMs;
+
+        for (let i = 0; i < stepCount; i += 1) {
+          if (spriteAnimationTarget == null) break;
+          const next = spriteFrameIndex + direction;
+          if (direction > 0) setSpriteFrame(Math.min(next, spriteAnimationTarget));
+          else setSpriteFrame(Math.max(next, spriteAnimationTarget));
+
+          if (spriteFrameIndex === spriteAnimationTarget) {
+            stopSpriteAnimation();
+            return;
+          }
+        }
+      }
+
+      spriteAnimationRaf = requestAnimationFrame(tick);
+    };
+
+    spriteAnimationRaf = requestAnimationFrame(tick);
+  }
+
+  function bindSpriteHoverAnimation(): void {
+    const icon = iconElement;
+    const tooltip = tooltipElement;
+    if (!icon || !tooltip) return;
+
+    const playForward = () => playSpriteTo(SPRITE_SHEET_TOTAL_FRAMES - 1);
+    const playReverse = () => playSpriteTo(0);
+
+    icon.addEventListener('pointerenter', playForward);
+
+    icon.addEventListener('pointerleave', (e: PointerEvent) => {
+      const related = e.relatedTarget as Node | null;
+      if (related && tooltip.contains(related)) return;
+      playReverse();
+    });
+
+    tooltip.addEventListener('pointerenter', (e) => {
+      e.stopPropagation();
+      playForward();
+    });
+
+    tooltip.addEventListener('pointerleave', (e: PointerEvent) => {
+      const related = e.relatedTarget as Node | null;
+      if (related && icon.contains(related)) return;
+      playReverse();
+    });
   }
 
   /**
@@ -1082,7 +1304,16 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     // Create icon button
     iconElement = document.createElement('div');
     iconElement.className = 'floating-icon entering';
-    iconElement.innerHTML = RUMINER_ICON_SVG;
+    iconElement.innerHTML = RUMINER_ICON_HTML;
+
+    spriteElement = iconElement.querySelector('.floating-icon-sprite') as HTMLElement | null;
+    try {
+      const spriteUrl = resolveAssetUrl(SPRITE_SHEET_PUBLIC_PATH);
+      iconElement.style.setProperty('--ruminer-sprite-url', `url("${spriteUrl}")`);
+    } catch {
+      // ignore
+    }
+    setSpriteFrame(0);
 
     // Create ripple element
     rippleElement = document.createElement('div');
@@ -1271,6 +1502,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     updateWorkflowUi();
     updateTooltipUi();
     bindTooltipHoverRetention();
+    bindSpriteHoverAnimation();
     setTooltipOpen(false);
 
     container.appendChild(iconElement);
@@ -1807,6 +2039,8 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   function hide(): void {
     if (!isVisible || !iconElement || !hostElement) return;
 
+    stopSpriteAnimation();
+    setSpriteFrame(0);
     iconElement.classList.remove('breathing');
     iconElement.classList.add('exiting');
 
@@ -1884,6 +2118,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
    * Dispose and cleanup
    */
   function dispose(): void {
+    stopSpriteAnimation();
     if (hostObserver) {
       try {
         hostObserver.disconnect();
@@ -1904,6 +2139,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     shadowRoot = null;
     containerElement = null;
     iconElement = null;
+    spriteElement = null;
     tooltipElement = null;
     tooltipGreetingElement = null;
     tooltipListElement = null;

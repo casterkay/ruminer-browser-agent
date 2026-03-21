@@ -79,12 +79,12 @@
 
 <script lang="ts" setup>
 import { computed, provide, ref } from 'vue';
+import { EMOS_CITATION_OPEN_DETAILS_KEY } from '../../composables/emos-citations';
 import type { AgentThread } from '../../composables/useAgentThreads';
 import type { MemoryItem } from '../../composables/useEmosSearch';
 import type { MemorySuggestion } from '../../composables/useEmosSuggestions';
 import MemoryItemDetails from '../memory/MemoryItemDetails.vue';
 import AgentRequestThread from './AgentRequestThread.vue';
-import { EMOS_CITATION_OPEN_DETAILS_KEY } from '../../composables/emos-citations';
 
 const props = withDefaults(
   defineProps<{
@@ -112,7 +112,7 @@ provide(EMOS_CITATION_OPEN_DETAILS_KEY, (item: MemoryItem) => {
 });
 
 const appIconUrl = computed(() => {
-  const path = 'icon/icon.svg';
+  const path = 'icon/icon.png';
   try {
     if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
       return chrome.runtime.getURL(path);
@@ -233,14 +233,14 @@ function formatSource(suggestion: MemorySuggestion): string {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .empty-app-icon {
-  width: 72px;
-  height: 72px;
+  width: 108px;
+  height: 108px;
   border-radius: var(--ac-radius-card);
-  opacity: 0.88;
+  opacity: 0.95;
 }
 
 .memory-suggestion-layout {

@@ -143,50 +143,91 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
 
-  const findSidebarScroller = () => {
-    const candidates = ['nav', 'aside', '[class*="scroll-area"]'];
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (el && el.scrollHeight > el.clientHeight) return el;
+  const clickFirstMatching = (selectors) => {
+    const list = Array.isArray(selectors) ? selectors.filter(Boolean) : [];
+    for (const sel of list) {
+      let el = null;
+      try {
+        el = document.querySelector(sel);
+      } catch {
+        el = null;
+      }
+      if (!el) continue;
+      try {
+        const disabled =
+          el.hasAttribute?.('disabled') ||
+          el.getAttribute?.('aria-disabled') === 'true' ||
+          (typeof el.disabled === 'boolean' && el.disabled === true);
+        if (disabled) continue;
+      } catch {}
+      try {
+        if (typeof el.click === 'function') {
+          el.click();
+          return true;
+        }
+      } catch {}
     }
-    return document.scrollingElement || document.documentElement;
+    return false;
+  };
+
+  const findSidebarScroller = () => {
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = ['nav', 'aside', '[class*="scroll-area"]', '[class*="sidebar"]'];
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
+  };
+
+  const ensureSidebarVisible = async () => {
+    try {
+      const ready = findSidebarScroller();
+      if (ready) return true;
+    } catch {}
+
+    const toggles = ['[class*="ds-icon-button"]'];
+    clickFirstMatching(toggles);
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        const ready = findSidebarScroller();
+        if (ready) return true;
+      } catch {}
+      await sleep(250);
+    }
+    return false;
+  };
+
+  const findTranscriptScroller = () => {
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = ['div[class*="ds-virtual-list"]', '[class*="ds-virtual-list"]'];
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
   };
 
   const sidebarCache = {
     items: [],
     seen: new Set(),
     done: false,
-  };
-
-  const collectConversationLinksOnce = () => {
-    const anchors = Array.from(document.querySelectorAll('a[href]'));
-    let added = 0;
-
-    for (const a of anchors) {
-      const href = String(a.getAttribute('href') || '');
-      if (!href.includes('/chat/')) continue;
-      let url;
-      try {
-        url = new URL(href, location.origin);
-      } catch {
-        continue;
-      }
-      if (url.hostname !== location.hostname) continue;
-      const id = parseConversationId(url.toString());
-      if (!id) continue;
-      if (sidebarCache.seen.has(id)) continue;
-
-      const title = String(a.textContent || '').trim() || null;
-      sidebarCache.seen.add(id);
-      sidebarCache.items.push({
-        conversationId: id,
-        conversationUrl: url.toString(),
-        conversationTitle: title,
-      });
-      added += 1;
-    }
-
-    return { added, totalAnchors: anchors.length };
   };
 
   const compareDomOrder = (a, b) => {
@@ -239,57 +280,57 @@
     if (sidebarCache.done) return;
     if (sidebarCache.items.length >= targetCount) return;
 
-    const scroller = findSidebarScroller();
-    const start = Date.now();
-    const missing = Math.max(1, targetCount - sidebarCache.items.length);
-    const baseWaitMs = sidebarCache.items.length === 0 ? 20_000 : 8_000;
-    const perMissingMs = sidebarCache.items.length === 0 ? 0 : 1_200;
-    const maxWaitMs = Math.min(60_000, baseWaitMs + missing * perMissingMs);
-    const deadline = start + maxWaitMs;
-
-    let stableNoNew = 0;
-    let lastProgressAt = Date.now();
-    let didScroll = false;
-
-    while (Date.now() < deadline && sidebarCache.items.length < targetCount) {
-      const { added, totalAnchors } = collectConversationLinksOnce();
-
-      if (added > 0) {
-        lastProgressAt = Date.now();
-        stableNoNew = 0;
-      } else {
-        const pageLooksReady = totalAnchors > 0 || didScroll || sidebarCache.items.length > 0;
-        if (pageLooksReady) stableNoNew += 1;
-      }
-
-      if (sidebarCache.items.length >= targetCount) break;
-
-      // Avoid prematurely giving up while the sidebar is still rendering.
-      const quietMs = Date.now() - lastProgressAt;
-      if (sidebarCache.items.length > 0 && stableNoNew >= 8 && quietMs > 1500) {
-        const canScroll = scroller && scroller.scrollHeight > scroller.clientHeight + 8;
-        const atBottom =
-          !canScroll ||
-          (scroller &&
-            scroller.scrollTop + scroller.clientHeight >= Math.max(0, scroller.scrollHeight - 4));
-        if (atBottom) {
-          sidebarCache.done = true;
-          break;
-        }
-      }
-
-      // Grace period: let the app finish loading before we start scrolling the sidebar.
-      if (scroller && Date.now() - start > 3000) {
-        const beforeTop = scroller.scrollTop;
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
-        );
-        if (scroller.scrollTop !== beforeTop) didScroll = true;
-      }
-
-      await sleep(250);
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (!core || typeof core.runScrollConversations !== 'function') {
+      sidebarCache.done = true;
+      return;
     }
+
+    await ensureSidebarVisible().catch(() => false);
+
+    await core.runScrollConversations({
+      findScroller: findSidebarScroller,
+      intervalMs: 500,
+      stepFactor: 0.8,
+      stableDeltaPx: 40,
+      stableAttempts: 4,
+      hrefFilter: (href) => typeof href === 'string' && href.includes('/chat/'),
+    });
+
+    const scroller = findSidebarScroller();
+    const queryRoot =
+      scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+    const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
+
+    sidebarCache.items.length = 0;
+    try {
+      sidebarCache.seen.clear();
+    } catch {}
+
+    for (const a of anchors) {
+      const href = String(a.getAttribute('href') || '');
+      if (!href.includes('/chat/')) continue;
+      let url;
+      try {
+        url = new URL(href, location.origin);
+      } catch {
+        continue;
+      }
+      if (url.hostname !== location.hostname) continue;
+      const id = parseConversationId(url.toString());
+      if (!id) continue;
+      if (sidebarCache.seen.has(id)) continue;
+
+      const title = String(a.textContent || '').trim() || null;
+      sidebarCache.seen.add(id);
+      sidebarCache.items.push({
+        conversationId: id,
+        conversationUrl: url.toString(),
+        conversationTitle: title,
+      });
+    }
+
+    sidebarCache.done = true;
   }
 
   async function listConversations({ offset, limit }) {
@@ -310,19 +351,16 @@
     await sleep(400);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.
-    const scroller = document.scrollingElement || document.documentElement;
-    let stable = 0;
-    for (let i = 0; i < 120; i++) {
-      const beforeTop = scroller.scrollTop;
-      scroller.scrollTop = Math.max(
-        0,
-        scroller.scrollTop - Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
-      );
-      await sleep(220);
-      const afterTop = scroller.scrollTop;
-      if (afterTop === beforeTop) stable += 1;
-      else stable = 0;
-      if (stable >= 5) break;
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (core && typeof core.runScrollMessages === 'function') {
+      await core.runScrollMessages({
+        direction: 'up',
+        findScroller: findTranscriptScroller,
+        intervalMs: 500,
+        stepFactor: 0.8,
+        stableDeltaPx: 40,
+        stableAttempts: 4,
+      });
     }
 
     const msgs = extractMessagesFromDom();

@@ -179,12 +179,6 @@
 
   const READY_POLL_MS = 400;
   const READY_TIMEOUT_MS = 20_000;
-  const SCROLL_STEP_SLEEP_MS = 220;
-  const MAX_SCROLL_STEPS = 900;
-  const STABILITY_CHECKS = 3;
-  const TOP_IDLE_STABLE_MS = 1_000;
-  const TOP_MAX_WAIT_MS = 2_000;
-  const TOP_IDLE_SLEEP_MS = 520;
 
   const extractTextPreserveNewlines = (root) => {
     if (!root) return '';
@@ -329,74 +323,34 @@
     return new Promise((r) => setTimeout(r, safe));
   };
 
-  const getElementKey = (() => {
-    const keys = new WeakMap();
-    let next = 1;
-    return (el) => {
-      if (!el || (typeof el !== 'object' && typeof el !== 'function')) return null;
-      const existing = keys.get(el);
-      if (existing) return existing;
-      const id = next++;
-      keys.set(el, id);
-      return id;
-    };
-  })();
+  const clickFirstMatching = (selectors) => {
+    const list = Array.isArray(selectors) ? selectors.filter(Boolean) : [];
+    for (const sel of list) {
+      let el = null;
+      try {
+        el = document.querySelector(sel);
+      } catch {
+        el = null;
+      }
+      if (!el) continue;
+      try {
+        const disabled =
+          el.hasAttribute?.('disabled') ||
+          el.getAttribute?.('aria-disabled') === 'true' ||
+          (typeof el.disabled === 'boolean' && el.disabled === true);
+        if (disabled) continue;
+      } catch {}
+      try {
+        if (typeof el.click === 'function') {
+          el.click();
+          return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-
-  const getSentinelTurnContainer = (scrollerRoot) => {
-    const vw = Math.max(0, window.innerWidth || document.documentElement?.clientWidth || 0);
-    const vh = Math.max(0, window.innerHeight || document.documentElement?.clientHeight || 0);
-    if (!(vw > 0 && vh > 0)) return null;
-
-    let rect = null;
-    try {
-      if (
-        scrollerRoot &&
-        scrollerRoot !== document.documentElement &&
-        scrollerRoot !== document.body &&
-        typeof scrollerRoot.getBoundingClientRect === 'function'
-      ) {
-        rect = scrollerRoot.getBoundingClientRect();
-      }
-    } catch {
-      rect = null;
-    }
-
-    const r = rect
-      ? {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        }
-      : { left: 0, top: 0, width: vw, height: vh };
-
-    const xs = [
-      r.left + r.width * 0.5,
-      r.left + Math.min(48, r.width * 0.2),
-      r.left + Math.max(16, r.width * 0.35),
-    ]
-      .filter((x) => Number.isFinite(x))
-      .map((x) => clamp(Math.floor(x), 1, vw - 2));
-
-    const ys = [r.top + 24, r.top + 64, r.top + 120, r.top + 180]
-      .filter((y) => Number.isFinite(y))
-      .map((y) => clamp(Math.floor(y), 1, vh - 2));
-
-    for (const y of ys) {
-      for (const x of xs) {
-        const el = document.elementFromPoint(x, y);
-        if (!el) continue;
-        try {
-          const container =
-            el.closest?.(SELECTORS.turnContainer) || el.closest?.(SELECTORS.turnContainers) || null;
-          if (container) return container;
-        } catch {}
-      }
-    }
-    return null;
-  };
 
   const nextSiblingOrAncestorSibling = (el, stopAt) => {
     let cur = el;
@@ -422,26 +376,9 @@
     return null;
   };
 
-  const collectTurnContainersFromSentinel = (sentinelContainer, maxCount = 4) => {
-    if (!sentinelContainer || sentinelContainer.nodeType !== 1) return [];
-    const transcriptRoot =
-      sentinelContainer.closest?.('#chat-history') || findTranscriptRoot() || document.body;
-
-    const out = [];
-    out.push(sentinelContainer);
-
-    let cur = sentinelContainer;
-    while (out.length < maxCount) {
-      const next = findNextTurnContainer(cur, transcriptRoot);
-      if (!next) break;
-      out.push(next);
-      cur = next;
-    }
-    return out;
-  };
-
   const findSidebarScroller = () => {
-    const candidates = [
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = [
       '[data-test-id*="history"]',
       '[data-testid*="history"]',
       'mat-sidenav-content',
@@ -449,11 +386,70 @@
       'nav',
       'aside',
     ];
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (el && el.scrollHeight > el.clientHeight) return el;
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
+  };
+
+  const ensureSidebarVisible = async () => {
+    try {
+      const ready = findSidebarScroller();
+      if (ready) return true;
+    } catch {}
+
+    const toggles = [
+      '[aria-label="Main menu"]',
+      '[data-test-id="side-nav-menu-button"]',
+      '[class*="mdc-icon-button"]',
+    ];
+
+    clickFirstMatching(toggles);
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        const ready = findSidebarScroller();
+        if (ready) return true;
+      } catch {}
+      await sleep(250);
     }
-    return document.scrollingElement || document.documentElement;
+    return false;
+  };
+
+  const findTranscriptScroller = () => {
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = [
+      // Preferred: Gemini transcript list scroller.
+      'infinite-scroller[class*="chat-history"]',
+      '#chat-history infinite-scroller',
+      'chat-history infinite-scroller',
+      // Common wrappers.
+      '.chat-history-scroll-container',
+      '.chat-scrollable-container',
+      'chat-history-scroll-container',
+      '[data-test-id="chat-history-container"]',
+    ];
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
   };
 
   const findTranscriptRoot = () => {
@@ -464,171 +460,6 @@
       document.querySelector('[data-testid*="chat-history"]') ||
       null
     );
-  };
-
-  const isMapRelatedElement = (element) => {
-    if (!element || typeof element.matches !== 'function') return false;
-    if (element.matches('maps, .map, .gm-style, .gm-style-moc, .gm-style-cc, .gmnoprint'))
-      return true;
-    return Boolean(element.closest('maps, .gm-style, .gm-style-moc, .gm-style-cc, .gmnoprint'));
-  };
-
-  const containsChatMarkers = (element) => {
-    if (!element || typeof element.querySelector !== 'function') return false;
-    const selectorPool = [
-      '#chat-history',
-      '.chat-history-scroll-container',
-      'chat-history',
-      'infinite-scroller',
-      '[data-test-id="chat-history-container"]',
-      'user-query',
-      'model-response',
-      '.conversation-container',
-    ].filter(Boolean);
-
-    try {
-      return Boolean(element.querySelector(selectorPool.join(', ')));
-    } catch {
-      return false;
-    }
-  };
-
-  const isUsableScrollerElement = (element) => {
-    if (!element || element.nodeType !== 1) return false;
-    if (isMapRelatedElement(element)) return false;
-
-    if (element === document.documentElement || element === document.body) {
-      const root = document.scrollingElement || document.documentElement;
-      return root && root.scrollHeight > root.clientHeight + 20;
-    }
-
-    let style;
-    try {
-      style = window.getComputedStyle(element);
-    } catch {
-      return false;
-    }
-
-    if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
-    if (!['auto', 'scroll', 'overlay'].includes(style.overflowY)) return false;
-    if (element.scrollHeight <= element.clientHeight + 20) return false;
-
-    const rect = element.getBoundingClientRect();
-    if (!rect || rect.height < 120 || rect.width < 120) return false;
-
-    return true;
-  };
-
-  const getScrollerCandidateScore = (element) => {
-    if (!isUsableScrollerElement(element)) return Number.NEGATIVE_INFINITY;
-
-    let score = Math.max(0, element.scrollHeight - element.clientHeight);
-    const rect = element.getBoundingClientRect();
-    const markerBonus = containsChatMarkers(element) ? 5000 : 0;
-
-    if (rect.height >= window.innerHeight * 0.5) score += 1400;
-    if (rect.width >= window.innerWidth * 0.35) score += 400;
-    if (markerBonus) score += markerBonus;
-
-    if (
-      element.matches(
-        [
-          '.chat-scrollable-container',
-          '.chat-history-scroll-container',
-          'chat-history-scroll-container',
-          'mat-sidenav-content',
-          'infinite-scroller',
-          '[data-test-id="chat-history-container"]',
-        ].join(', '),
-      )
-    ) {
-      score += 1200;
-    }
-
-    if (element.id === 'chat-history' || element.closest('#chat-history')) {
-      score += 700;
-    }
-
-    return score;
-  };
-
-  const pickBestScroller = (candidates) => {
-    const unique = [];
-    const seen = new Set();
-    for (const el of candidates) {
-      if (!el || seen.has(el)) continue;
-      seen.add(el);
-      unique.push(el);
-    }
-
-    let best = null;
-    let bestScore = Number.NEGATIVE_INFINITY;
-    for (const el of unique) {
-      const score = getScrollerCandidateScore(el);
-      if (score > bestScore) {
-        bestScore = score;
-        best = el;
-      }
-    }
-    return best;
-  };
-
-  const getTranscriptScroller = () => {
-    // Strategy 1: known direct selectors (from gemini-export scroller.js).
-    const directSelectors = [
-      '.chat-scrollable-container',
-      '.chat-history-scroll-container',
-      'chat-history-scroll-container',
-      'infinite-scroller',
-      '[data-test-id="chat-history-container"]',
-      '#chat-history',
-      'chat-history',
-      'main',
-      'mat-sidenav-content',
-      '.chat-history',
-    ];
-
-    const directCandidates = [];
-    for (const sel of directSelectors) {
-      try {
-        document.querySelectorAll(sel).forEach((el) => directCandidates.push(el));
-      } catch {}
-    }
-
-    const pickedDirect = pickBestScroller(directCandidates);
-    if (pickedDirect) return pickedDirect;
-
-    // Strategy 2: walk up from message nodes and score usable scrollers.
-    const messageNodes = Array.from(
-      document.querySelectorAll(
-        [
-          '#chat-history .conversation-container',
-          '#chat-history user-query',
-          '#chat-history model-response',
-          '.conversation-container',
-          'user-query',
-          'model-response',
-        ].join(', '),
-      ),
-    ).slice(0, 80);
-
-    if (messageNodes.length > 0) {
-      const ancestorCandidates = [];
-      for (const node of messageNodes) {
-        let current = node;
-        let depth = 0;
-        while (current && depth < 14) {
-          ancestorCandidates.push(current);
-          current = current.parentElement;
-          depth++;
-        }
-      }
-      const pickedAncestor = pickBestScroller(ancestorCandidates);
-      if (pickedAncestor) return pickedAncestor;
-    }
-
-    // Strategy 3: fallback.
-    return document.scrollingElement || document.documentElement || document.body;
   };
 
   const createTurnInfo = (index) => ({
@@ -744,11 +575,6 @@
         requireVisibleRect: true,
       });
     };
-    const extractNearSentinel = (sentinelContainer, maxCount = 4) => {
-      const list = collectTurnContainersFromSentinel(sentinelContainer, maxCount);
-      if (!list || list.length === 0) return false;
-      return extractConversationIncremental(collectedByContainer, allocateSeq, list);
-    };
 
     const hasAnyNonEmptyTurn = () => {
       for (const info of collectedByContainer.values()) {
@@ -806,28 +632,9 @@
     return {
       collectedByContainer,
       extractOnce,
-      extractNearSentinel,
       hasAnyNonEmptyTurn,
       toMessages,
     };
-  };
-
-  const scrollerGetters = (scroller) => {
-    const root = scroller || document.scrollingElement || document.documentElement;
-    const getScrollTop = () => Math.max(0, Math.floor(root.scrollTop || 0));
-    const getScrollHeight = () => Math.max(0, Math.floor(root.scrollHeight || 0));
-    const getClientHeight = () => Math.max(0, Math.floor(root.clientHeight || 0));
-    const setScrollTop = (top) => {
-      const next = Math.max(0, Math.floor(top || 0));
-      try {
-        root.scrollTo({ top: next, behavior: 'auto' });
-      } catch {
-        try {
-          root.scrollTop = next;
-        } catch {}
-      }
-    };
-    return { root, getScrollTop, getScrollHeight, getClientHeight, setScrollTop };
   };
 
   const openConversationInPlace = async (targetUrl) => {
@@ -857,64 +664,59 @@
     done: false,
   };
 
-  async function ensureSidebarCacheSize(targetCount) {
+  async function ensureSidebarCacheScanned() {
     if (sidebarCache.done) return;
-    if (sidebarCache.items.length >= targetCount) return;
+
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (!core || typeof core.runScrollConversations !== 'function') {
+      sidebarCache.done = true;
+      return;
+    }
+
+    await ensureSidebarVisible().catch(() => false);
+
+    await core.runScrollConversations({
+      findScroller: findSidebarScroller,
+      intervalMs: 500,
+      stepFactor: 0.8,
+      stableDeltaPx: 40,
+      stableAttempts: 4,
+      hrefFilter: (href) => typeof href === 'string' && href.includes('/app/'),
+    });
 
     const scroller = findSidebarScroller();
-    let queryRoot =
-      scroller && typeof scroller.querySelectorAll === 'function'
-        ? scroller
-        : document.documentElement || document;
+    const queryRoot =
+      scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+    const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
+
+    sidebarCache.items.length = 0;
     try {
-      if (queryRoot !== document.documentElement && !queryRoot.querySelector('a[href*="/app/"]')) {
-        queryRoot = document.documentElement || document;
-      }
+      sidebarCache.seen.clear();
     } catch {}
-    let stable = 0;
-    let lastCount = sidebarCache.items.length;
 
-    for (let i = 0; i < 80 && sidebarCache.items.length < targetCount; i++) {
-      const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href.includes('/app/')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
-        }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (sidebarCache.seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        sidebarCache.seen.add(id);
-        sidebarCache.items.push({
-          conversationId: id,
-          conversationUrl: url.toString(),
-          conversationTitle: title,
-        });
+    for (const a of anchors) {
+      const href = String(a.getAttribute('href') || '');
+      if (!href.includes('/app/')) continue;
+      let url;
+      try {
+        url = new URL(href, location.origin);
+      } catch {
+        continue;
       }
-
-      if (sidebarCache.items.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = sidebarCache.items.length;
-
-      if (stable >= 5) {
-        sidebarCache.done = true;
-        break;
-      }
-
-      if (scroller) {
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
-        );
-      }
-      await sleep(200);
+      if (url.hostname !== location.hostname) continue;
+      const id = parseConversationId(url.toString());
+      if (!id) continue;
+      if (sidebarCache.seen.has(id)) continue;
+      const title = String(a.textContent || '').trim() || null;
+      sidebarCache.seen.add(id);
+      sidebarCache.items.push({
+        conversationId: id,
+        conversationUrl: url.toString(),
+        conversationTitle: title,
+      });
     }
+
+    sidebarCache.done = true;
   }
 
   async function listConversations({ offset, limit }) {
@@ -924,8 +726,7 @@
         : 0;
     const LIM =
       typeof limit === 'number' && Number.isFinite(limit) ? clamp(Math.floor(limit), 1, 200) : 100;
-    const target = OFF + LIM;
-    await ensureSidebarCacheSize(target);
+    await ensureSidebarCacheScanned();
     const slice = sidebarCache.items.slice(OFF, OFF + LIM);
     const nextOffset = slice.length > 0 ? OFF + slice.length : sidebarCache.done ? null : OFF;
     return { items: slice, nextOffset };
@@ -998,116 +799,22 @@
     }
 
     // Phase C — Full incremental capture (virtualization-safe).
-    const scroller = getTranscriptScroller();
-    const { root, getScrollTop, getScrollHeight, getClientHeight, setScrollTop } =
-      scrollerGetters(scroller);
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (!core || typeof core.runScrollMessages !== 'function') {
+      collector.extractOnce();
+    } else {
+      await core.runScrollMessages({
+        direction: 'up',
+        findScroller: findTranscriptScroller,
+        intervalMs: 500,
+        stepFactor: 0.8,
+        stableDeltaPx: 40,
+        stableAttempts: 4,
+      });
 
-    // Single-direction capture: collect while scrolling up until top stability.
-    // Assumption: after opening a conversation, Gemini is already at/near the end (no missing content below).
-    let topStable = 0;
-    let lastSize = collector.collectedByContainer.size;
-    let lastScrollHeight = -1;
-    let noMove = 0;
-    let lastCollectorChangeAt = Date.now();
-    let atTopSince = null;
-    let lastSentinelKey = null;
-    let lastExtractAt = 0;
-    let lastFallbackFullScanAt = 0;
-
-    const maybeExtractNearSentinel = (sentinelContainer, force = false) => {
-      const now = Date.now();
-      if (!sentinelContainer) return false;
-
-      const key = getElementKey(sentinelContainer);
-      const sameSentinel = key && lastSentinelKey === key;
-      if (!force) {
-        // If the sentinel hasn't changed, throttle extraction to still catch hydration.
-        if (sameSentinel && now - lastExtractAt < 700) return false;
-      }
-
-      const changed = collector.extractNearSentinel(sentinelContainer, 4);
-      if (key) lastSentinelKey = key;
-      lastExtractAt = now;
-      if (changed) lastCollectorChangeAt = now;
-      return changed;
-    };
-
-    for (let i = 0; i < MAX_SCROLL_STEPS; i++) {
-      const sentinelBefore = getSentinelTurnContainer(root);
-      if (sentinelBefore) {
-        maybeExtractNearSentinel(sentinelBefore, i === 0);
-      } else {
-        const now = Date.now();
-        // Sentinel missing can happen due to overlays/sticky headers; avoid hammering a full scan.
-        if (now - lastFallbackFullScanAt >= 1_200) {
-          if (collector.extractOnce()) lastCollectorChangeAt = now;
-          lastFallbackFullScanAt = now;
-        }
-      }
-
-      const beforeTop = getScrollTop();
-      const clientH = getClientHeight();
-      const step = Math.max(240, Math.floor(clientH * 0.9));
-      const nextTop = Math.max(0, beforeTop - step);
-
-      if (beforeTop > 0) setScrollTop(nextTop);
-
-      const idleMs = Date.now() - lastCollectorChangeAt;
-      const sleepMs =
-        beforeTop <= 0 && idleMs >= 600
-          ? Math.max(SCROLL_STEP_SLEEP_MS, TOP_IDLE_SLEEP_MS)
-          : SCROLL_STEP_SLEEP_MS;
-      await sleep(sleepMs);
-
-      const afterTop = getScrollTop();
-      const afterScrollH = getScrollHeight();
-      const sizeNow = collector.collectedByContainer.size;
-      const atTopNow = afterTop <= 10;
-      const now = Date.now();
-
-      const sentinelAfter = getSentinelTurnContainer(root);
-      if (sentinelAfter) {
-        // If scrollHeight changed, force an extract even if sentinel identity didn't.
-        const scrollHeightChanged = afterScrollH !== lastScrollHeight;
-        maybeExtractNearSentinel(sentinelAfter, scrollHeightChanged);
-      } else if (now - lastFallbackFullScanAt >= 1_200) {
-        if (collector.extractOnce()) lastCollectorChangeAt = now;
-        lastFallbackFullScanAt = now;
-      }
-
-      if (afterTop === beforeTop) noMove += 1;
-      else noMove = 0;
-
-      if (atTopNow) {
-        if (atTopSince === null) atTopSince = now;
-        // At the very top, force periodic extraction to catch late prepends/hydration even if the sentinel
-        // element doesn't change (some UIs mutate content within the same container).
-        if (now - lastExtractAt >= 500) {
-          const topSentinel = sentinelAfter || sentinelBefore;
-          if (topSentinel) maybeExtractNearSentinel(topSentinel, true);
-        }
-        // Gemini often keeps reflowing (images/markdown) even after the message list is complete.
-        // Waiting for scrollHeight to be stable can therefore stall for seconds while we are already done.
-        if (now - lastCollectorChangeAt >= TOP_IDLE_STABLE_MS) break;
-        if (now - atTopSince >= TOP_MAX_WAIT_MS) break;
-      } else {
-        atTopSince = null;
-      }
-
-      if (atTopNow && sizeNow === lastSize && afterScrollH === lastScrollHeight) topStable += 1;
-      else topStable = 0;
-
-      lastSize = sizeNow;
-      lastScrollHeight = afterScrollH;
-
-      if (topStable >= STABILITY_CHECKS) break;
-      if (noMove >= 5 && beforeTop > 0) break;
+      // Final extraction once after top stability.
+      collector.extractOnce();
     }
-
-    // One last pass to capture any late-hydrated text before materializing messages.
-    const finalSentinel = getSentinelTurnContainer(root);
-    if (finalSentinel) collector.extractNearSentinel(finalSentinel, 4);
-    else collector.extractOnce();
 
     // Phase D — Build output message list.
     const msgs = collector.toMessages();

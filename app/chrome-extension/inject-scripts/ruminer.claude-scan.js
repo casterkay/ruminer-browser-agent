@@ -191,6 +191,33 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
 
+  const clickFirstMatching = (selectors) => {
+    const list = Array.isArray(selectors) ? selectors.filter(Boolean) : [];
+    for (const sel of list) {
+      let el = null;
+      try {
+        el = document.querySelector(sel);
+      } catch {
+        el = null;
+      }
+      if (!el) continue;
+      try {
+        const disabled =
+          el.hasAttribute?.('disabled') ||
+          el.getAttribute?.('aria-disabled') === 'true' ||
+          (typeof el.disabled === 'boolean' && el.disabled === true);
+        if (disabled) continue;
+      } catch {}
+      try {
+        if (typeof el.click === 'function') {
+          el.click();
+          return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
+
   const normalizeRole = (raw) => {
     const roleRaw = String(raw || '').toLowerCase();
     if (!roleRaw) return null;
@@ -469,12 +496,61 @@
   };
 
   const findSidebarScroller = () => {
-    const candidates = ['nav', 'aside', '[data-testid*="sidebar"]', '[aria-label*="History"]'];
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (el && el.scrollHeight > el.clientHeight) return el;
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = ['nav', 'aside', '[aria-label*="Sidebar"]', '[class*="sidebar"]'];
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
+  };
+
+  const ensureSidebarVisible = async () => {
+    try {
+      const ready = findSidebarScroller();
+      if (ready) return true;
+    } catch {}
+
+    const toggles = ['[data-testid*="sidebar-toggle"]', '[aria-label="Open sidebar"]'];
+    clickFirstMatching(toggles);
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        const ready = findSidebarScroller();
+        if (ready) return true;
+      } catch {}
+      await sleep(250);
     }
-    return document.scrollingElement || document.documentElement;
+    return false;
+  };
+
+  const findTranscriptScroller = () => {
+    const core = window.__RUMINER_SCAN_CORE__;
+    const selectors = [
+      '#main-content [data-autoscroll-container="true"]',
+      '#main-content div[class*="scrollbar"]',
+      '#main-content [class*="scrollbar"]',
+    ];
+
+    const strict =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    if (strict) return strict;
+
+    const relaxed =
+      core && typeof core.findFirstScroller === 'function'
+        ? core.findFirstScroller(selectors)
+        : null;
+    return relaxed || document.scrollingElement || document.documentElement;
   };
 
   const extractMessagesFromDom = () => {
@@ -559,55 +635,56 @@
     if (sidebarCache.done) return;
     if (sidebarCache.items.length >= targetCount) return;
 
-    const scroller = findSidebarScroller();
-    let stable = 0;
-    let lastCount = sidebarCache.items.length;
-
-    for (let i = 0; i < 80 && sidebarCache.items.length < targetCount; i++) {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      for (const a of anchors) {
-        const href = String(a.getAttribute('href') || '');
-        if (!href.includes('/chat/')) continue;
-        let url;
-        try {
-          url = new URL(href, location.origin);
-        } catch {
-          continue;
-        }
-        if (url.hostname !== location.hostname) continue;
-        const id = parseConversationId(url.toString());
-        if (!id) continue;
-        if (sidebarCache.seen.has(id)) continue;
-        const title = String(a.textContent || '').trim() || null;
-        sidebarCache.seen.add(id);
-        sidebarCache.items.push({
-          conversationId: id,
-          conversationUrl: url.toString(),
-          conversationTitle: title,
-        });
-      }
-
-      if (sidebarCache.items.length === lastCount) stable += 1;
-      else stable = 0;
-      lastCount = sidebarCache.items.length;
-
-      if (stable >= 5) {
-        sidebarCache.done = true;
-        break;
-      }
-
-      if (scroller) {
-        scroller.scrollTop = Math.min(
-          scroller.scrollHeight,
-          scroller.scrollTop + Math.max(200, Math.floor(scroller.clientHeight * 0.8)),
-        );
-      }
-      await sleep(200);
-    }
-
-    if (sidebarCache.items.length === lastCount) {
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (!core || typeof core.runScrollConversations !== 'function') {
       sidebarCache.done = true;
+      return;
     }
+
+    await ensureSidebarVisible().catch(() => false);
+
+    await core.runScrollConversations({
+      findScroller: findSidebarScroller,
+      intervalMs: 500,
+      stepFactor: 0.8,
+      stableDeltaPx: 40,
+      stableAttempts: 4,
+      hrefFilter: (href) => typeof href === 'string' && href.includes('/chat/'),
+    });
+
+    const scroller = findSidebarScroller();
+    const queryRoot =
+      scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+    const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
+
+    sidebarCache.items.length = 0;
+    try {
+      sidebarCache.seen.clear();
+    } catch {}
+
+    for (const a of anchors) {
+      const href = String(a.getAttribute('href') || '');
+      if (!href.includes('/chat/')) continue;
+      let url;
+      try {
+        url = new URL(href, location.origin);
+      } catch {
+        continue;
+      }
+      if (url.hostname !== location.hostname) continue;
+      const id = parseConversationId(url.toString());
+      if (!id) continue;
+      if (sidebarCache.seen.has(id)) continue;
+      const title = String(a.textContent || '').trim() || null;
+      sidebarCache.seen.add(id);
+      sidebarCache.items.push({
+        conversationId: id,
+        conversationUrl: url.toString(),
+        conversationTitle: title,
+      });
+    }
+
+    sidebarCache.done = true;
   }
 
   async function listConversations({ offset, limit }) {
@@ -669,19 +746,16 @@
     await sleep(400);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.
-    const scroller = document.scrollingElement || document.documentElement;
-    let stable = 0;
-    for (let i = 0; i < 120; i++) {
-      const beforeTop = scroller.scrollTop;
-      scroller.scrollTop = Math.max(
-        0,
-        scroller.scrollTop - Math.max(240, Math.floor(scroller.clientHeight * 0.9)),
-      );
-      await sleep(220);
-      const afterTop = scroller.scrollTop;
-      if (afterTop === beforeTop) stable += 1;
-      else stable = 0;
-      if (stable >= 5) break;
+    const core = window.__RUMINER_SCAN_CORE__;
+    if (core && typeof core.runScrollMessages === 'function') {
+      await core.runScrollMessages({
+        direction: 'up',
+        findScroller: findTranscriptScroller,
+        intervalMs: 500,
+        stepFactor: 0.8,
+        stableDeltaPx: 40,
+        stableAttempts: 4,
+      });
     }
 
     const msgs = extractMessagesFromDom();
