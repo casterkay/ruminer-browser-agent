@@ -1,9 +1,24 @@
 {
-  "name": "@ruminer/mcp-client",
+  "name": "openclaw-mcp-client",
   "version": "0.1.0",
-  "description": "Ruminer MCP Client Plugin (OpenClaw → MCP client → Ruminer native server)",
-  "private": true,
+  "description": "MCP client plugin for OpenClaw (routes tool calls to a Streamable HTTP MCP server like Ruminer)",
+  "private": false,
   "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casterkay/ruminer-browser-agent.git"
+  },
+  "homepage": "https://github.com/casterkay/ruminer-browser-agent",
+  "bugs": {
+    "url": "https://github.com/casterkay/ruminer-browser-agent/issues"
+  },
+  "files": [
+    "index.ts",
+    "tools.ts",
+    "openclaw.plugin.json",
+    "package.json"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0"
   },

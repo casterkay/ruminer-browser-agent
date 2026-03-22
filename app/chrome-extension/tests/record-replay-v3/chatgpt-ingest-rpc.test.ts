@@ -52,7 +52,7 @@ describe('ingest workflow rpc', () => {
       'fetch',
       vi.fn(async (url: any) => {
         const u = String(url || '');
-        if (u.includes('/agent/emos/settings')) {
+        if (u.includes('/agent/evermemos/settings')) {
           return new Response(null, { status: 404 });
         }
         if (u.includes('/agent/session/ingest')) {
@@ -258,7 +258,7 @@ describe('ingest workflow rpc', () => {
     const fetchSpy = globalThis.fetch as any;
     fetchSpy.mockImplementation(async (url: any, init?: any) => {
       const u = String(url || '');
-      if (u.includes('/agent/emos/settings')) {
+      if (u.includes('/agent/evermemos/settings')) {
         return new Response(null, { status: 404 });
       }
       if (u.startsWith('https://emos.test/api/v0/memories')) {
@@ -295,7 +295,7 @@ describe('ingest workflow rpc', () => {
     // Next run resumes from the same baseIndex (caller-provided).
     fetchSpy.mockImplementation(async (url: any) => {
       const u = String(url || '');
-      if (u.includes('/agent/emos/settings')) {
+      if (u.includes('/agent/evermemos/settings')) {
         return new Response(null, { status: 404 });
       }
       if (u.includes('/agent/session/ingest')) {

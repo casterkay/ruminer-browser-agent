@@ -97,16 +97,23 @@ The Ruminer UI has three major pillars in one Chrome extension:
 From the repo root, run:
 
 ```bash
-bash scripts/setup.sh
+pnpm install
+pnpm -C app/chrome-extension build
 ```
 
-What it does (high level):
+Then open the extension Welcome page (it opens automatically on install) and run the one‑shot installer
+to set up Native Messaging + MCP clients:
 
-- Installs workspace deps (pnpm)
-- Builds the extension output
-- Generates a stable dev extension identity (`app/chrome-extension/.env.local` with `CHROME_EXTENSION_KEY`)
-- Registers the Native Messaging host allowlisted to your derived extension ID
-- Best‑effort installs/enables OpenClaw plugins + writes config (when `openclaw` CLI is available)
+```bash
+curl -fsSL https://raw.githubusercontent.com/casterkay/ruminer-browser-agent/refs/heads/main/scripts/setup.sh | \
+  bash -s -- --extension-id <your-extension-id>
+```
+
+This installer (best-effort):
+
+- Installs `@casterkay/mcp-chrome-bridge` (CLI: `mcp-chrome-bridge`) and registers the Native Messaging host (allowlisted to your extension ID)
+- Adds Ruminer MCP endpoint to Claude Code and Codex (`ruminer-chrome`)
+- Installs + enables the OpenClaw plugin (`openclaw-mcp-client`) and points it to Ruminer MCP URL
 
 ### 2) Load the extension
 

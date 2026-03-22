@@ -26,7 +26,7 @@ async function getEmosSettingsFromNativeServer(): Promise<{
 } | null> {
   try {
     const port = await getNativeServerPort();
-    const response = await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
+    const response = await fetch(`http://127.0.0.1:${port}/agent/evermemos/settings`, {
       method: 'GET',
     });
     if (!response.ok) {
@@ -79,7 +79,7 @@ export async function setEmosSettings(
   // isn't available.
   try {
     const port = await getNativeServerPort();
-    await fetch(`http://127.0.0.1:${port}/agent/emos/settings`, {
+    await fetch(`http://127.0.0.1:${port}/agent/evermemos/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ baseUrl: next.baseUrl, apiKey: next.apiKey }),

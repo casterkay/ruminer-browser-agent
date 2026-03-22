@@ -159,7 +159,7 @@ function platformHomeUrl(platform: ChatPlatform): string {
 }
 
 function scanScriptPath(platform: ChatPlatform): string {
-  return `inject-scripts/ruminer.${platform}-scan.js`;
+  return `inject-scripts/ruminer.${platform}.js`;
 }
 
 function scanExecutionWorld(): chrome.scripting.ExecutionWorld {
@@ -239,7 +239,7 @@ async function collectDomDiagnostics(tabId: number): Promise<DomDiagnostics | nu
 async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId, frameIds: [0] },
-    files: ['inject-scripts/ruminer.scan-core.js', scanScriptPath(platform)],
+    files: ['inject-scripts/scroll-engine.js', scanScriptPath(platform)],
     world: scanExecutionWorld(),
   });
 }
@@ -248,7 +248,7 @@ async function probeScanApi(tabId: number): Promise<Record<string, unknown> | nu
   try {
     const res = (await chrome.tabs.sendMessage(
       tabId,
-      { action: 'ruminer_scan_probe' },
+      { action: 'ruminer_platform_probe' },
       { frameId: 0 },
     )) as any;
     return isRecord(res) ? res : null;
@@ -263,7 +263,7 @@ async function pingScanRpc(
   try {
     const res = (await chrome.tabs.sendMessage(
       tabId,
-      { action: 'ruminer_scan_ping' },
+      { action: 'ruminer_platform_ping' },
       { frameId: 0 },
     )) as any;
     if (!isRecord(res) || res.ok !== true) return null;
@@ -288,7 +288,7 @@ async function ensureScanRpcInjected(tabId: number, platform: ChatPlatform): Pro
   if (ping1?.platform !== platform) {
     const probe = await probeScanApi(tabId);
     const detail = probe ? JSON.stringify(probe) : 'null';
-    throw new Error(`Scan RPC not responding after injection (probe=${detail})`);
+    throw new Error(`Platform RPC not responding after injection (probe=${detail})`);
   }
 }
 
@@ -305,7 +305,7 @@ function isRetryableSendMessageError(err: unknown): boolean {
 async function callScanRpc<T>(
   tabId: number,
   platform: ChatPlatform,
-  action: 'ruminer_scan_listConversations' | 'ruminer_scan_getConversationMessages',
+  action: 'ruminer_platform_listConversationsPage' | 'ruminer_platform_extractConversation',
   payload: Record<string, unknown>,
 ): Promise<T> {
   const MAX_ATTEMPTS = 2;
@@ -337,7 +337,7 @@ async function callScanRpc<T>(
       const retryable =
         isRetryableSendMessageError(e) ||
         msg.includes('navigation_started') ||
-        msg.includes('__RUMINER_SCAN__ not found on window');
+        msg.includes('__RUMINER_PLATFORM__ not found on window');
       if (retryable && attempt + 1 < MAX_ATTEMPTS) {
         await waitForTabComplete(tabId, 15_000).catch(() => undefined);
         await ensureScanRpcInjected(tabId, platform).catch(() => undefined);
@@ -355,10 +355,15 @@ async function callListConversations(
   platform: ChatPlatform,
   payload: { offset: number; limit: number },
 ): Promise<ListResult> {
-  const raw = await callScanRpc<unknown>(tabId, platform, 'ruminer_scan_listConversations', {
-    offset: payload.offset,
-    limit: payload.limit,
-  }).catch((e) => {
+  const raw = await callScanRpc<unknown>(
+    tabId,
+    platform,
+    'ruminer_platform_listConversationsPage',
+    {
+      offset: payload.offset,
+      limit: payload.limit,
+    },
+  ).catch((e) => {
     throw e instanceof Error ? e : new Error(String(e));
   });
 
@@ -414,8 +419,7 @@ async function callConversationMessages(
   platform: ChatPlatform,
   payload: { conversationId: string; conversationUrl: string },
 ): Promise<ConversationMessagesResult> {
-  const raw = await callScanRpc<unknown>(tabId, platform, 'ruminer_scan_getConversationMessages', {
-    conversationId: payload.conversationId,
+  const raw = await callScanRpc<unknown>(tabId, platform, 'ruminer_platform_extractConversation', {
     conversationUrl: payload.conversationUrl,
   }).catch((e) => {
     throw e instanceof Error ? e : new Error(String(e));
@@ -425,8 +429,9 @@ async function callConversationMessages(
     throw new Error('getConversationMessages returned invalid result');
   }
 
-  const conversationId =
+  const conversationIdRaw =
     typeof (raw as any).conversationId === 'string' ? String((raw as any).conversationId) : '';
+  const conversationId = conversationIdRaw.trim() || payload.conversationId.trim();
   const conversationUrl =
     typeof (raw as any).conversationUrl === 'string' && String((raw as any).conversationUrl).trim()
       ? String((raw as any).conversationUrl).trim()

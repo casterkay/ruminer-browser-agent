@@ -1,13 +1,13 @@
 /* eslint-disable */
-// ruminer.claude-scan.js
-// Injected into claude.ai pages (ISOLATED world). Exposes `window.__RUMINER_SCAN__`.
+// ruminer.claude.js
+// Injected into claude.ai pages (ISOLATED world). Exposes `window.__RUMINER_PLATFORM__`.
 
 (() => {
   const PLATFORM = 'claude';
   const VERSION = '2026-03-17.3';
-  const LOG = '[ruminer.claude-scan]';
+  const LOG = '[ruminer.claude]';
 
-  const existing = window.__RUMINER_SCAN__;
+  const existing = window.__RUMINER_PLATFORM__;
   const sameApi = existing && existing.platform === PLATFORM && existing.version === VERSION;
 
   const parseConversationId = (urlString) => {
@@ -21,16 +21,25 @@
   };
 
   const installRpc = () => {
-    const rpc = window.__RUMINER_SCAN_RPC__;
-    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
-    window.__RUMINER_SCAN_RPC__ = { platform: PLATFORM, version: VERSION };
+    const rpc = window.__RUMINER_PLATFORM_RPC__;
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION && rpc.installed === true)
+      return;
+
+    // Avoid accumulating duplicate listeners across reinjection / version bumps.
+    try {
+      if (rpc && typeof rpc.listener === 'function')
+        chrome.runtime.onMessage.removeListener(rpc.listener);
+    } catch {}
+
+    const nextRpc = { platform: PLATFORM, version: VERSION, installed: false, listener: null };
+    window.__RUMINER_PLATFORM_RPC__ = nextRpc;
 
     try {
-      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      const listener = (request, _sender, sendResponse) => {
         try {
           if (!request || typeof request.action !== 'string') return false;
 
-          if (request.action === 'ruminer_scan_ping') {
+          if (request.action === 'ruminer_platform_ping') {
             sendResponse({
               ok: true,
               platform: PLATFORM,
@@ -40,8 +49,8 @@
             return false;
           }
 
-          if (request.action === 'ruminer_scan_probe') {
-            const api = window.__RUMINER_SCAN__;
+          if (request.action === 'ruminer_platform_probe') {
+            const api = window.__RUMINER_PLATFORM__;
             sendResponse({
               ok: true,
               platform: PLATFORM,
@@ -55,24 +64,24 @@
             return false;
           }
 
-          const api = window.__RUMINER_SCAN__;
+          const api = window.__RUMINER_PLATFORM__;
           if (!api) {
-            sendResponse({ ok: false, error: '__RUMINER_SCAN__ not found on window' });
+            sendResponse({ ok: false, error: '__RUMINER_PLATFORM__ not found on window' });
             return false;
           }
           if (api.platform !== PLATFORM) {
             sendResponse({
               ok: false,
-              error: `__RUMINER_SCAN__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
+              error: `__RUMINER_PLATFORM__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
             });
             return false;
           }
 
-          if (request.action === 'ruminer_scan_listConversations') {
+          if (request.action === 'ruminer_platform_listConversationsPage') {
             const offset = Number(request?.payload?.offset || 0);
             const limit = Number(request?.payload?.limit || 100);
             Promise.resolve()
-              .then(() => api.listConversations({ offset, limit }))
+              .then(() => api.listConversationsPage({ offset, limit }))
               .then((value) => {
                 if (
                   value &&
@@ -94,16 +103,10 @@
             return true;
           }
 
-          if (request.action === 'ruminer_scan_getConversationMessages') {
-            const conversationId = String(request?.payload?.conversationId || '');
+          if (request.action === 'ruminer_platform_extractConversation') {
             const conversationUrl = String(request?.payload?.conversationUrl || '');
             Promise.resolve()
-              .then(() =>
-                api.getConversationMessages({
-                  conversationId,
-                  conversationUrl,
-                }),
-              )
+              .then(() => api.extractConversation({ conversationUrl }))
               .then((value) => {
                 if (
                   value &&
@@ -129,7 +132,11 @@
           return false;
         }
         return false;
-      });
+      };
+
+      chrome.runtime.onMessage.addListener(listener);
+      nextRpc.listener = listener;
+      nextRpc.installed = true;
     } catch {}
   };
 
@@ -496,18 +503,18 @@
   };
 
   const findSidebarScroller = () => {
-    const core = window.__RUMINER_SCAN_CORE__;
+    const engine = window.__RUMINER_SCROLL_ENGINE__;
     const selectors = ['nav', 'aside', '[aria-label*="Sidebar"]', '[class*="sidebar"]'];
 
     const strict =
-      core && typeof core.findFirstScroller === 'function'
-        ? core.findFirstScroller(selectors)
+      engine && typeof engine.findFirstScroller === 'function'
+        ? engine.findFirstScroller(selectors)
         : null;
     if (strict) return strict;
 
     const relaxed =
-      core && typeof core.findFirstScroller === 'function'
-        ? core.findFirstScroller(selectors)
+      engine && typeof engine.findFirstScroller === 'function'
+        ? engine.findFirstScroller(selectors)
         : null;
     return relaxed || document.scrollingElement || document.documentElement;
   };
@@ -533,7 +540,7 @@
   };
 
   const findTranscriptScroller = () => {
-    const core = window.__RUMINER_SCAN_CORE__;
+    const engine = window.__RUMINER_SCROLL_ENGINE__;
     const selectors = [
       '#main-content [data-autoscroll-container="true"]',
       '#main-content div[class*="scrollbar"]',
@@ -541,14 +548,14 @@
     ];
 
     const strict =
-      core && typeof core.findFirstScroller === 'function'
-        ? core.findFirstScroller(selectors)
+      engine && typeof engine.findFirstScroller === 'function'
+        ? engine.findFirstScroller(selectors)
         : null;
     if (strict) return strict;
 
     const relaxed =
-      core && typeof core.findFirstScroller === 'function'
-        ? core.findFirstScroller(selectors)
+      engine && typeof engine.findFirstScroller === 'function'
+        ? engine.findFirstScroller(selectors)
         : null;
     return relaxed || document.scrollingElement || document.documentElement;
   };
@@ -635,21 +642,46 @@
     if (sidebarCache.done) return;
     if (sidebarCache.items.length >= targetCount) return;
 
-    const core = window.__RUMINER_SCAN_CORE__;
-    if (!core || typeof core.runScrollConversations !== 'function') {
+    const engine = window.__RUMINER_SCROLL_ENGINE__;
+    if (!engine || typeof engine.runScrollPages !== 'function') {
       sidebarCache.done = true;
       return;
     }
 
     await ensureSidebarVisible().catch(() => false);
 
-    await core.runScrollConversations({
+    const seenIds = new Set();
+    const extractOnce = () => {
+      const scroller = findSidebarScroller();
+      const queryRoot =
+        scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+      const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
+      for (const a of anchors) {
+        const href = String(a.getAttribute('href') || '');
+        if (!href.includes('/chat/')) continue;
+        let url;
+        try {
+          url = new URL(href, location.origin);
+        } catch {
+          continue;
+        }
+        if (url.hostname !== location.hostname) continue;
+        const id = parseConversationId(url.toString());
+        if (!id) continue;
+        seenIds.add(id);
+      }
+      return seenIds.size;
+    };
+
+    await engine.runScrollPages({
+      direction: 'down',
       findScroller: findSidebarScroller,
       intervalMs: 500,
-      stepFactor: 0.8,
+      pageFactor: 0.8,
       stableDeltaPx: 40,
       stableAttempts: 4,
-      hrefFilter: (href) => typeof href === 'string' && href.includes('/chat/'),
+      bottomEpsilonPx: 10,
+      onPage: () => extractOnce() < targetCount,
     });
 
     const scroller = findSidebarScroller();
@@ -705,10 +737,10 @@
     }
   }
 
-  async function getConversationMessages({ conversationId, conversationUrl }) {
+  async function extractConversation({ conversationUrl }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const convId = String(conversationId || '').trim() || parseConversationId(url) || '';
+    const convId = parseConversationId(url) || '';
 
     if (convId) {
       try {
@@ -746,15 +778,16 @@
     await sleep(400);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.
-    const core = window.__RUMINER_SCAN_CORE__;
-    if (core && typeof core.runScrollMessages === 'function') {
-      await core.runScrollMessages({
+    const engine = window.__RUMINER_SCROLL_ENGINE__;
+    if (engine && typeof engine.runScrollPages === 'function') {
+      await engine.runScrollPages({
         direction: 'up',
         findScroller: findTranscriptScroller,
         intervalMs: 500,
-        stepFactor: 0.8,
+        pageFactor: 0.8,
         stableDeltaPx: 40,
         stableAttempts: 4,
+        topEpsilonPx: 40,
       });
     }
 
@@ -767,11 +800,15 @@
     };
   }
 
-  window.__RUMINER_SCAN__ = {
+  async function listConversationsPage({ offset, limit }) {
+    return listConversations({ offset, limit });
+  }
+
+  window.__RUMINER_PLATFORM__ = {
     platform: PLATFORM,
     version: VERSION,
-    listConversations,
-    getConversationMessages,
+    listConversationsPage,
+    extractConversation,
   };
 
   try {

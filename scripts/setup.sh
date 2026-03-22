@@ -1,52 +1,148 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Ruminer "all-in-one setup" installer.
+#
+# Designed to work both from the repo and from:
+#   curl -fsSL https://raw.githubusercontent.com/casterkay/ruminer-browser-agent/refs/heads/main/scripts/setup.sh | \
+#     bash -s -- --extension-id <your-extension-id>
+#
+# This script is intentionally "user-only": it does NOT build the extension. Chrome does not allow
+# scripting "Load unpacked" anyway; you run this from the extension Welcome page to set up the
+# native host + MCP clients + OpenClaw plugin.
 
 RUMINER_MCP_URL="${RUMINER_MCP_URL:-http://127.0.0.1:12306/mcp}"
-RUMINER_BROWSER_LIST="${RUMINER_BROWSER_LIST:-}"
-
-# Optional: if unset, setup.sh will generate CHROME_EXTENSION_KEY in
-# app/chrome-extension/.env.local and derive a stable extension ID from it.
-CHROME_EXTENSION_KEY="${CHROME_EXTENSION_KEY:-}"
 RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID:-${CHROME_EXTENSION_ID:-}}"
 
+YES="${YES:-0}"
 SKIP_NATIVE_HOST="${SKIP_NATIVE_HOST:-0}"
 SKIP_OPENCLAW="${SKIP_OPENCLAW:-0}"
+SKIP_CLAUDE="${SKIP_CLAUDE:-0}"
+SKIP_CODEX="${SKIP_CODEX:-0}"
 RUN_DOCTOR="${RUN_DOCTOR:-1}"
+
+OPENCLAW_PROFILE="${OPENCLAW_PROFILE:-}"
+OPENCLAW_DEV="${OPENCLAW_DEV:-0}"
 
 log() {
   printf '%s\n' "$*"
 }
 
+warn() {
+  printf 'WARN: %s\n' "$*" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
 usage() {
   cat <<'USAGE'
 Usage:
-  bash scripts/setup.sh [--help] [--skip-native-host] [--skip-openclaw] [--no-doctor]
+  setup.sh [--help] [--yes] [--extension-id <id[,id...]>] [--mcp-url <url>]
+           [--skip-native-host] [--skip-openclaw] [--skip-claude] [--skip-codex] [--no-doctor]
+           [--openclaw-profile <name>] [--openclaw-dev]
+
+Recommended (from the extension Welcome page):
+  curl -fsSL https://raw.githubusercontent.com/casterkay/ruminer-browser-agent/refs/heads/main/scripts/setup.sh | \
+    bash -s -- --extension-id <your-extension-id>
+
+Args:
+  --yes                      Non-interactive defaults; overwrite existing MCP entries without prompting
+  --extension-id <ids>       Chrome extension id(s): 32 chars a-p; or chrome-extension://<id>/
+  --mcp-url <url>            Ruminer MCP endpoint (default: http://127.0.0.1:12306/mcp)
+  --skip-native-host          Skip installing/registering mcp-chrome-bridge native host
+  --skip-openclaw             Skip OpenClaw plugin install/enable/config
+  --skip-claude               Skip Claude Code MCP config
+  --skip-codex                Skip Codex MCP config
+  --no-doctor                 Skip native-host doctor checks
+  --openclaw-profile <name>   Pass --profile <name> to all openclaw commands
+  --openclaw-dev              Pass --dev to all openclaw commands
 
 Environment:
-  RUMINER_MCP_URL            MCP endpoint (default: http://127.0.0.1:12306/mcp)
-  RUMINER_BROWSER_LIST       Optional comma list for doctor (e.g. chrome,chromium,brave)
-  CHROME_EXTENSION_KEY       Base64 public key for stable extension ID (optional; auto-generated)
-  RUMINER_EXTENSION_ID       Extension ID for native messaging allowlist (optional; derived)
-  SKIP_NATIVE_HOST           Set to 1 to skip building/registering native host
-  SKIP_OPENCLAW              Set to 1 to skip OpenClaw plugin install/enable
-  RUN_DOCTOR                 Set to 0 to skip native-host doctor checks (default: 1)
-
-Notes:
-  - Native host registration MUST whitelist your actual extension ID(s).
-  - OpenClaw plugin config is auto-written when openclaw CLI is present:
-    - mcp-client: mcpUrl (from RUMINER_MCP_URL)
-  - Chrome extension build output:
-    - app/chrome-extension/.output/chrome-mv3
+  RUMINER_MCP_URL, RUMINER_EXTENSION_ID, YES,
+  SKIP_NATIVE_HOST, SKIP_OPENCLAW, SKIP_CLAUDE, SKIP_CODEX, RUN_DOCTOR,
+  OPENCLAW_PROFILE, OPENCLAW_DEV
 USAGE
 }
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    log "Missing required command: $1"
-    exit 1
+    die "Missing required command: $1"
   fi
+}
+
+is_windows() {
+  [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || "${OSTYPE:-}" == win32* ]]
+}
+
+has_tty() {
+  [[ -r /dev/tty ]] && [[ -w /dev/tty ]]
+}
+
+prompt_line() {
+  local prompt="${1}"
+  local default_value="${2:-}"
+  local out
+
+  if [[ "${YES}" == "1" ]]; then
+    printf '%s' "${default_value}"
+    return 0
+  fi
+
+  if ! has_tty; then
+    die "No TTY available for prompts. Re-run with --yes and required flags."
+  fi
+
+  if [[ -n "${default_value}" ]]; then
+    printf '%s [%s]: ' "${prompt}" "${default_value}" >/dev/tty
+  else
+    printf '%s: ' "${prompt}" >/dev/tty
+  fi
+
+  IFS= read -r out </dev/tty || true
+  out="$(printf '%s' "${out}" | tr -d '\r')"
+  if [[ -z "${out}" ]]; then
+    printf '%s' "${default_value}"
+    return 0
+  fi
+  printf '%s' "${out}"
+}
+
+prompt_confirm() {
+  local prompt="${1}"
+  local default_yes="${2:-1}"
+
+  if [[ "${YES}" == "1" ]]; then
+    return 0
+  fi
+  if ! has_tty; then
+    return 1
+  fi
+
+  local hint
+  if [[ "${default_yes}" == "1" ]]; then
+    hint="Y/n"
+  else
+    hint="y/N"
+  fi
+
+  while true; do
+    printf '%s [%s]: ' "${prompt}" "${hint}" >/dev/tty
+    local ans
+    IFS= read -r ans </dev/tty || true
+    ans="$(printf '%s' "${ans}" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)"
+
+    if [[ -z "${ans}" ]]; then
+      [[ "${default_yes}" == "1" ]] && return 0 || return 1
+    fi
+    case "${ans}" in
+      y|yes) return 0 ;;
+      n|no) return 1 ;;
+      *) ;;
+    esac
+  done
 }
 
 check_node_version() {
@@ -54,237 +150,335 @@ check_node_version() {
   local major minor
   major="$(node -p "Number(process.versions.node.split('.')[0])")"
   minor="$(node -p "Number(process.versions.node.split('.')[1])")"
-  # Native server declares >=22.5.0; enforce a close minimum here.
   if [[ "${major}" -lt 22 ]] || ([[ "${major}" -eq 22 ]] && [[ "${minor}" -lt 5 ]]); then
-    log "Node.js >= 22.5.0 required (found $(node -v))"
-    exit 1
+    die "Node.js >= 22.5.0 required (found $(node -v))."
   fi
 }
 
-ensure_extension_identity() {
-  # Ensure we have a stable extension key (manifest.key) and a corresponding extension ID.
-  # Writes app/chrome-extension/.env.local when needed.
-  # Emits EXTENSION_ID on stdout.
-  local env_file="${ROOT_DIR}/app/chrome-extension/.env.local"
+normalize_extension_id() {
+  local raw
+  raw="$(printf '%s' "${1:-}" | xargs)"
+  [[ -z "${raw}" ]] && return 0
 
-  local extension_id
-  extension_id="$(
-    CHROME_EXTENSION_KEY="${CHROME_EXTENSION_KEY}" \
-      RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" \
-      ROOT_DIR="${ROOT_DIR}" \
-      node <<'NODE'
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-
-const root = (process.env.ROOT_DIR || '').trim() || process.cwd();
-const envFile = path.join(root, 'app/chrome-extension/.env.local');
-
-function parseEnvFile(filePath) {
-  try {
-    const txt = fs.readFileSync(filePath, 'utf8');
-    const out = {};
-    for (const line of txt.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq <= 0) continue;
-      const key = trimmed.slice(0, eq).trim();
-      let value = trimmed.slice(eq + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      out[key] = value;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function extensionIdFromSpkiDer(spkiDer) {
-  const hash = crypto.createHash('sha256').update(spkiDer).digest();
-  const hex = hash.subarray(0, 16).toString('hex');
-  return hex
-    .split('')
-    .map((c) => String.fromCharCode('a'.charCodeAt(0) + parseInt(c, 16)))
-    .join('');
-}
-
-function isValidExtensionId(id) {
-  return typeof id === 'string' && /^[a-p]{32}$/.test(id);
-}
-
-const explicitId = (process.env.RUMINER_EXTENSION_ID || '').trim();
-if (explicitId) {
-  if (!isValidExtensionId(explicitId)) {
-    console.error('Invalid RUMINER_EXTENSION_ID (expected 32 chars a-p)');
-    process.exit(1);
-  }
-  process.stdout.write(explicitId);
-  process.exit(0);
-}
-
-const fromFile = parseEnvFile(envFile);
-let keyBase64 = (process.env.CHROME_EXTENSION_KEY || '').trim() || (fromFile.CHROME_EXTENSION_KEY || '').trim();
-
-if (!keyBase64) {
-  // Generate a stable dev key (public key only) for Chrome extension ID stability.
-  const { publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
-  keyBase64 = spkiDer.toString('base64');
-
-  fs.mkdirSync(path.dirname(envFile), { recursive: true });
-  let existing = '';
-  try {
-    existing = fs.readFileSync(envFile, 'utf8');
-  } catch {
-    existing = '';
-  }
-  const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
-  fs.writeFileSync(envFile, `${existing}${prefix}CHROME_EXTENSION_KEY=${keyBase64}\n`, 'utf8');
-}
-
-let spki;
-try {
-  spki = Buffer.from(keyBase64, 'base64');
-  if (!spki.length) throw new Error('empty');
-} catch {
-  console.error('Invalid CHROME_EXTENSION_KEY (must be base64)');
-  process.exit(1);
-}
-
-process.stdout.write(extensionIdFromSpkiDer(spki));
-NODE
-  )"
-
-  if [[ -z "${extension_id}" ]]; then
-    log "Failed to derive extension ID."
-    exit 1
+  if [[ "${raw}" =~ ^chrome-extension://([a-p]{32})/?$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  if [[ "${raw}" =~ ^[a-p]{32}$ ]]; then
+    printf '%s' "${raw}"
+    return 0
   fi
 
-  RUMINER_EXTENSION_ID="${extension_id}"
+  return 1
+}
+
+normalize_extension_id_list() {
+  local raw="${1:-}"
+  local out=""
+  local part normalized
+
+  IFS=',' read -r -a parts <<<"${raw}"
+  for part in "${parts[@]}"; do
+    part="$(printf '%s' "${part}" | xargs)"
+    [[ -z "${part}" ]] && continue
+    if ! normalized="$(normalize_extension_id "${part}")"; then
+      return 1
+    fi
+    if [[ -z "${out}" ]]; then
+      out="${normalized}"
+    else
+      out="${out},${normalized}"
+    fi
+  done
+
+  printf '%s' "${out}"
+}
+
+ensure_extension_id() {
+  local normalized
+  normalized="$(normalize_extension_id_list "${RUMINER_EXTENSION_ID:-}")" || true
+
+  if [[ -z "${normalized}" ]]; then
+    if [[ "${YES}" == "1" ]]; then
+      die "Missing --extension-id. Re-run with: --extension-id <your-extension-id>"
+    fi
+
+    local input
+    input="$(prompt_line "Paste your Chrome extension ID (from the Ruminer Welcome page)" "")"
+    normalized="$(normalize_extension_id_list "${input}")" || die "Invalid extension id. Expected 32 chars a-p."
+  fi
+
+  RUMINER_EXTENSION_ID="${normalized}"
   export RUMINER_EXTENSION_ID
   export CHROME_EXTENSION_ID="${RUMINER_EXTENSION_ID}"
 
-  log "Using extension ID: ${RUMINER_EXTENSION_ID}"
-  log "Chrome extension key stored at: ${env_file}"
+  log "Using extension ID(s): ${RUMINER_EXTENSION_ID}"
 }
 
-install_openclaw_plugins() {
+install_or_update_global_npm() {
+  # args: npmPackageSpec binName [displayName]
+  local pkg_spec="${1}"
+  local bin_name="${2}"
+  local display="${3:-${2}}"
+
+  require_cmd npm
+
+  if command -v "${bin_name}" >/dev/null 2>&1; then
+    log "${display} already installed: $(${bin_name} --version 2>/dev/null || true)"
+    if prompt_confirm "Update ${display} to latest?" 0; then
+      log "Updating ${display}..."
+      if ! npm install -g "${pkg_spec}"; then
+        warn "If this failed due to permissions, consider using a Node version manager (nvm/fnm) or configuring npm's global prefix."
+        warn "As a last resort, re-run with sudo (not recommended): sudo npm install -g ${pkg_spec}"
+        die "Failed to update ${display}."
+      fi
+    fi
+    return 0
+  fi
+
+  if [[ "${YES}" != "1" ]]; then
+    log "${display} is required for native host registration."
+    prompt_confirm "Install ${display} globally now?" 1 || die "Cannot continue without ${display}."
+  fi
+
+  log "Installing ${display}..."
+  if ! npm install -g "${pkg_spec}"; then
+    warn "If this failed due to permissions, consider using a Node version manager (nvm/fnm) or configuring npm's global prefix."
+    warn "As a last resort, re-run with sudo (not recommended): sudo npm install -g ${pkg_spec}"
+    die "Failed to install ${display}."
+  fi
+}
+
+register_native_host() {
+  if [[ "${SKIP_NATIVE_HOST}" == "1" ]]; then
+    log "Skipping native host install/registration."
+    return 0
+  fi
+
+  install_or_update_global_npm "@casterkay/mcp-chrome-bridge" "mcp-chrome-bridge" "mcp-chrome-bridge"
+  require_cmd mcp-chrome-bridge
+
+  log "Registering Native Messaging host (user-level)..."
+  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge fix-permissions || true
+  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge register --detect || \
+    die "Native host registration failed."
+
+  if [[ "${RUN_DOCTOR}" == "1" ]]; then
+    log "Running native-host doctor (best-effort)..."
+    RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge doctor --fix --browser all || true
+  fi
+}
+
+claude_mcp_add_or_replace() {
+  local name="ruminer-chrome"
+  local scope="user"
+
+  if [[ "${SKIP_CLAUDE}" == "1" ]]; then
+    log "Skipping Claude Code MCP config."
+    return 0
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    log "Claude Code CLI not found; skipping MCP config for Claude Code."
+    return 0
+  fi
+
+  if claude mcp get "${name}" >/dev/null 2>&1; then
+    if [[ "${YES}" == "1" ]] || prompt_confirm "Claude MCP server '${name}' exists. Replace it?" 1; then
+      claude mcp remove --scope "${scope}" "${name}" >/dev/null 2>&1 || \
+        claude mcp remove "${name}" >/dev/null 2>&1 || true
+    else
+      log "Keeping existing Claude MCP server '${name}'."
+      return 0
+    fi
+  fi
+
+  log "Adding Claude Code MCP server '${name}' (${scope} scope)..."
+  claude mcp add --transport http --scope "${scope}" "${name}" "${RUMINER_MCP_URL}" || \
+    die "Failed to add Claude MCP server. Try: claude mcp add --transport http --scope ${scope} ${name} ${RUMINER_MCP_URL}"
+}
+
+codex_mcp_add_or_replace() {
+  local name="ruminer-chrome"
+
+  if [[ "${SKIP_CODEX}" == "1" ]]; then
+    log "Skipping Codex MCP config."
+    return 0
+  fi
+  if ! command -v codex >/dev/null 2>&1; then
+    log "Codex CLI not found; skipping MCP config for Codex."
+    return 0
+  fi
+
+  if codex mcp get "${name}" >/dev/null 2>&1; then
+    if [[ "${YES}" == "1" ]] || prompt_confirm "Codex MCP server '${name}' exists. Replace it?" 1; then
+      codex mcp remove "${name}" >/dev/null 2>&1 || true
+    else
+      log "Keeping existing Codex MCP server '${name}'."
+      return 0
+    fi
+  fi
+
+  log "Adding Codex MCP server '${name}'..."
+  codex mcp add "${name}" --url "${RUMINER_MCP_URL}" || \
+    die "Failed to add Codex MCP server. Try: codex mcp add ${name} --url ${RUMINER_MCP_URL}"
+}
+
+openclaw_cmd() {
+  local args=()
+  if [[ "${OPENCLAW_DEV}" == "1" ]]; then
+    args+=("--dev")
+  fi
+  if [[ -n "${OPENCLAW_PROFILE}" ]]; then
+    args+=("--profile" "${OPENCLAW_PROFILE}")
+  fi
+  openclaw "${args[@]}" "$@"
+}
+
+json_merge_add_string_to_array() {
+  # args: existingJson addValue
+  node - "${1}" "${2}" <<'NODE'
+const existingRaw = process.argv[2] ?? 'null';
+const add = String(process.argv[3] ?? '').trim();
+let existing;
+try {
+  existing = JSON.parse(existingRaw);
+} catch {
+  existing = null;
+}
+const arr = Array.isArray(existing) ? existing : [];
+const next = [...new Set(arr.map((v) => String(v)).filter(Boolean).concat(add).filter(Boolean))];
+process.stdout.write(JSON.stringify(next));
+NODE
+}
+
+install_openclaw_plugin() {
+  if [[ "${SKIP_OPENCLAW}" == "1" ]]; then
+    log "Skipping OpenClaw plugin install/enable/config."
+    return 0
+  fi
   if ! command -v openclaw >/dev/null 2>&1; then
     log "openclaw CLI not found; skipping plugin install."
     return 0
   fi
 
-  local mcp_client_path="${ROOT_DIR}/app/openclaw-extensions/mcp-client"
-
-  log "Installing/enabling OpenClaw plugins..."
-  openclaw plugins install "${mcp_client_path}" || true
-  openclaw plugins enable mcp-client || true
-
-  # Auto-write config (best-effort)
-  openclaw config set plugins.entries.mcp-client.config.mcpUrl "${RUMINER_MCP_URL}" || true
-
-  # Ensure plugins and their tools are enabled in config (best-effort).
-  openclaw config set plugins.allow '["mcp-client", "evermemos"]' --strict-json || true
-  openclaw config set plugins.entries.mcp-client.enabled true || true
-  openclaw config set tools.alsoAllow '["mcp-client"]' --strict-json || true
-
-  openclaw gateway restart || true
-
-  log "OpenClaw plugins installed/enabled + configured (best-effort)."
-}
-
-install_mcp_to_claude() {
-  require_cmd claude
-  claude mcp add --transport http ruminer-chrome http://127.0.0.1:12306/mcp || true
-}
-
-install_mcp_to_codex() {
-  require_cmd codex
-  codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp || true
-}
-
-build_extension() {
-  require_cmd pnpm
-  log "Building Chrome extension (app/chrome-extension)..."
-  pnpm -C "${ROOT_DIR}/app/chrome-extension" build
-}
-
-register_native_host() {
-  require_cmd pnpm
-
-  log "Installing workspace dependencies..."
-  CI=true pnpm -C "${ROOT_DIR}" install
-
-  log "Building native host (app/native-server)..."
-  pnpm -C "${ROOT_DIR}" --filter mcp-chrome-bridge build
-
-  log "Registering Native Messaging host (user-level)..."
-  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" node "${ROOT_DIR}/app/native-server/dist/scripts/register-dev.js"
-
-  if [[ "${RUN_DOCTOR}" == "1" ]]; then
-    if [[ -f "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" ]]; then
-      log "Running native-host doctor (best-effort)..."
-      if [[ -n "${RUMINER_BROWSER_LIST}" ]]; then
-        RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" node "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" --browser "${RUMINER_BROWSER_LIST}" || true
-      else
-        RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" node "${ROOT_DIR}/app/native-server/dist/scripts/doctor.js" || true
-      fi
-    fi
+  log "Installing OpenClaw plugin: openclaw-mcp-client (id: mcp-client)..."
+  if ! openclaw_cmd plugins install --pin openclaw-mcp-client; then
+    warn "OpenClaw plugin install failed (best-effort)."
   fi
+  if ! openclaw_cmd plugins enable mcp-client; then
+    warn "OpenClaw plugin enable failed (best-effort)."
+  fi
+
+  if ! openclaw_cmd config set plugins.entries.mcp-client.config.mcpUrl "${RUMINER_MCP_URL}"; then
+    warn "OpenClaw plugin config write failed (best-effort)."
+  fi
+
+  # Best-effort merge allowlists without clobbering user config.
+  local allowRaw alsoAllowRaw
+  allowRaw="$(openclaw_cmd config get plugins.allow --json 2>/dev/null || printf 'null')"
+  alsoAllowRaw="$(openclaw_cmd config get tools.alsoAllow --json 2>/dev/null || printf 'null')"
+
+  local allowNext alsoAllowNext
+  allowNext="$(json_merge_add_string_to_array "${allowRaw}" "mcp-client")"
+  alsoAllowNext="$(json_merge_add_string_to_array "${alsoAllowRaw}" "mcp-client")"
+
+  if ! openclaw_cmd config set --strict-json plugins.allow "${allowNext}"; then
+    warn "OpenClaw plugins.allow update failed (best-effort)."
+  fi
+  if ! openclaw_cmd config set --strict-json tools.alsoAllow "${alsoAllowNext}"; then
+    warn "OpenClaw tools.alsoAllow update failed (best-effort)."
+  fi
+  if ! openclaw_cmd config set plugins.entries.mcp-client.enabled true; then
+    warn "OpenClaw plugin enable flag update failed (best-effort)."
+  fi
+
+  log "OpenClaw plugin installed/enabled + configured (best-effort)."
 }
 
 main() {
-  case "${1:-}" in
-    --help|-h)
-      usage
-      return 0
-      ;;
-  esac
+  if is_windows; then
+    die "Windows is not supported by this bash installer. Please install via npm and run: mcp-chrome-bridge register"
+  fi
 
-  for arg in "$@"; do
+  local arg
+  while [[ $# -gt 0 ]]; do
+    arg="${1}"
     case "${arg}" in
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      --yes)
+        YES="1"
+        shift
+        ;;
+      --extension-id)
+        if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          die "Missing value for --extension-id (run --help)"
+        fi
+        RUMINER_EXTENSION_ID="${2}"
+        shift 2
+        ;;
+      --mcp-url)
+        if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          die "Missing value for --mcp-url (run --help)"
+        fi
+        RUMINER_MCP_URL="${2}"
+        shift 2
+        ;;
       --skip-native-host)
         SKIP_NATIVE_HOST="1"
+        shift
         ;;
       --skip-openclaw)
         SKIP_OPENCLAW="1"
+        shift
+        ;;
+      --skip-claude)
+        SKIP_CLAUDE="1"
+        shift
+        ;;
+      --skip-codex)
+        SKIP_CODEX="1"
+        shift
         ;;
       --no-doctor)
         RUN_DOCTOR="0"
+        shift
         ;;
-      --help|-h)
+      --openclaw-profile)
+        if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          die "Missing value for --openclaw-profile (run --help)"
+        fi
+        OPENCLAW_PROFILE="${2}"
+        shift 2
+        ;;
+      --openclaw-dev)
+        OPENCLAW_DEV="1"
+        shift
         ;;
       *)
-        log "Unknown arg: ${arg}"
-        usage
-        exit 1
+        die "Unknown arg: ${arg} (run --help)"
         ;;
     esac
   done
 
+  log ""
+  log "Ruminer setup (native host + MCP clients + OpenClaw plugin)"
+  log "MCP URL: ${RUMINER_MCP_URL}"
+  log ""
+
   check_node_version
+  ensure_extension_id
 
-  # Generate/derive a stable extension identity early so native-host registration can whitelist it.
-  ensure_extension_identity
-
-  # Build extension output so you can immediately "Load unpacked" the dist.
-  build_extension
-
-  if [[ "${SKIP_NATIVE_HOST}" != "1" ]]; then
-    register_native_host
-  fi
-  if [[ "${SKIP_OPENCLAW}" != "1" ]]; then
-    install_openclaw_plugins
-  fi
-
-  install_mcp_to_claude || log "Claude Code CLI not found; skipping MCP config for Claude Code."
-  install_mcp_to_codex || log "Codex CLI not found; skipping MCP config for Codex."
+  register_native_host
+  claude_mcp_add_or_replace
+  codex_mcp_add_or_replace
+  install_openclaw_plugin
 
   log ""
   log "Setup complete!"
+  log "Next: open Claude Code or Codex and try calling a Ruminer tool (e.g. get_windows_and_tabs)."
 }
 
 main "$@"

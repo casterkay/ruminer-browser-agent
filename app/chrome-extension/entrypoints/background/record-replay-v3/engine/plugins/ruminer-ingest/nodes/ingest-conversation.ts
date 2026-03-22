@@ -112,7 +112,7 @@ async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<voi
 }
 
 function ingestScriptPath(platform: ChatPlatform): string {
-  return `inject-scripts/ruminer.${platform}-ingest.js`;
+  return `inject-scripts/ruminer.${platform}.js`;
 }
 
 function ingestExecutionWorld(platform: ChatPlatform): chrome.scripting.ExecutionWorld {
@@ -125,7 +125,7 @@ function ingestExecutionWorld(platform: ChatPlatform): chrome.scripting.Executio
 async function injectIngestScript(tabId: number, platform: ChatPlatform): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId, frameIds: [0] },
-    files: [ingestScriptPath(platform)],
+    files: ['inject-scripts/scroll-engine.js', ingestScriptPath(platform)],
     world: ingestExecutionWorld(platform),
   });
 }
@@ -144,7 +144,7 @@ async function probeIngestRpc(tabId: number): Promise<Record<string, unknown> | 
   try {
     const res = (await chrome.tabs.sendMessage(
       tabId,
-      { action: 'ruminer_ingest_probe' },
+      { action: 'ruminer_platform_probe' },
       { frameId: 0 },
     )) as any;
     return isRecord(res) ? res : null;
@@ -159,7 +159,7 @@ async function pingIngestRpc(
   try {
     const res = (await chrome.tabs.sendMessage(
       tabId,
-      { action: 'ruminer_ingest_ping' },
+      { action: 'ruminer_platform_ping' },
       { frameId: 0 },
     )) as any;
     if (!isRecord(res) || res.ok !== true) return null;
@@ -184,7 +184,7 @@ async function ensureIngestRpcInjected(tabId: number, platform: ChatPlatform): P
   if (ping1?.platform !== platform) {
     const probe = await probeIngestRpc(tabId);
     const detail = probe ? JSON.stringify(probe) : 'null';
-    throw new Error(`Ingest RPC not responding after injection (probe=${detail})`);
+    throw new Error(`Platform RPC not responding after injection (probe=${detail})`);
   }
 }
 
@@ -200,7 +200,7 @@ async function callIngestRpc(
     try {
       const res = (await chrome.tabs.sendMessage(
         tabId,
-        { action: 'ruminer_ingest_extractConversation', payload: { platform, ...payload } },
+        { action: 'ruminer_platform_extractConversation', payload: { platform, ...payload } },
         { frameId: 0 },
       )) as any;
 

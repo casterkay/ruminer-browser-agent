@@ -1,26 +1,38 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import { LINKS } from '@/common/constants';
+import { computed, onMounted, ref } from 'vue';
 
+import {
+  getEmosSettings,
+  getGatewaySettings,
+  setEmosSettings,
+  setGatewaySettings,
+} from '@/entrypoints/shared/utils/openclaw-settings';
+import {
+  testEmos as doTestEmos,
+  testGateway as doTestGateway,
+} from '@/entrypoints/shared/utils/system-settings';
+import ILucideCopy from '~icons/lucide/copy';
+import ILucideExternalLink from '~icons/lucide/external-link';
+import ILucidePlug from '~icons/lucide/plug';
 import '../sidepanel/styles/agent-chat.css';
 
 const COMMANDS = {
-  oneShotSetup: 'bash scripts/setup.sh',
-  startGateway: 'openclaw gateway run --port 18789 --force',
-  installMcpClient:
-    'openclaw plugins install --link "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/mcp-client"',
-  enableMcpClient: 'openclaw plugins enable mcp-client',
-
-  configMcpUrl:
-    'openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp"',
+  installerBase:
+    'curl -fsSL https://raw.githubusercontent.com/casterkay/ruminer-browser-agent/refs/heads/main/scripts/setup.sh | bash -s --',
 } as const;
 
-type CommandKey = keyof typeof COMMANDS;
-const copiedKey = ref<CommandKey | null>(null);
+type CopyKey = 'setup' | 'extensionId';
+const copiedKey = ref<CopyKey | null>(null);
+const extensionId = computed(() => chrome.runtime.id);
 
-async function copyCommand(key: CommandKey): Promise<void> {
+const setupCommand = computed(() => {
+  return `${COMMANDS.installerBase} --extension-id ${extensionId.value}`;
+});
+
+async function copyText(key: CopyKey, text: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(COMMANDS[key]);
+    await navigator.clipboard.writeText(text);
     copiedKey.value = key;
     window.setTimeout(() => {
       if (copiedKey.value === key) copiedKey.value = null;
@@ -30,7 +42,7 @@ async function copyCommand(key: CommandKey): Promise<void> {
   }
 }
 
-function copyLabel(key: CommandKey): string {
+function copyLabel(key: CopyKey): string {
   return copiedKey.value === key ? 'Copied' : 'Copy';
 }
 
@@ -41,187 +53,444 @@ async function openDocs(): Promise<void> {
     window.open(LINKS.TROUBLESHOOTING, '_blank', 'noopener,noreferrer');
   }
 }
+
+const gatewayWsUrl = ref('ws://127.0.0.1:18789');
+const gatewayAuthToken = ref('');
+const gatewayTesting = ref(false);
+const gatewayOk = ref<boolean | null>(null);
+const gatewayMessage = ref('');
+
+const emosBaseUrl = ref('https://api.evermind.ai');
+const emosApiKey = ref('');
+const emosTesting = ref(false);
+const emosOk = ref<boolean | null>(null);
+const emosMessage = ref('');
+
+async function loadSettings(): Promise<void> {
+  const gateway = await getGatewaySettings();
+  gatewayWsUrl.value = gateway.gatewayWsUrl;
+  gatewayAuthToken.value = gateway.gatewayAuthToken;
+
+  const emos = await getEmosSettings();
+  emosBaseUrl.value = emos.baseUrl;
+  emosApiKey.value = emos.apiKey;
+}
+
+async function saveGateway(): Promise<void> {
+  await setGatewaySettings({
+    gatewayWsUrl: gatewayWsUrl.value,
+    gatewayAuthToken: gatewayAuthToken.value,
+  });
+}
+
+async function saveEmos(): Promise<void> {
+  await setEmosSettings({
+    baseUrl: emosBaseUrl.value,
+    apiKey: emosApiKey.value,
+  });
+}
+
+async function testGateway(): Promise<void> {
+  gatewayTesting.value = true;
+  gatewayMessage.value = '';
+  gatewayOk.value = null;
+  try {
+    await saveGateway();
+    const result = await doTestGateway(gatewayWsUrl.value, gatewayAuthToken.value);
+    gatewayOk.value = result.ok;
+    gatewayMessage.value = result.message;
+  } finally {
+    gatewayTesting.value = false;
+  }
+}
+
+async function testEmos(): Promise<void> {
+  emosTesting.value = true;
+  emosMessage.value = '';
+  emosOk.value = null;
+  try {
+    await saveEmos();
+    const result = await doTestEmos(emosBaseUrl.value, emosApiKey.value);
+    emosOk.value = result.ok;
+    emosMessage.value = result.message;
+  } finally {
+    emosTesting.value = false;
+  }
+}
+
+onMounted(() => {
+  void loadSettings();
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900">
-    <div class="mx-auto max-w-5xl px-5 py-10">
-      <header class="flex flex-col gap-6">
-        <div class="flex items-start justify-between gap-4">
-          <div class="space-y-2">
-            <h1 class="text-balance text-3xl font-semibold tracking-tight text-slate-50">
-              Ruminer Browser Agent
-            </h1>
-            <div
-              class="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-950/60 px-3 py-1 text-xs text-slate-300"
-            >
-              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-              Chrome MCP • EverMemOS • OpenClaw • Claude Code • Codex
-            </div>
-            <p class="max-w-2xl text-pretty text-sm leading-6 text-slate-300">
-              A browser agent that exposes Chrome automation tools through a local MCP server, and
-              optionally connects to OpenClaw + EverMemOS for chat and memory.
-            </p>
-          </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div class="text-xs font-medium text-slate-300">Chat</div>
-            <div class="mt-1 text-sm text-slate-100">Sidepanel UI → OpenClaw Gateway</div>
-            <div class="mt-2 text-xs text-slate-400">Default: ws://127.0.0.1:18789</div>
-          </div>
-
-          <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div class="text-xs font-medium text-slate-300">Tools</div>
-            <div class="mt-1 text-sm text-slate-100">MCP client → Ruminer MCP server</div>
-            <div class="mt-2 text-xs text-slate-400">Default: http://127.0.0.1:12306/mcp</div>
-          </div>
-
-          <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div class="text-xs font-medium text-slate-300">Workflows</div>
-            <div class="mt-1 text-sm text-slate-100">RR‑V3 runtime for resilient automation</div>
-            <div class="mt-2 text-xs text-slate-400">Runs in MV3 background service worker</div>
-          </div>
-        </div>
+  <div class="agent-theme welcome-root" data-agent-theme="warm-editorial">
+    <div class="welcome-container ac-scroll">
+      <header class="welcome-header">
+        <div class="welcome-badge">Chrome MCP • EverMemOS • OpenClaw • Claude Code • Codex</div>
+        <h1 class="welcome-title">Ruminer Browser Agent</h1>
+        <p class="welcome-subtitle">
+          One browser, one memory, many agents. This page helps you wire up the native host and MCP
+          clients so your CLI agents can control Chrome.
+        </p>
       </header>
 
-      <main class="mt-10 grid gap-6">
-        <section class="rounded-2xl border border-slate-800 bg-slate-950/40 p-6">
-          <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 class="text-lg font-semibold text-slate-50">Recommended: one-shot setup</h2>
-              <p class="mt-1 max-w-2xl text-sm leading-6 text-slate-300">
-                From your local repo root, run setup to build the extension, register the native
-                host, and configure OpenClaw plugins (best-effort).
-              </p>
-            </div>
-            <div class="text-xs text-slate-400">Runs locally • no cloud</div>
+      <main class="welcome-main">
+        <section class="welcome-card">
+          <div class="welcome-card-title">1) Copy & run one command</div>
+          <div class="welcome-card-subtitle">
+            This installs/registers the native host, adds the MCP endpoint to Claude Code and Codex,
+            and installs the OpenClaw plugin (<span class="mono">openclaw-mcp-client</span>).
           </div>
 
-          <div class="mt-4 flex flex-col gap-3">
-            <div
-              class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.oneShotSetup
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('oneShotSetup')"
-              >
-                {{ copyLabel('oneShotSetup') }}
+          <div class="code-row">
+            <code class="code">{{ setupCommand }}</code>
+            <button class="btn" @click="copyText('setup', setupCommand)">
+              <ILucideCopy class="icon" />
+              {{ copyLabel('setup') }}
+            </button>
+          </div>
+
+          <div class="note">
+            Tip: you can review the script in your browser first. (Piping scripts into
+            <span class="mono">bash</span> is powerful—treat it with care.)
+          </div>
+        </section>
+
+        <section class="welcome-card">
+          <div class="welcome-card-title">2) Your extension ID (already embedded)</div>
+          <div class="welcome-card-subtitle">
+            The native host must explicitly allow this extension ID for Native Messaging.
+          </div>
+
+          <div class="code-row">
+            <code class="code">{{ extensionId }}</code>
+            <button class="btn" @click="copyText('extensionId', extensionId)">
+              <ILucideCopy class="icon" />
+              {{ copyLabel('extensionId') }}
+            </button>
+          </div>
+        </section>
+
+        <section class="welcome-grid">
+          <div class="welcome-card">
+            <div class="settings-header">
+              <div>
+                <div class="welcome-card-title">3) OpenClaw Gateway</div>
+                <div class="welcome-card-subtitle">Used by the sidepanel chat.</div>
+              </div>
+              <button class="btn" :disabled="gatewayTesting" @click="testGateway">
+                <ILucidePlug class="icon" />
+                {{ gatewayTesting ? 'Testing…' : 'Test' }}
               </button>
             </div>
 
-            <div class="text-xs leading-6 text-slate-400">
-              Then load unpacked extension from
-              <span class="font-mono text-slate-300">app/chrome-extension/.output/chrome-mv3</span>.
+            <label class="field">
+              <span class="label">Gateway WS URL</span>
+              <input v-model="gatewayWsUrl" class="input" type="text" @blur="saveGateway" />
+            </label>
+            <label class="field">
+              <span class="label">Auth token</span>
+              <input
+                v-model="gatewayAuthToken"
+                class="input"
+                type="password"
+                autocomplete="off"
+                @blur="saveGateway"
+              />
+            </label>
+
+            <div v-if="gatewayMessage" class="status" :class="gatewayOk ? 'ok' : 'error'">
+              {{ gatewayMessage }}
             </div>
           </div>
-        </section>
 
-        <section class="grid gap-6 md:grid-cols-2">
-          <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-6">
-            <h2 class="text-lg font-semibold text-slate-50">OpenClaw Gateway (chat)</h2>
-            <p class="mt-1 text-sm leading-6 text-slate-300">
-              Start the Gateway to enable sidepanel chat. If you already run OpenClaw elsewhere, you
-              can skip this.
-            </p>
-
-            <div
-              class="mt-4 flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-            >
-              <code class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200">{{
-                COMMANDS.startGateway
-              }}</code>
-              <button
-                class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                @click="copyCommand('startGateway')"
-              >
-                {{ copyLabel('startGateway') }}
+          <div class="welcome-card">
+            <div class="settings-header">
+              <div>
+                <div class="welcome-card-title">4) EverMemOS</div>
+                <div class="welcome-card-subtitle">Used by Memory + ingestion workflows.</div>
+              </div>
+              <button class="btn" :disabled="emosTesting" @click="testEmos">
+                <ILucidePlug class="icon" />
+                {{ emosTesting ? 'Testing…' : 'Test' }}
               </button>
             </div>
 
-            <div class="mt-3 text-xs leading-6 text-slate-400">
-              Tip: use the same OpenClaw profile everywhere (e.g.
-              <span class="font-mono text-slate-300">--profile dev</span>).
-            </div>
-          </div>
+            <label class="field">
+              <span class="label">Base URL</span>
+              <input v-model="emosBaseUrl" class="input" type="text" @blur="saveEmos" />
+            </label>
+            <label class="field">
+              <span class="label">API key</span>
+              <input
+                v-model="emosApiKey"
+                class="input"
+                type="password"
+                autocomplete="off"
+                @blur="saveEmos"
+              />
+            </label>
 
-          <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-6">
-            <h2 class="text-lg font-semibold text-slate-50">Manual plugin install (optional)</h2>
-            <p class="mt-1 text-sm leading-6 text-slate-300">
-              Only needed if you didn’t run the setup script. Replace the absolute path with your
-              local clone.
-            </p>
-
-            <div class="mt-4 space-y-3">
-              <div
-                class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-              >
-                <code
-                  class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200"
-                  >{{ COMMANDS.installMcpClient }}</code
-                >
-                <button
-                  class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                  @click="copyCommand('installMcpClient')"
-                >
-                  {{ copyLabel('installMcpClient') }}
-                </button>
-              </div>
-              <div
-                class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-              >
-                <code
-                  class="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-slate-200"
-                  >{{ COMMANDS.enableMcpClient }}</code
-                >
-                <button
-                  class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-700"
-                  @click="copyCommand('enableMcpClient')"
-                >
-                  {{ copyLabel('enableMcpClient') }}
-                </button>
-              </div>
+            <div v-if="emosMessage" class="status" :class="emosOk ? 'ok' : 'error'">
+              {{ emosMessage }}
             </div>
           </div>
         </section>
 
-        <section class="rounded-2xl border border-slate-800 bg-slate-950/40 p-6">
-          <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 class="text-lg font-semibold text-slate-50">EverMemOS (memory)</h2>
-              <p class="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-                Configure EverMemOS if you want memory search and ingestion workflows (RR‑V3) to
-                write to EMOS.
-              </p>
-            </div>
-            <div class="text-xs text-slate-400">Optional</div>
-          </div>
-
-          <div class="mt-3 text-xs leading-6 text-slate-400">
-            Configure EMOS inside the extension Settings (EverMemOS section) for the Memory tab and
-            ingestion workflows.
-          </div>
+        <section class="welcome-card">
+          <div class="welcome-card-title">Checklist</div>
+          <ol class="checklist">
+            <li>Run the one-liner installer.</li>
+            <li
+              >Open Claude Code / Codex and confirm you see the MCP server
+              <span class="mono">ruminer-chrome</span>.</li
+            >
+            <li>Ask your agent to call <span class="mono">get_windows_and_tabs</span>.</li>
+          </ol>
         </section>
 
-        <footer
-          class="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-950/30 p-6 text-xs text-slate-400 md:flex-row md:items-center md:justify-between"
-        >
-          <div>
-            Plugin paths in this repo:
-            <span class="ml-2 font-mono text-slate-300">app/openclaw-extensions/mcp-client</span>
-          </div>
-          <button
-            class="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-700"
-            @click="openDocs"
-          >
-            Need help? Troubleshooting
+        <footer class="welcome-footer">
+          <button class="link-btn" @click="openDocs">
+            Troubleshooting <ILucideExternalLink class="icon" />
           </button>
         </footer>
       </main>
     </div>
   </div>
 </template>
+
+<style scoped>
+.welcome-root {
+  min-height: 100vh;
+}
+
+.welcome-container {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 40px 20px 56px;
+}
+
+.welcome-header {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 22px;
+  border-bottom: var(--ac-border-width) solid var(--ac-border);
+}
+
+.welcome-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--ac-surface-muted);
+  border: var(--ac-border-width) solid var(--ac-border);
+  color: var(--ac-text-muted);
+  font-size: 12px;
+}
+
+.welcome-title {
+  margin: 0;
+  font-family: var(--ac-font-heading);
+  font-size: 34px;
+  letter-spacing: -0.02em;
+  color: var(--ac-text);
+}
+
+.welcome-subtitle {
+  margin: 0;
+  max-width: 66ch;
+  color: var(--ac-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.welcome-main {
+  display: grid;
+  gap: 16px;
+  padding-top: 18px;
+}
+
+.welcome-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 860px) {
+  .welcome-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.welcome-card {
+  background: var(--ac-surface);
+  border: var(--ac-border-width) solid var(--ac-border);
+  border-radius: var(--ac-radius-card);
+  box-shadow: var(--ac-shadow-card);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.welcome-card-title {
+  font-family: var(--ac-font-heading);
+  font-weight: 600;
+  color: var(--ac-text);
+  font-size: 16px;
+}
+
+.welcome-card-subtitle {
+  color: var(--ac-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.code-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.code {
+  flex: 1;
+  font-family: var(--ac-font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--ac-code-bg);
+  border: var(--ac-border-width) solid var(--ac-code-border);
+  border-radius: var(--ac-radius-inner);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ac-code-text);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--ac-radius-button);
+  border: var(--ac-border-width) solid var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color var(--ac-motion-fast),
+    border-color var(--ac-motion-fast);
+  user-select: none;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--ac-hover-bg);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+}
+
+.mono {
+  font-family: var(--ac-font-code);
+}
+
+.note {
+  color: var(--ac-text-subtle);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  color: var(--ac-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.input {
+  padding: 9px 12px;
+  border-radius: var(--ac-radius-inner);
+  border: var(--ac-border-width) solid var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--ac-font-body);
+}
+
+.input:focus {
+  background: var(--ac-hover-bg);
+  box-shadow: 0 0 0 2px var(--ac-focus-ring);
+}
+
+.status {
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: var(--ac-radius-inner);
+  border: var(--ac-border-width) solid var(--ac-border);
+}
+
+.status.ok {
+  background: var(--ac-diff-add-bg);
+  color: var(--ac-success);
+  border-color: var(--ac-diff-add-border);
+}
+
+.status.error {
+  background: var(--ac-diff-del-bg);
+  color: var(--ac-danger);
+  border-color: var(--ac-diff-del-border);
+}
+
+.checklist {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--ac-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.welcome-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--ac-link);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.link-btn:hover {
+  color: var(--ac-link-hover);
+}
+</style>

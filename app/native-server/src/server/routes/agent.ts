@@ -39,12 +39,12 @@ import {
 import { attachmentService } from '../../agent/attachment-service';
 import { AgentChatService } from '../../agent/chat-service';
 import { openDirectoryPicker } from '../../agent/directory-picker';
+import type { EngineName } from '../../agent/engines/types';
 import {
   clearEphemeralSessionState,
   getEphemeralSessionState,
 } from '../../agent/ephemeral-session-store';
-import { getEmosSettings, updateEmosSettings } from '../../agent/emos/settings-service';
-import type { EngineName } from '../../agent/engines/types';
+import { getEmosSettings, updateEmosSettings } from '../../agent/evermemos/settings-service';
 import {
   createMessage as createStoredMessage,
   deleteMessagesByProjectId,
@@ -230,7 +230,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
   // EverMemOS Settings (native-server owned)
   // ============================================================
 
-  fastify.get('/agent/emos/settings', async (_request, reply) => {
+  fastify.get('/agent/evermemos/settings', async (_request, reply) => {
     try {
       const settings = await getEmosSettings();
       const body: GetEmosSettingsResponse = {
@@ -248,7 +248,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
   });
 
   fastify.post(
-    '/agent/emos/settings',
+    '/agent/evermemos/settings',
     async (request: FastifyRequest<{ Body: UpdateEmosSettingsRequest }>, reply: FastifyReply) => {
       // Avoid logging secrets; do not log request body.
       try {

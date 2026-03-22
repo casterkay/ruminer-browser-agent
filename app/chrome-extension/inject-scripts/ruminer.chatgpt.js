@@ -1,26 +1,35 @@
 /* eslint-disable */
-// ruminer.chatgpt-scan.js
-// Injected into ChatGPT pages (ISOLATED world). Exposes `window.__RUMINER_SCAN__`.
+// ruminer.chatgpt.js
+// Injected into ChatGPT pages (ISOLATED world). Exposes `window.__RUMINER_PLATFORM__`.
 
 (() => {
   const PLATFORM = 'chatgpt';
   const VERSION = '2026-03-15.1';
-  const LOG = '[ruminer.chatgpt-scan]';
+  const LOG = '[ruminer.chatgpt]';
 
-  const existing = window.__RUMINER_SCAN__;
+  const existing = window.__RUMINER_PLATFORM__;
   const sameApi = existing && existing.platform === PLATFORM && existing.version === VERSION;
 
   const installRpc = () => {
-    const rpc = window.__RUMINER_SCAN_RPC__;
-    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION) return;
-    window.__RUMINER_SCAN_RPC__ = { platform: PLATFORM, version: VERSION };
+    const rpc = window.__RUMINER_PLATFORM_RPC__;
+    if (rpc && rpc.platform === PLATFORM && rpc.version === VERSION && rpc.installed === true)
+      return;
+
+    // Avoid accumulating duplicate listeners across reinjection / version bumps.
+    try {
+      if (rpc && typeof rpc.listener === 'function')
+        chrome.runtime.onMessage.removeListener(rpc.listener);
+    } catch {}
+
+    const nextRpc = { platform: PLATFORM, version: VERSION, installed: false, listener: null };
+    window.__RUMINER_PLATFORM_RPC__ = nextRpc;
 
     try {
-      chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      const listener = (request, _sender, sendResponse) => {
         try {
           if (!request || typeof request.action !== 'string') return false;
 
-          if (request.action === 'ruminer_scan_ping') {
+          if (request.action === 'ruminer_platform_ping') {
             sendResponse({
               ok: true,
               platform: PLATFORM,
@@ -30,8 +39,8 @@
             return false;
           }
 
-          if (request.action === 'ruminer_scan_probe') {
-            const api = window.__RUMINER_SCAN__;
+          if (request.action === 'ruminer_platform_probe') {
+            const api = window.__RUMINER_PLATFORM__;
             sendResponse({
               ok: true,
               platform: PLATFORM,
@@ -45,24 +54,24 @@
             return false;
           }
 
-          const api = window.__RUMINER_SCAN__;
+          const api = window.__RUMINER_PLATFORM__;
           if (!api) {
-            sendResponse({ ok: false, error: '__RUMINER_SCAN__ not found on window' });
+            sendResponse({ ok: false, error: '__RUMINER_PLATFORM__ not found on window' });
             return false;
           }
           if (api.platform !== PLATFORM) {
             sendResponse({
               ok: false,
-              error: `__RUMINER_SCAN__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
+              error: `__RUMINER_PLATFORM__ platform mismatch (expected=${PLATFORM}, got=${String(api.platform || '')})`,
             });
             return false;
           }
 
-          if (request.action === 'ruminer_scan_listConversations') {
+          if (request.action === 'ruminer_platform_listConversationsPage') {
             const offset = Number(request?.payload?.offset || 0);
             const limit = Number(request?.payload?.limit || 100);
             Promise.resolve()
-              .then(() => api.listConversations({ offset, limit }))
+              .then(() => api.listConversationsPage({ offset, limit }))
               .then((value) => {
                 if (
                   value &&
@@ -84,16 +93,10 @@
             return true;
           }
 
-          if (request.action === 'ruminer_scan_getConversationMessages') {
-            const conversationId = String(request?.payload?.conversationId || '');
+          if (request.action === 'ruminer_platform_extractConversation') {
             const conversationUrl = String(request?.payload?.conversationUrl || '');
             Promise.resolve()
-              .then(() =>
-                api.getConversationMessages({
-                  conversationId,
-                  conversationUrl,
-                }),
-              )
+              .then(() => api.extractConversation({ conversationUrl }))
               .then((value) => {
                 if (
                   value &&
@@ -119,7 +122,11 @@
           return false;
         }
         return false;
-      });
+      };
+
+      chrome.runtime.onMessage.addListener(listener);
+      nextRpc.listener = listener;
+      nextRpc.installed = true;
     } catch {}
   };
 
@@ -271,6 +278,16 @@
       }
     }
     throw new Error('ChatGPT session missing access token');
+  };
+
+  const parseConversationId = (urlString) => {
+    try {
+      const u = new URL(String(urlString || ''));
+      const pathname = String(u.pathname || '');
+      return pathname.split('/').filter(Boolean).pop() || null;
+    } catch {
+      return null;
+    }
   };
 
   const getAccessTokenCached = async () => {
@@ -537,7 +554,22 @@
       const role = msg.author.role;
       const content = normalizeContent(extractContentText(msg.content));
       if (!content) continue;
-      out.push({ role, content });
+      const ct =
+        msg && (msg.create_time ?? msg.createTime) != null
+          ? String(msg.create_time ?? msg.createTime)
+          : null;
+      const mid =
+        node && typeof node.id === 'string' && node.id.trim()
+          ? node.id.trim()
+          : msg && typeof msg.id === 'string' && msg.id.trim()
+            ? msg.id.trim()
+            : null;
+      out.push({
+        role,
+        content,
+        ...(ct ? { createTime: ct } : {}),
+        ...(mid ? { messageId: mid } : {}),
+      });
     }
     return out;
   };
@@ -547,7 +579,7 @@
     cursorByLogicalOffset: new Map([[0, 0]]),
   };
 
-  async function listConversations({ offset, limit }) {
+  async function listConversationsPage({ offset, limit }) {
     const LIMIT = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 100;
     const OFF = typeof offset === 'number' && Number.isFinite(offset) ? Math.floor(offset) : 0;
 
@@ -635,9 +667,11 @@
     return { items: out, nextOffset };
   }
 
-  async function getConversationMessages({ conversationId, conversationUrl }) {
-    const id = String(conversationId || '').trim();
-    if (!id) throw new Error('Missing conversationId');
+  async function extractConversation({ conversationUrl }) {
+    const rawUrl = String(conversationUrl || location.href || '').trim();
+    if (!rawUrl) throw new Error('Missing conversationUrl');
+    const id = parseConversationId(rawUrl);
+    if (!id) throw new Error('Failed to parse conversation id from URL');
 
     const { accessToken, accountId } = await getAuthContext();
     const conv = await fetchBackendApi(
@@ -650,18 +684,18 @@
     const msgs = extractConversationMessages(conv);
     return {
       conversationId: id,
-      conversationUrl: String(conversationUrl || '') || null,
+      conversationUrl: rawUrl,
       conversationTitle:
         conv && typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : null,
       messages: msgs,
     };
   }
 
-  window.__RUMINER_SCAN__ = {
+  window.__RUMINER_PLATFORM__ = {
     platform: PLATFORM,
     version: VERSION,
-    listConversations,
-    getConversationMessages,
+    listConversationsPage,
+    extractConversation,
   };
 
   try {

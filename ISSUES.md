@@ -70,7 +70,7 @@ About the React error #418 you saw in the page console
   the scan script itself doesn’t mutate the DOM (it
   mostly fetches /backend-api/...). On that evidence
   alone, the React hydration error is not well-explained
-  by ruminer.chatgpt-scan.js specifically, and could be
+  by ruminer.chatgpt.js specifically, and could be
   incidental or caused by other extension behavior on
   ChatGPT pages. I can’t prove causality from the code +
   log snippet you provided.
@@ -88,8 +88,8 @@ not even on the conversation page when extraction runs.
 
 is unreliable
 
-- In app/chrome-extension/inject-scripts/ruminer.claude-
-  scan.js, openConversationInPlace() prefers a.click()
+- In app/chrome-extension/inject-scripts/ruminer.claude.js,
+  openConversationInPlace() prefers a.click()
   when it finds a matching sidebar link, and only does
   location.assign(url) if no anchor is found.
 - Many apps (and Claude can be one) ignore non-user-
@@ -139,8 +139,7 @@ click-navigation entirely.)
 
 problems)
 
-From app/chrome-extension/inject-scripts/
-ruminer.deepseek-scan.js:
+From app/chrome-extension/inject-scripts/ruminer.deepseek.js:
 
 ### Likely cause A: brittle selectors
 
@@ -259,8 +258,7 @@ conversation navigation + readiness.)
     - Fallback selectors (`[data-testid*="assistant"], [data-testid*="claude"]`) likely match non-message UI (branding, headers).
   - Message ordering strategy mixes unrelated nodes and sorts by document position without scoping to the chat transcript container.
 - **Relevant code**
-  - `app/chrome-extension/inject-scripts/ruminer.claude-ingest.js`
-  - `app/chrome-extension/inject-scripts/ruminer.claude-scan.js`
+  - `app/chrome-extension/inject-scripts/ruminer.claude.js`
 - **Fix direction**
   - Scope extraction to the chat transcript root element (known stable container), then select per-message nodes within it.
   - Prefer semantic attributes for messages if available; otherwise build a stricter heuristic (role + message bubble container).
@@ -405,9 +403,9 @@ conversation navigation + readiness.)
 - **Impact**
   - False “unchanged” detection or incorrect enqueue behavior.
 - **Relevant code**
-  - `app/chrome-extension/inject-scripts/ruminer.claude-scan.js`
-  - `app/chrome-extension/inject-scripts/ruminer.gemini-scan.js`
-  - `app/chrome-extension/inject-scripts/ruminer.deepseek-scan.js`
+  - `app/chrome-extension/inject-scripts/ruminer.claude.js`
+  - `app/chrome-extension/inject-scripts/ruminer.gemini.js`
+  - `app/chrome-extension/inject-scripts/ruminer.deepseek.js`
 - **Fix direction**
   - Prefer clicking the anchor; if missing, do `location.assign(url)` and wait for a conversation-specific DOM marker.
   - Throw on timeout (don’t silently continue).
@@ -438,7 +436,7 @@ conversation navigation + readiness.)
 - **Likely cause**
   - `findScroller()` candidates include broad containers like `mat-sidenav-content` / `main`, which can be the sidebar scroller.
 - **Relevant code**
-  - `app/chrome-extension/inject-scripts/ruminer.gemini-ingest.js`
+  - `app/chrome-extension/inject-scripts/ruminer.gemini.js`
 - **Fix direction**
   - Read `_ref/gemini-export/src/content/content_script.js` to see how it implements conversation export.
 
@@ -454,7 +452,7 @@ conversation navigation + readiness.)
   - `app/chrome-extension/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/ingest-workflow-rpc.ts`
     - `isoOrNow()`
   - ChatGPT extractor captures `create_time` as string, possibly epoch-like:
-    - `app/chrome-extension/inject-scripts/ruminer.chatgpt-ingest.js`
+    - `app/chrome-extension/inject-scripts/ruminer.chatgpt.js`
 - **Fix direction**
   - Support epoch seconds/millis and numeric strings in `isoOrNow()`.
 

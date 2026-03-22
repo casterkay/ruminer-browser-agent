@@ -16,10 +16,25 @@ pnpm run dev
 ```
 
 `pnpm run dev` runs both the extension and the native server in watch mode. The native server dev
-script also registers the Native Messaging host for development.
+script starts the MCP HTTP server.
 
 The extension is built with WXT. Use the WXT dev output to load it into Chrome as an unpacked
 extension.
+
+## Native host + MCP (recommended)
+
+After you load the extension, it will open a Welcome page that shows your extension ID and a
+one‑liner installer. Run that installer to:
+
+- Register the Native Messaging host allowlisted to your extension ID
+- Add the Ruminer MCP endpoint to Claude Code / Codex (`ruminer-chrome`)
+- Install + enable the OpenClaw MCP client plugin (`openclaw-mcp-client`) when `openclaw` is available
+
+If you prefer running from this repo:
+
+```bash
+bash scripts/setup.sh --extension-id <your-extension-id>
+```
 
 ## Configure the extension
 
@@ -52,7 +67,7 @@ How these are installed depends on your OpenClaw environment:
 openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"
 openclaw plugins enable evermemos
 
-openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/mcp-client"
+openclaw plugins install --pin openclaw-mcp-client
 openclaw plugins enable mcp-client
 ```
 
