@@ -1,7 +1,5 @@
 # Ruminer Browser Agent
 
-[Demo Video](./assets/demo.mp4) [Landing Page](https://chrome.ruminer.app)
-
 **The AI agent you love with central long-term memory integrating from all your AI chat platforms.**
 
 - Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
@@ -9,6 +7,10 @@
 - Freely choose your AI agent backend: OpenClaw, Claude Code, or Codex.
 - Make your agent understand you deeply and faithfully via RAG from your centralized EverMemOS memory store.
 - Seamlessly integrated into your Chrome browser with beautiful UI and powerful automation.
+
+[Visit Our Landing Page!](https://chrome.ruminer.app)
+
+![Demo Video](./assets/demo.mp4)
 
 ![Chat Session](assets/screenshots/chat-session.png)
 
