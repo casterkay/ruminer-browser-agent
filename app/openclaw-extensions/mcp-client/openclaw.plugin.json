@@ -1,7 +1,7 @@
 {
-  "id": "mcp-client",
+  "id": "openclaw-mcp-plugin",
   "name": "Ruminer MCP Client Plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
