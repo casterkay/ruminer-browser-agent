@@ -1,5 +1,5 @@
 {
-  "name": "chrome-mcp-server-monorepo",
+  "name": "ruminer-browser-agent-monorepo",
   "version": "1.0.0",
   "private": true,
   "author": "poetrycoder",
@@ -19,6 +19,7 @@
     "dev:native": "pnpm --filter chrome-mcp-server dev",
     "dev:extension": "pnpm --filter ruminer-browser-agent dev",
     "dev": "pnpm --filter chrome-mcp-shared build && pnpm -r --parallel dev",
+    "zip": "pnpm --filter ruminer-browser-agent zip",
     "log": "tail -n 50 -f $(ls -t ~/Library/Logs/chrome-mcp-server/native_host_stderr_unix_*.log | head -1)",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
