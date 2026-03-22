@@ -28,7 +28,7 @@ one‑liner installer. Run that installer to:
 
 - Register the Native Messaging host allowlisted to your extension ID
 - Add the Ruminer MCP endpoint to Claude Code / Codex (`ruminer-chrome`)
-- Install + enable the OpenClaw MCP client plugin (`openclaw-mcp-client`) when `openclaw` is available
+- Install + enable the OpenClaw MCP client plugin (`openclaw-mcp-plugin`) when `openclaw` is available
 
 If you prefer running from this repo:
 
@@ -67,7 +67,7 @@ How these are installed depends on your OpenClaw environment:
 openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-extensions/evermemos"
 openclaw plugins enable evermemos
 
-openclaw plugins install --pin openclaw-mcp-client
+openclaw plugins install --pin openclaw-mcp-plugin
 openclaw plugins enable mcp-client
 ```
 

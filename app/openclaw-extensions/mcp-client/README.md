@@ -1,4 +1,4 @@
-# `openclaw-mcp-client`
+# `openclaw-mcp-plugin`
 
 OpenClaw plugin that routes tool calls to a Streamable HTTP MCP server (e.g. Ruminer’s local MCP
 endpoint at `http://127.0.0.1:12306/mcp`).
@@ -14,7 +14,7 @@ Set via `plugins.entries.mcp-client.config`:
 ## Install (users)
 
 ```bash
-openclaw plugins install --pin openclaw-mcp-client
+openclaw plugins install --pin openclaw-mcp-plugin
 openclaw plugins enable mcp-client
 openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp"
 ```
@@ -24,6 +24,6 @@ openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:1
 From repo root (recommended):
 
 ```bash
-pnpm --filter openclaw-mcp-client build
-pnpm --filter openclaw-mcp-client publish
+pnpm --filter openclaw-mcp-plugin build
+pnpm --filter openclaw-mcp-plugin publish
 ```

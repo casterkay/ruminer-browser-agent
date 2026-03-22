@@ -361,8 +361,8 @@ install_openclaw_plugin() {
     return 0
   fi
 
-  log "Installing OpenClaw plugin: openclaw-mcp-client (id: mcp-client)..."
-  if ! openclaw_cmd plugins install --pin openclaw-mcp-client; then
+  log "Installing OpenClaw plugin: openclaw-mcp-plugin (id: mcp-client)..."
+  if ! openclaw_cmd plugins install --pin openclaw-mcp-plugin; then
     warn "OpenClaw plugin install failed (best-effort)."
   fi
   if ! openclaw_cmd plugins enable mcp-client; then

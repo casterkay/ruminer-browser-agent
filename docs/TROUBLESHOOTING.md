@@ -65,7 +65,7 @@ codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp
 Install and enable the plugin:
 
 ```bash
-openclaw plugins install --pin openclaw-mcp-client
+openclaw plugins install --pin openclaw-mcp-plugin
 openclaw plugins enable mcp-client
 openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp"
 ```

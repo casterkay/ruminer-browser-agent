@@ -140,7 +140,7 @@ onMounted(() => {
           <div class="welcome-card-title">1) Copy & run one command</div>
           <div class="welcome-card-subtitle">
             This installs/registers the native host, adds the MCP endpoint to Claude Code and Codex,
-            and installs the OpenClaw plugin (<span class="mono">openclaw-mcp-client</span>).
+            and installs the OpenClaw plugin (<span class="mono">openclaw-mcp-plugin</span>).
           </div>
 
           <div class="code-row">
