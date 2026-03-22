@@ -43,7 +43,12 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "prepack": "node scripts/check-versions.js && npm run build"
+    "prepack": "node scripts/check-versions.js && npm run build",
+    "pack": "pnpm pack",
+    "pack:release": "pnpm pack --pack-destination ../../../releases",
+    "publish:dry-run": "pnpm publish --dry-run --access public",
+    "publish:latest": "pnpm publish --access public",
+    "publish:beta": "pnpm publish --tag beta --access public"
   },
   "files": [
     "openclaw.plugin.json",

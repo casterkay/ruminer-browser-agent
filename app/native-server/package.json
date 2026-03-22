@@ -28,7 +28,13 @@
     "format": "prettier --write 'src/**/*.{js,ts,json}'",
     "register:dev": "node dist/scripts/register-dev.js",
     "postinstall": "node -e \"const fs=require('fs');const path=require('path');const cp=require('child_process');const script=path.join(process.cwd(),'dist','scripts','postinstall.js');if(fs.existsSync(script)){cp.execFileSync(process.execPath,[script],{stdio:'inherit'});}else{console.log('[mcp-chrome-bridge] dist/scripts/postinstall.js not found; skipping postinstall (workspace/dev install).');}\"",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run test",
+    "pack": "pnpm pack",
+    "pack:release": "pnpm pack --pack-destination ../../releases",
+    "publish:dry-run": "pnpm publish --dry-run --access public",
+    "publish:latest": "pnpm publish --access public",
+    "publish:beta": "pnpm publish --tag beta --access public"
   },
   "files": [
     "dist",
@@ -50,7 +56,7 @@
     "fastify"
   ],
   "author": "poetrycoder",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/casterkay/ruminer-browser-agent.git",

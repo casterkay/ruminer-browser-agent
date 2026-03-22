@@ -38,33 +38,6 @@ mcp-chrome-bridge register --browser chromium
 mcp-chrome-bridge register --system
 ```
 
-## Usage example (extension)
-
-The Ruminer Chrome extension starts the native host and asks it to launch the local MCP server:
-
-```ts
-import { NativeMessageType } from 'chrome-mcp-shared';
-
-const nativePort = chrome.runtime.connectNative('com.chromemcp.nativehost');
-
-nativePort.onMessage.addListener((message) => {
-  if (message.type === NativeMessageType.SERVER_STARTED) {
-    console.log('Native MCP server started on port', message.payload?.port);
-  }
-  if (message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST) {
-    console.error('Native host error:', message.payload?.message);
-  }
-});
-
-nativePort.postMessage({ type: NativeMessageType.START, payload: { port: 12306 } });
-```
-
-Verify the server is up:
-
-```bash
-curl -s http://127.0.0.1:12306/ping
-```
-
 ## What runs where
 
 - **Browser**: the Ruminer extension actually executes browser-side tools (tabs, scripting, etc.)
@@ -73,6 +46,48 @@ curl -s http://127.0.0.1:12306/ping
 
 The native host process is started automatically by Chrome when the extension connects to it; you
 normally do not run `dist/index.js` by hand.
+
+## Chrome extension integration example
+
+Minimal background/service-worker example (MV3):
+
+```ts
+import { HOST_NAME, NativeMessageType } from 'chrome-mcp-shared';
+
+let nativePort: chrome.runtime.Port | null = null;
+
+export function startNativeServer(port = 12306) {
+  if (nativePort) return;
+
+  nativePort = chrome.runtime.connectNative(HOST_NAME);
+
+  nativePort.onMessage.addListener((message) => {
+    if (message.type === NativeMessageType.SERVER_STARTED) {
+      console.log('Native server started on port:', message.payload?.port);
+    } else if (message.type === NativeMessageType.SERVER_STOPPED) {
+      console.log('Native server stopped');
+    } else if (message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST) {
+      console.error('Native host error:', message.payload?.message || message.payload);
+    }
+  });
+
+  nativePort.onDisconnect.addListener(() => {
+    console.warn('Native host disconnected:', chrome.runtime.lastError);
+    nativePort = null;
+  });
+
+  nativePort.postMessage({ type: NativeMessageType.START, payload: { port } });
+}
+
+export function stopNativeServer() {
+  nativePort?.postMessage({ type: NativeMessageType.STOP });
+}
+
+export async function pingNativeHttp(port = 12306) {
+  const res = await fetch(`http://127.0.0.1:${port}/ping`);
+  return res.json();
+}
+```
 
 ## MCP endpoint
 
