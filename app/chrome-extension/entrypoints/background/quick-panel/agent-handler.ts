@@ -1126,10 +1126,19 @@ async function handleCancelAI(
  * Toggles the AgentChat sidepanel for the current tab.
  */
 async function handleOpenSidepanel(
+  message: unknown,
   sender: chrome.runtime.MessageSender,
 ): Promise<{ success: boolean; error?: string }> {
-  const tabId = sender?.tab?.id;
-  const windowId = sender?.tab?.windowId;
+  const payload = (message as any)?.payload as
+    | { tabId?: unknown; windowId?: unknown }
+    | null
+    | undefined;
+  const payloadTabId = payload?.tabId;
+  const payloadWindowId = payload?.windowId;
+
+  const tabId = sender?.tab?.id ?? (typeof payloadTabId === 'number' ? payloadTabId : undefined);
+  const windowId =
+    sender?.tab?.windowId ?? (typeof payloadWindowId === 'number' ? payloadWindowId : undefined);
 
   if (typeof tabId !== 'number') {
     return { success: false, error: 'Quick Panel request must originate from a tab.' };
@@ -1386,7 +1395,7 @@ export function initQuickPanelAgentHandler(): void {
 
     // Handle QUICK_PANEL_OPEN_SIDEPANEL
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL) {
-      handleOpenSidepanel(sender)
+      handleOpenSidepanel(message, sender)
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

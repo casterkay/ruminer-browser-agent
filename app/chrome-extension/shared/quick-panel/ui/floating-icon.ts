@@ -17,6 +17,8 @@ export interface FloatingIconOptions {
   initialBottom?: number;
   /** Initial position from right (px). Default: 24 */
   initialRight?: number;
+  /** Initial size in px (overrides compile-time default). */
+  size?: number;
   /** Callback when icon is clicked */
   onClick?: () => void;
   /** Callback when icon is dragged to new position */
@@ -83,6 +85,8 @@ export interface FloatingIconManager {
   setPosition: (position: { bottom: number; right: number }) => void;
   /** Pulse animation to draw attention */
   pulse: () => void;
+  /** Update the icon size at runtime (px) */
+  setSize: (size: number) => void;
   /**
    * Set workflow progress UI state (null to disable).
    * Intended for RR-V3 “Import All” workflows.
@@ -1115,6 +1119,10 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let workflowProgress: FloatingIconWorkflowProgress | null = null;
   let workflowControls: FloatingIconWorkflowControls | null = null;
 
+  // runtime size (px) — allow overriding the compile-time `ICON_SIZE` constant
+  let iconSize =
+    typeof options.size === 'number' && !Number.isNaN(options.size) ? options.size : ICON_SIZE;
+
   let progressOverlayElement: HTMLElement | null = null;
   let progressTimeElement: HTMLElement | null = null;
   let progressPercentElement: HTMLElement | null = null;
@@ -1304,6 +1312,13 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     iconElement = document.createElement('div');
     iconElement.className = 'floating-icon entering';
     iconElement.innerHTML = RUMINER_ICON_HTML;
+    // Apply runtime size if provided
+    try {
+      iconElement.style.width = `${iconSize}px`;
+      iconElement.style.height = `${iconSize}px`;
+    } catch {
+      // ignore
+    }
 
     spriteElement = iconElement.querySelector('.floating-icon-sprite') as HTMLElement | null;
     try {
@@ -1514,6 +1529,32 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     }, 500);
   }
 
+  function setSize(nextSize: number): void {
+    const next = Math.round(Number(nextSize) || ICON_SIZE);
+    // clamp reasonable bounds
+    const clamped = Math.max(32, Math.min(160, next));
+    iconSize = clamped;
+
+    if (iconElement) {
+      iconElement.style.width = `${iconSize}px`;
+      iconElement.style.height = `${iconSize}px`;
+    }
+
+    // Re-constrain current position to keep icon on-screen
+    currentRight = Math.max(16, Math.min(window.innerWidth - iconSize - 16, currentRight));
+    currentBottom = Math.max(16, Math.min(window.innerHeight - iconSize - 16, currentBottom));
+
+    if (hostElement) {
+      const container = hostElement.shadowRoot?.querySelector(
+        '.floating-icon-container',
+      ) as HTMLElement | null;
+      if (container) {
+        container.style.bottom = `${currentBottom}px`;
+        container.style.right = `${currentRight}px`;
+      }
+    }
+  }
+
   /**
    * Setup drag and click event listeners
    */
@@ -1597,8 +1638,8 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     currentBottom += deltaY;
 
     // Constrain to viewport
-    const maxRight = window.innerWidth - ICON_SIZE - 16;
-    const maxBottom = window.innerHeight - ICON_SIZE - 16;
+    const maxRight = window.innerWidth - iconSize - 16;
+    const maxBottom = window.innerHeight - iconSize - 16;
 
     currentRight = Math.max(16, Math.min(maxRight, currentRight));
     currentBottom = Math.max(16, Math.min(maxBottom, currentBottom));
@@ -2184,6 +2225,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     setTooltipState,
     showDialog,
     hideDialog,
+    setSize,
     dispose,
   };
 }

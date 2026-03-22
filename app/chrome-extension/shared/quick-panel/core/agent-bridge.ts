@@ -38,6 +38,7 @@ import {
   type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIResponse,
   type QuickPanelDeleteSessionResponse,
+  type QuickPanelOpenSidepanelPayload,
   type QuickPanelOpenSidepanelResponse,
   type QuickPanelOpenSessionPayload,
   type QuickPanelOpenSessionResponse,
@@ -258,7 +259,9 @@ export class QuickPanelAgentBridge {
    *
    * @returns Promise resolving to success or failure
    */
-  async openSidepanel(): Promise<QuickPanelOpenSidepanelResponse> {
+  async openSidepanel(
+    payload?: QuickPanelOpenSidepanelPayload,
+  ): Promise<QuickPanelOpenSidepanelResponse> {
     if (this.disposed) {
       return { success: false, error: 'Bridge is disposed' };
     }
@@ -266,6 +269,7 @@ export class QuickPanelAgentBridge {
     try {
       const response = await chrome.runtime.sendMessage({
         type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL,
+        payload,
       });
 
       return response as QuickPanelOpenSidepanelResponse;

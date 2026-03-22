@@ -10,6 +10,11 @@ import { setGatewaySettings } from '@/entrypoints/shared/utils/gateway-settings'
 import { getNativeServerPort, readJson } from '@/entrypoints/shared/utils/settings-internals';
 
 export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
+export const STORAGE_KEY_FLOATING_ICON_SIZE = 'floatingIconSize';
+
+// Allowed size range for floating icon (px)
+export const FLOATING_ICON_SIZE_MIN = 32;
+export const FLOATING_ICON_SIZE_MAX = 160;
 
 export interface ServerStatus {
   isRunning: boolean;
@@ -70,6 +75,44 @@ export async function saveFloatingIcon(enabled: boolean): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ floatingIconEnabled: enabled }),
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadFloatingIconSize(): Promise<number> {
+  try {
+    const port = await getNativeServerPort();
+    const response = await fetch(`http://127.0.0.1:${port}/agent/ui/settings`, { method: 'GET' });
+    if (response.ok) {
+      const data = await readJson<{ settings?: any }>(response);
+      const size = data?.settings?.floatingIconSize;
+      if (typeof size === 'number' && !Number.isNaN(size)) {
+        await chrome.storage.local.set({ [STORAGE_KEY_FLOATING_ICON_SIZE]: size });
+        return Math.min(FLOATING_ICON_SIZE_MAX, Math.max(FLOATING_ICON_SIZE_MIN, Math.round(size)));
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  const result = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON_SIZE);
+  const stored = result[STORAGE_KEY_FLOATING_ICON_SIZE];
+  const n = typeof stored === 'number' ? Math.round(stored) : 96;
+  return Math.min(FLOATING_ICON_SIZE_MAX, Math.max(FLOATING_ICON_SIZE_MIN, n));
+}
+
+export async function saveFloatingIconSize(size: number): Promise<void> {
+  const next = Math.min(FLOATING_ICON_SIZE_MAX, Math.max(FLOATING_ICON_SIZE_MIN, Math.round(size)));
+  await chrome.storage.local.set({ [STORAGE_KEY_FLOATING_ICON_SIZE]: next });
+
+  try {
+    const port = await getNativeServerPort();
+    await fetch(`http://127.0.0.1:${port}/agent/ui/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ floatingIconSize: next }),
     });
   } catch {
     // ignore

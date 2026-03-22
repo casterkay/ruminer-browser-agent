@@ -39,11 +39,33 @@
 
     <!-- Quick Panel card -->
     <section class="settings-card">
-      <h2 class="settings-card-title">Quick Panel</h2>
+      <h2 class="settings-card-title">Quick Chat</h2>
       <label class="settings-checkbox">
         <input v-model="floatingIconEnabled" type="checkbox" @change="saveFloatingIcon" />
         <span>Show in-page button</span>
       </label>
+      <div class="settings-field">
+        <span class="settings-field-label">Floating icon size</span>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <input
+            type="range"
+            :min="FLOATING_ICON_SIZE_MIN"
+            :max="FLOATING_ICON_SIZE_MAX"
+            v-model.number="floatingIconSize"
+            @change="saveFloatingIconSize"
+            style="flex: 1"
+          />
+          <input
+            type="number"
+            :min="FLOATING_ICON_SIZE_MIN"
+            :max="FLOATING_ICON_SIZE_MAX"
+            v-model.number="floatingIconSize"
+            @blur="saveFloatingIconSize"
+            class="settings-field-input"
+            style="width: 84px"
+          />
+        </div>
+      </div>
     </section>
 
     <!-- OpenClaw Gateway card -->
@@ -164,10 +186,14 @@ import {
   setGatewaySettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
+  loadFloatingIconSize as doLoadFloatingIconSize,
   refreshServerStatus as doRefreshServerStatus,
   saveFloatingIcon as doSaveFloatingIcon,
+  saveFloatingIconSize as doSaveFloatingIconSize,
   testEmos as doTestEmos,
   testGateway as doTestGateway,
+  FLOATING_ICON_SIZE_MAX,
+  FLOATING_ICON_SIZE_MIN,
   loadFloatingIcon,
 } from '@/entrypoints/shared/utils/system-settings';
 import { getMessage } from '@/utils/i18n';
@@ -216,11 +242,13 @@ const anthropicAuthToken = ref('');
 
 // Quick Panel state
 const floatingIconEnabled = ref(true);
+const floatingIconSize = ref(96);
 
 // Last saved values (to avoid toast when nothing changed)
 const lastSavedGateway = ref({ wsUrl: '', authToken: '' });
 const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
+const lastSavedFloatingIconSize = ref(96);
 const lastSavedAnthropic = ref({ baseUrl: '', authToken: '' });
 
 async function refreshServerStatus(): Promise<void> {
@@ -255,6 +283,13 @@ async function loadSettings(): Promise<void> {
   };
   lastSavedFloatingIcon.value = fi;
   lastSavedAnthropic.value = { baseUrl: an.baseUrl.trim(), authToken: an.authToken.trim() };
+  try {
+    const size = await doLoadFloatingIconSize();
+    floatingIconSize.value = size;
+    lastSavedFloatingIconSize.value = size;
+  } catch {
+    // ignore
+  }
 }
 
 async function saveGateway(): Promise<void> {
@@ -289,6 +324,14 @@ async function saveFloatingIcon(): Promise<void> {
   await doSaveFloatingIcon(enabled);
   lastSavedFloatingIcon.value = enabled;
   showToast(t('settingsQuickPanelSavedNotification'));
+}
+
+async function saveFloatingIconSize(): Promise<void> {
+  const size = Math.round(floatingIconSize.value);
+  if (size === lastSavedFloatingIconSize.value) return;
+  await doSaveFloatingIconSize(size);
+  lastSavedFloatingIconSize.value = size;
+  showToast(`Floating icon size saved: ${size}px`);
 }
 
 async function saveAnthropic(): Promise<void> {

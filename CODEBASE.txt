@@ -349,6 +349,7 @@ app/
 │   │   ├── simd_math.js
 │   │   └── similarity.worker.js
 │   └── wxt.config.ts
+├── landing-page
 ├── native-server
 │   ├── debug.sh
 │   ├── install.md
@@ -453,4 +454,4 @@ app/
         ├── tools.ts
         └── tsconfig.json
 
-99 directories, 330 files
+100 directories, 330 files

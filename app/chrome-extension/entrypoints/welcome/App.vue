@@ -130,17 +130,17 @@ onMounted(() => {
         <div class="welcome-badge">Chrome MCP • EverMemOS • OpenClaw • Claude Code • Codex</div>
         <h1 class="welcome-title">Ruminer Browser Agent</h1>
         <p class="welcome-subtitle">
-          One browser, one memory, many agents. This page helps you wire up the Chrome MCP server
-          with your CLI agents for browser automation.
+          One browser, one memory, many agents. This page helps you wire up Chrome MCP server with
+          your CLI agents for browser automation.
         </p>
       </header>
 
       <main class="welcome-main">
         <section class="welcome-card">
-          <div class="welcome-card-title">1) Copy & run one command</div>
+          <div class="welcome-card-title">1) Run the Installation Command</div>
           <div class="welcome-card-subtitle">
-            This registers the MCP server, adds the MCP endpoint to Claude Code and Codex, and
-            installs the OpenClaw plugin (<span class="mono">openclaw-mcp-plugin</span>).
+            This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw
+            plugin as MCP client.
           </div>
 
           <div class="code-row">
@@ -153,22 +153,7 @@ onMounted(() => {
 
           <div class="note">
             Tip: you can review the script in your browser first. (Piping scripts into
-            <span class="mono">bash</span> is powerful—treat it with care.)
-          </div>
-        </section>
-
-        <section class="welcome-card">
-          <div class="welcome-card-title">2) Your extension ID (already embedded)</div>
-          <div class="welcome-card-subtitle">
-            The native host must explicitly allow this extension ID for Native Messaging.
-          </div>
-
-          <div class="code-row">
-            <code class="code">{{ extensionId }}</code>
-            <button class="btn" @click="copyText('extensionId', extensionId)">
-              <ILucideCopy class="icon" />
-              {{ copyLabel('extensionId') }}
-            </button>
+            <span class="mono">bash</span> is powerful – apply it with care.)
           </div>
         </section>
 
@@ -176,8 +161,8 @@ onMounted(() => {
           <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">3) OpenClaw Gateway</div>
-                <div class="welcome-card-subtitle">Used by the sidepanel chat.</div>
+                <div class="welcome-card-title">2) Configure OpenClaw Gateway</div>
+                <div class="welcome-card-subtitle">If used as AI agent backend.</div>
               </div>
               <button class="btn" :disabled="gatewayTesting" @click="testGateway">
                 <ILucidePlug class="icon" />
@@ -208,8 +193,8 @@ onMounted(() => {
           <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">4) EverMemOS</div>
-                <div class="welcome-card-subtitle">Used by Memory + ingestion workflows.</div>
+                <div class="welcome-card-title">3) Configure EverMemOS</div>
+                <div class="welcome-card-subtitle">Used as centralized personal memory store.</div>
               </div>
               <button class="btn" :disabled="emosTesting" @click="testEmos">
                 <ILucidePlug class="icon" />
@@ -239,22 +224,54 @@ onMounted(() => {
         </section>
 
         <section class="welcome-card">
-          <div class="welcome-card-title">Checklist</div>
+          <div class="settings-header">
+            <div>
+              <div class="welcome-card-title">Checklist</div>
+            </div>
+            <button class="link-btn" @click="openDocs">
+              Troubleshooting <ILucideExternalLink class="icon" />
+            </button>
+          </div>
+
           <ol class="checklist">
-            <li>Run the one-liner installer.</li>
-            <li
-              >Open Claude Code / Codex and confirm you see the MCP server
-              <span class="mono">ruminer-chrome</span>.</li
-            >
-            <li>Ask your agent to call <span class="mono">get_windows_and_tabs</span>.</li>
+            <li>
+              <label class="check-item">
+                <input type="checkbox" />
+                <span>Run the one-liner installation command.</span>
+              </label>
+            </li>
+
+            <li>
+              <label class="check-item">
+                <input type="checkbox" />
+                <span
+                  >Start Claude Code / Codex CLI and confirm you see a successful connection to the
+                  MCP server <span class="mono">ruminer-chrome</span>.</span
+                >
+              </label>
+            </li>
+
+            <li>
+              <label class="check-item">
+                <input type="checkbox" />
+                <span
+                  >Ask your agent to call some browser tools, like "What tabs are there in my
+                  browser?"</span
+                >
+              </label>
+            </li>
+
+            <li>
+              <label class="check-item">
+                <input type="checkbox" />
+                <span
+                  >Click the floating button at the bottom right to toggle Ruminer's side panel or
+                  hover on it to open the quick chat UI!</span
+                >
+              </label>
+            </li>
           </ol>
         </section>
-
-        <footer class="welcome-footer">
-          <button class="link-btn" @click="openDocs">
-            Troubleshooting <ILucideExternalLink class="icon" />
-          </button>
-        </footer>
       </main>
     </div>
   </div>
@@ -268,7 +285,7 @@ onMounted(() => {
 .welcome-container {
   max-width: 920px;
   margin: 0 auto;
-  padding: 40px 20px 56px;
+  padding: 30px 20px 56px;
 }
 
 .welcome-header {
@@ -282,7 +299,7 @@ onMounted(() => {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
   background: var(--ac-surface-muted);
   border: var(--ac-border-width) solid var(--ac-border);
@@ -300,7 +317,7 @@ onMounted(() => {
 
 .welcome-subtitle {
   margin: 0;
-  max-width: 66ch;
+  max-width: 100ch;
   color: var(--ac-text-muted);
   font-size: 14px;
   line-height: 1.6;
@@ -401,6 +418,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--ac-font-code);
+  color: var(--ac-link);
 }
 
 .note {
@@ -464,12 +482,33 @@ onMounted(() => {
 
 .checklist {
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   color: var(--ac-text);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.checklist li {
+  list-style: none;
+}
+
+.check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.check-item input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0 0;
+}
+
+.check-item span {
+  display: inline-block;
 }
 
 .welcome-footer {
@@ -487,7 +526,7 @@ onMounted(() => {
   color: var(--ac-link);
   cursor: pointer;
   font-size: 13px;
-  padding: 8px 0;
+  padding: 0px;
 }
 
 .link-btn:hover {

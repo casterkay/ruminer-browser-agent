@@ -418,6 +418,24 @@ export interface QuickPanelAIEventMessage {
 }
 
 // ============================================================
+// Quick Panel - Sidepanel Bridge Contracts
+// ============================================================
+
+export interface QuickPanelOpenSidepanelPayload {
+  /**
+   * Optional tab context for callers that are not content scripts (e.g. extension pages).
+   * When omitted, background will infer tab from sender when possible.
+   */
+  tabId?: number;
+  windowId?: number;
+}
+
+export interface QuickPanelOpenSidepanelMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_SIDEPANEL;
+  payload?: QuickPanelOpenSidepanelPayload;
+}
+
+// ============================================================
 // Quick Panel Search - Tabs Bridge Contracts
 // ============================================================
 

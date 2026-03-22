@@ -41,6 +41,9 @@ import {
 /** Storage key for floating icon preference */
 const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
 
+/** Storage key for floating icon size (px) */
+const STORAGE_KEY_FLOATING_ICON_SIZE = 'floatingIconSize';
+
 /** Default value when none is set */
 const DEFAULT_FLOATING_ICON_ENABLED = true;
 
@@ -454,9 +457,20 @@ export default defineContentScript({
 
       persistEnabled = await loadPersistPreference();
 
+      // Read stored size (if any) and pass to factory so initial size matches user setting
+      let storedSize: number | undefined = undefined;
+      try {
+        const r = await chrome.storage.local.get(STORAGE_KEY_FLOATING_ICON_SIZE);
+        const s = r[STORAGE_KEY_FLOATING_ICON_SIZE];
+        if (typeof s === 'number' && !Number.isNaN(s)) storedSize = Math.round(s);
+      } catch {
+        /* ignore */
+      }
+
       floatingIcon = createFloatingIcon({
         initialBottom: 24,
         initialRight: 24,
+        size: storedSize,
         onClick: () => {
           const bridge = ensureBridge();
           void bridge.openSidepanel();
@@ -518,6 +532,24 @@ export default defineContentScript({
       if (STORAGE_KEY_QP_PERSIST_ENABLED in changes) {
         persistEnabled = changes[STORAGE_KEY_QP_PERSIST_ENABLED].newValue === true;
         refreshTooltipState();
+      }
+
+      // Floating icon size changed: apply immediately if icon exists, otherwise it will be read on init
+      if (STORAGE_KEY_FLOATING_ICON_SIZE in changes) {
+        const nv = changes[STORAGE_KEY_FLOATING_ICON_SIZE].newValue;
+        if (typeof nv === 'number' && !Number.isNaN(nv)) {
+          try {
+            const next = Math.round(nv);
+            if (floatingIcon) {
+              floatingIcon.setSize(next);
+            } else {
+              // If not yet initialized but enabled, re-init so size is applied on create
+              void initFloatingIcon();
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
