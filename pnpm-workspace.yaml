@@ -1,3 +1,4 @@
 packages:
   - 'app/*'
+  - 'app/openclaw-extensions/*'
   - 'packages/*'

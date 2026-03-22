@@ -1,5 +1,5 @@
 import { stdin, stdout } from 'process';
-import { Server } from './server';
+import { Server } from './server/server';
 import { v4 as uuidv4 } from 'uuid';
 import { NativeMessageType } from 'chrome-mcp-shared';
 import { TIMEOUTS } from './constant';
@@ -329,6 +329,3 @@ export class NativeMessagingHost {
     }
   }
 }
-
-const nativeMessagingHostInstance = new NativeMessagingHost();
-export default nativeMessagingHostInstance;

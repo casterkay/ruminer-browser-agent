@@ -1,8 +1,17 @@
 {
   "name": "mcp-chrome-bridge",
   "version": "1.0.29",
-  "description": "Chrome Native-Messaging host (Node)",
-  "main": "dist/index.js",
+  "description": "Native Messaging host + local MCP server for Ruminer's Chrome extension.",
+  "type": "commonjs",
+  "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "require": "./dist/lib.js",
+      "default": "./dist/lib.js"
+    }
+  },
   "bin": {
     "mcp-chrome-bridge": "./dist/cli.js",
     "chrome-mcp-bridge": "./dist/cli.js",
@@ -10,30 +19,50 @@
   },
   "scripts": {
     "dev": "nodemon --watch src --ext ts,js,json --ignore dist/ --exec \"npm run build && npm run register:dev\"",
-    "build": "ts-node src/scripts/build.ts",
+    "build": "node src/scripts/build.js",
     "test": "jest",
+    "test:coverage": "cross-env JEST_COVERAGE=1 jest",
     "test:watch": "jest --watch",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
     "format": "prettier --write 'src/**/*.{js,ts,json}'",
     "register:dev": "node dist/scripts/register-dev.js",
-    "postinstall": "node dist/scripts/postinstall.js"
+    "postinstall": "node -e \"const fs=require('fs');const path=require('path');const cp=require('child_process');const script=path.join(process.cwd(),'dist','scripts','postinstall.js');if(fs.existsSync(script)){cp.execFileSync(process.execPath,[script],{stdio:'inherit'});}else{console.log('[mcp-chrome-bridge] dist/scripts/postinstall.js not found; skipping postinstall (workspace/dev install).');}\"",
+    "prepack": "npm run build"
   },
   "files": [
     "dist",
-    "!dist/node_path.txt"
+    "!dist/node_path.txt",
+    "README.md",
+    "install.md",
+    "LICENSE"
   ],
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=20.0.0"
   },
   "preferGlobal": true,
   "keywords": [
+    "native-messaging",
     "mcp",
     "chrome",
-    "browser"
+    "chrome-extension",
+    "browser",
+    "fastify"
   ],
   "author": "poetrycoder",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casterkay/ruminer-browser-agent.git",
+    "directory": "app/native-server"
+  },
+  "bugs": {
+    "url": "https://github.com/casterkay/ruminer-browser-agent/issues"
+  },
+  "homepage": "https://github.com/casterkay/ruminer-browser-agent/tree/master/app/native-server#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.69",
     "@fastify/cors": "^11.0.1",
@@ -65,7 +94,7 @@
     "rimraf": "^6.0.1",
     "supertest": "^7.1.0",
     "ts-jest": "^29.3.2",
-    "ts-node": "^10.9.2"
+    "typescript": "^5.8.3"
   },
   "husky": {
     "hooks": {

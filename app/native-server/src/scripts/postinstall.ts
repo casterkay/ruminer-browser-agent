@@ -280,6 +280,15 @@ function printManualInstructions(): void {
  * 主函数
  */
 async function main(): Promise<void> {
+  // Avoid side effects for local/workspace installs.
+  // This package is designed to be installed globally, where the CLI is on PATH and registration makes sense.
+  if (!isGlobalInstall) {
+    console.log(
+      colorText(`[${COMMAND_NAME}] Non-global install detected; skipping postinstall.`, 'yellow'),
+    );
+    return;
+  }
+
   console.log(colorText(`Installing ${COMMAND_NAME}...`, 'green'));
 
   // Debug information
@@ -296,13 +305,8 @@ async function main(): Promise<void> {
   // Write Node.js path for run_host scripts to use
   writeNodePathFile(path.join(__dirname, '..'));
 
-  // If global installation, try automatic registration
-  if (isGlobalInstall) {
-    await tryRegisterNativeHost();
-  } else {
-    console.log(colorText('Local installation detected', 'yellow'));
-    printManualInstructions();
-  }
+  // Global installation: try automatic registration
+  await tryRegisterNativeHost();
 }
 
 // Only execute main function when running this script directly

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import serverInstance from './server';
-import nativeMessagingHostInstance from './native-messaging-host';
+import nativeMessagingHostInstance from './native-messaging-host-instance';
 
 try {
   serverInstance.setNativeHost(nativeMessagingHostInstance); // Server needs setNativeHost method

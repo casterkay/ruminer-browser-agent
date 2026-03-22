@@ -367,14 +367,14 @@ app/
 │   │   │   │   ├── index.ts
 │   │   │   │   └── schema.ts
 │   │   │   ├── directory-picker.ts
-│   │   │   ├── emos
-│   │   │   │   └── settings-service.ts
 │   │   │   ├── engines
 │   │   │   │   ├── claude.ts
 │   │   │   │   ├── codex.ts
 │   │   │   │   ├── openclaw.ts
 │   │   │   │   └── types.ts
 │   │   │   ├── ephemeral-session-store.ts
+│   │   │   ├── evermemos
+│   │   │   │   └── settings-service.ts
 │   │   │   ├── mcp-tool-telemetry.ts
 │   │   │   ├── message-service.ts
 │   │   │   ├── open-project.ts
@@ -442,6 +442,7 @@ app/
         ├── index.ts
         ├── openclaw.plugin.json
         ├── package.json
+        ├── README.md
         └── tools.ts
 
-98 directories, 326 files
+98 directories, 323 files

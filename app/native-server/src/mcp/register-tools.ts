@@ -7,7 +7,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { NativeMessageType, TOOL_NAMES, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 import { emitMcpToolResult, emitMcpToolUse } from '../agent/mcp-tool-telemetry';
-import nativeMessagingHostInstance from '../native-messaging-host';
+import nativeMessagingHostInstance from '../native-messaging-host-instance';
 
 // ---------------------------------------------------------------------------
 // In-process cache for emos_search_memories results

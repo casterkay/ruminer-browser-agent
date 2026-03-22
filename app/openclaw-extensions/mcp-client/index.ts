@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { TOOL_SCHEMAS } from './tools.ts';
+import { TOOL_SCHEMAS } from './tools.js';
 
 type McpClientPluginConfig = {
   /**
@@ -260,7 +260,7 @@ async function callToolViaMcp(
     typeof payload.timeoutMs === 'number' &&
     Number.isFinite(payload.timeoutMs) &&
     payload.timeoutMs > 0
-      ? { timeoutMs: Math.floor(payload.timeoutMs) }
+      ? { timeout: Math.floor(payload.timeoutMs) }
       : undefined;
 
   return c.callTool({ name: payload.name, arguments: args }, undefined, options);

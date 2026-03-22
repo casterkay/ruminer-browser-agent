@@ -4,6 +4,18 @@
   "description": "EverMemOS Plugin (OpenClaw auto-ingest + search)",
   "private": true,
   "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "clean": "rm -rf dist",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write ."
+  },
   "openclaw": {
     "extensions": [
       "./index.ts"
