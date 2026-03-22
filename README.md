@@ -11,7 +11,8 @@
 [Visit Our Landing Page!](https://chrome.ruminer.app)
 
 [Watch Our Demo Video!](https://www.youtube.com/watch?v=nvDG8ZCp-O8)
-[](https://github.com/user-attachments/assets/fb49d045-3d43-49b6-b51a-3ee8ff9ed508)
+
+https://github.com/user-attachments/assets/fb49d045-3d43-49b6-b51a-3ee8ff9ed508
 
 ![Chat View](assets/screenshots/chat-session.png)
 
