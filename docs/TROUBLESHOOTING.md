@@ -9,19 +9,19 @@
 3. Verify the Native Messaging host:
 
 ```bash
-mcp-chrome-bridge doctor
+chrome-mcp-server doctor
 ```
 
 If doctor reports errors, try:
 
 ```bash
-mcp-chrome-bridge doctor --fix
+chrome-mcp-server doctor --fix
 ```
 
-If the `mcp-chrome-bridge` command is missing, install it:
+If the `chrome-mcp-server` command is missing, install it:
 
 ```bash
-npm install -g @casterkay/mcp-chrome-bridge
+npm install -g @casterkay/chrome-mcp-server
 ```
 
 ### Tools show up, but calls fail immediately

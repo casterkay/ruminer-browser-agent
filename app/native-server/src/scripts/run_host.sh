@@ -9,12 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE_SCRIPT="${SCRIPT_DIR}/index.js"
 
 # Setup log directory - prefer user-writable locations
-# macOS: ~/Library/Logs/mcp-chrome-bridge
-# Linux: $XDG_STATE_HOME/mcp-chrome-bridge/logs or ~/.local/state/mcp-chrome-bridge/logs
+# macOS: ~/Library/Logs/chrome-mcp-server
+# Linux: $XDG_STATE_HOME/chrome-mcp-server/logs or ~/.local/state/chrome-mcp-server/logs
 if [ "$(uname)" = "Darwin" ]; then
-    LOG_DIR="${HOME}/Library/Logs/mcp-chrome-bridge"
+    LOG_DIR="${HOME}/Library/Logs/chrome-mcp-server"
 else
-    LOG_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/mcp-chrome-bridge/logs"
+    LOG_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/chrome-mcp-server/logs"
 fi
 
 # Fallback: if user directory is not writable, use package directory
@@ -237,7 +237,7 @@ if [ -z "${NODE_EXEC}" ]; then
     {
         echo "ERROR: Node.js executable not found!"
         echo "Searched: CHROME_MCP_NODE_PATH, node_path.txt, relative path, Volta, asdf, fnm, NVM, common paths, command -v, PATH"
-        echo "To fix: Set CHROME_MCP_NODE_PATH environment variable or run 'mcp-chrome-bridge doctor --fix'"
+        echo "To fix: Set CHROME_MCP_NODE_PATH environment variable or run 'chrome-mcp-server doctor --fix'"
     } >> "${WRAPPER_LOG}"
     exit 1
 fi

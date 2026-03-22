@@ -7,24 +7,24 @@
  * Provides checks for manifest files, Node.js path, permissions, and connectivity.
  */
 
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { execFileSync } from 'child_process';
-import { HOST_NAME, COMMAND_NAME, getAllowedOrigins } from './constant';
+import { NATIVE_SERVER_PORT } from '../constant';
 import {
   BrowserType,
   detectInstalledBrowsers,
   getBrowserConfig,
   parseBrowserType,
 } from './browser-config';
+import { COMMAND_NAME, getAllowedOrigins, HOST_NAME } from './constant';
 import {
   colorText,
   ensureExecutionPermissions,
-  tryRegisterUserLevelHost,
   getLogDir,
+  tryRegisterUserLevelHost,
 } from './utils';
-import { NATIVE_SERVER_PORT } from '../constant';
 
 const EXPECTED_PORT = 12306;
 const SCHEMA_VERSION = 1;
@@ -629,7 +629,7 @@ export async function collectDoctorReport(options: DoctorOptions): Promise<Docto
   const pkg = readPackageJson();
   const distDir = resolveDistDir();
   const rootDir = path.resolve(distDir, '..');
-  const packageName = typeof pkg.name === 'string' ? pkg.name : 'mcp-chrome-bridge';
+  const packageName = typeof pkg.name === 'string' ? pkg.name : 'chrome-mcp-server';
   const packageVersion = typeof pkg.version === 'string' ? pkg.version : 'unknown';
   const commandInfo = getCommandInfo(pkg);
 

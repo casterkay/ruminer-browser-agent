@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const COMMAND_NAME = 'mcp-chrome-bridge';
+export const COMMAND_NAME = 'chrome-mcp-server';
 export const HOST_NAME = 'com.chromemcp.nativehost';
 export const DESCRIPTION = 'Node.js Host for Browser Bridge Extension';
 

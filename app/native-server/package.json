@@ -1,6 +1,6 @@
 {
-  "name": "mcp-chrome-bridge",
-  "version": "1.0.29",
+  "name": "chrome-mcp-server",
+  "version": "1.0.30",
   "description": "Native Messaging host + local MCP server for Ruminer's Chrome extension.",
   "type": "commonjs",
   "main": "dist/lib.js",
@@ -13,8 +13,7 @@
     }
   },
   "bin": {
-    "mcp-chrome-bridge": "./dist/cli.js",
-    "chrome-mcp-bridge": "./dist/cli.js",
+    "chrome-mcp-server": "./dist/cli.js",
     "mcp-chrome-stdio": "./dist/mcp/mcp-server-stdio.js"
   },
   "scripts": {
@@ -27,7 +26,7 @@
     "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
     "format": "prettier --write 'src/**/*.{js,ts,json}'",
     "register:dev": "node dist/scripts/register-dev.js",
-    "postinstall": "node -e \"const fs=require('fs');const path=require('path');const cp=require('child_process');const script=path.join(process.cwd(),'dist','scripts','postinstall.js');if(fs.existsSync(script)){cp.execFileSync(process.execPath,[script],{stdio:'inherit'});}else{console.log('[mcp-chrome-bridge] dist/scripts/postinstall.js not found; skipping postinstall (workspace/dev install).');}\"",
+    "postinstall": "node -e \"const fs=require('fs');const path=require('path');const cp=require('child_process');const script=path.join(process.cwd(),'dist','scripts','postinstall.js');if(fs.existsSync(script)){cp.execFileSync(process.execPath,[script],{stdio:'inherit'});}else{console.log('[chrome-mcp-server] dist/scripts/postinstall.js not found; skipping postinstall (workspace/dev install).');}\"",
     "prepack": "npm run build",
     "prepublishOnly": "npm run test",
     "pack": "pnpm pack",

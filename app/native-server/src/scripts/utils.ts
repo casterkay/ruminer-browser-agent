@@ -1,10 +1,10 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import { execSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { promisify } from 'util';
+import { BrowserType, detectInstalledBrowsers, getBrowserConfig } from './browser-config';
 import { COMMAND_NAME, DESCRIPTION, HOST_NAME, getAllowedOrigins } from './constant';
-import { BrowserType, getBrowserConfig, detectInstalledBrowsers } from './browser-config';
 
 export const access = promisify(fs.access);
 export const mkdir = promisify(fs.mkdir);
@@ -14,25 +14,25 @@ export const writeFile = promisify(fs.writeFile);
  * Get the log directory path for wrapper scripts.
  * Uses platform-appropriate user directories to avoid permission issues.
  *
- * - macOS: ~/Library/Logs/mcp-chrome-bridge
- * - Windows: %LOCALAPPDATA%/mcp-chrome-bridge/logs
- * - Linux: $XDG_STATE_HOME/mcp-chrome-bridge/logs or ~/.local/state/mcp-chrome-bridge/logs
+ * - macOS: ~/Library/Logs/chrome-mcp-server
+ * - Windows: %LOCALAPPDATA%/chrome-mcp-server/logs
+ * - Linux: $XDG_STATE_HOME/chrome-mcp-server/logs or ~/.local/state/chrome-mcp-server/logs
  */
 export function getLogDir(): string {
   const homedir = os.homedir();
 
   if (os.platform() === 'darwin') {
-    return path.join(homedir, 'Library', 'Logs', 'mcp-chrome-bridge');
+    return path.join(homedir, 'Library', 'Logs', 'chrome-mcp-server');
   } else if (os.platform() === 'win32') {
     return path.join(
       process.env.LOCALAPPDATA || path.join(homedir, 'AppData', 'Local'),
-      'mcp-chrome-bridge',
+      'chrome-mcp-server',
       'logs',
     );
   } else {
     // Linux: XDG_STATE_HOME or ~/.local/state
     const xdgState = process.env.XDG_STATE_HOME || path.join(homedir, '.local', 'state');
-    return path.join(xdgState, 'mcp-chrome-bridge', 'logs');
+    return path.join(xdgState, 'chrome-mcp-server', 'logs');
   }
 }
 

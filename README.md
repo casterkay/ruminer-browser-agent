@@ -111,7 +111,7 @@ curl -fsSL https://raw.githubusercontent.com/casterkay/ruminer-browser-agent/ref
 
 This installer (best-effort):
 
-- Installs `@casterkay/mcp-chrome-bridge` (CLI: `mcp-chrome-bridge`) and registers the Native Messaging host (allowlisted to your extension ID)
+- Installs `@casterkay/chrome-mcp-server` (CLI: `chrome-mcp-server`) and registers the Native Messaging host (allowlisted to your extension ID)
 - Adds Ruminer MCP endpoint to Claude Code and Codex (`ruminer-chrome`)
 - Installs + enables the OpenClaw plugin (`openclaw-mcp-client`) and points it to Ruminer MCP URL
 

@@ -52,7 +52,7 @@ Args:
   --yes                      Non-interactive defaults; overwrite existing MCP entries without prompting
   --extension-id <ids>       Chrome extension id(s): 32 chars a-p; or chrome-extension://<id>/
   --mcp-url <url>            Ruminer MCP endpoint (default: http://127.0.0.1:12306/mcp)
-  --skip-native-host          Skip installing/registering mcp-chrome-bridge native host
+  --skip-native-host          Skip installing/registering chrome-mcp-server native host
   --skip-openclaw             Skip OpenClaw plugin install/enable/config
   --skip-claude               Skip Claude Code MCP config
   --skip-codex                Skip Codex MCP config
@@ -255,17 +255,17 @@ register_native_host() {
     return 0
   fi
 
-  install_or_update_global_npm "@casterkay/mcp-chrome-bridge" "mcp-chrome-bridge" "mcp-chrome-bridge"
-  require_cmd mcp-chrome-bridge
+  install_or_update_global_npm "@casterkay/chrome-mcp-server" "chrome-mcp-server" "chrome-mcp-server"
+  require_cmd chrome-mcp-server
 
   log "Registering Native Messaging host (user-level)..."
-  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge fix-permissions || true
-  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge register --detect || \
+  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" chrome-mcp-server fix-permissions || true
+  RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" chrome-mcp-server register --detect || \
     die "Native host registration failed."
 
   if [[ "${RUN_DOCTOR}" == "1" ]]; then
     log "Running native-host doctor (best-effort)..."
-    RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" mcp-chrome-bridge doctor --fix --browser all || true
+    RUMINER_EXTENSION_ID="${RUMINER_EXTENSION_ID}" chrome-mcp-server doctor --fix --browser all || true
   fi
 }
 
@@ -397,7 +397,7 @@ install_openclaw_plugin() {
 
 main() {
   if is_windows; then
-    die "Windows is not supported by this bash installer. Please install via npm and run: mcp-chrome-bridge register"
+    die "Windows is not supported by this bash installer. Please install via npm and run: chrome-mcp-server register"
   fi
 
   local arg

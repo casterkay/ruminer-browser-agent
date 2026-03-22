@@ -1,6 +1,6 @@
-# mcp-chrome-bridge
+# chrome-mcp-server
 
-`mcp-chrome-bridge` is the native (Node.js) side of Ruminer Browser Agent. It:
+`chrome-mcp-server` is the native (Node.js) side of Ruminer Browser Agent. It:
 
 - Registers a **Chrome Native Messaging** host (`com.chromemcp.nativehost`)
 - Runs a local **MCP (Model Context Protocol)** server (HTTP + SSE)
@@ -18,7 +18,7 @@ Chrome extension installed.
 ## Install
 
 ```bash
-npm i -g mcp-chrome-bridge
+npm i -g chrome-mcp-server
 ```
 
 Global installation runs a `postinstall` script that attempts a **user-level** Native Messaging host
@@ -28,14 +28,14 @@ registration. If it fails, run the registration command manually (see below).
 
 ```bash
 # Auto-detect and register for installed browsers
-mcp-chrome-bridge register --detect
+chrome-mcp-server register --detect
 
 # Register for a specific browser
-mcp-chrome-bridge register --browser chrome
-mcp-chrome-bridge register --browser chromium
+chrome-mcp-server register --browser chrome
+chrome-mcp-server register --browser chromium
 
 # System-level registration (requires admin / sudo)
-mcp-chrome-bridge register --system
+chrome-mcp-server register --system
 ```
 
 ## What runs where
@@ -110,7 +110,7 @@ mcp-chrome-stdio
 If your HTTP server port changes, update `dist/mcp/stdio-config.json` via:
 
 ```bash
-mcp-chrome-bridge update-port 12306
+chrome-mcp-server update-port 12306
 ```
 
 ## Supported agent engines
@@ -138,10 +138,10 @@ curl -s http://127.0.0.1:12306/agent/engines
 
 ```bash
 # Diagnose common issues (registration, permissions, config)
-mcp-chrome-bridge doctor
+chrome-mcp-server doctor
 
 # Generate a report suitable for GitHub issues
-mcp-chrome-bridge report
+chrome-mcp-server report
 ```
 
 ## License
