@@ -10,9 +10,13 @@
 
 [Visit Our Landing Page!](https://chrome.ruminer.app)
 
-![Demo Video](./assets/demo.mp4)
+[Watch Our Demo Video!](https://www.youtube.com/watch?v=nvDG8ZCp-O8)
 
-![Chat Session](assets/screenshots/chat-session.png)
+
+Uploading demo.mp4…
+
+
+![Chat View](assets/screenshots/chat-session.png)
 
 ![Memory View](assets/screenshots/memory-view.png)
 
