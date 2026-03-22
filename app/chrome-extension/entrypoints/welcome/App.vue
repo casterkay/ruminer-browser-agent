@@ -130,8 +130,8 @@ onMounted(() => {
         <div class="welcome-badge">Chrome MCP • EverMemOS • OpenClaw • Claude Code • Codex</div>
         <h1 class="welcome-title">Ruminer Browser Agent</h1>
         <p class="welcome-subtitle">
-          One browser, one memory, many agents. This page helps you wire up the native host and MCP
-          clients so your CLI agents can control Chrome.
+          One browser, one memory, many agents. This page helps you wire up the Chrome MCP server
+          with your CLI agents for browser automation.
         </p>
       </header>
 
@@ -139,8 +139,8 @@ onMounted(() => {
         <section class="welcome-card">
           <div class="welcome-card-title">1) Copy & run one command</div>
           <div class="welcome-card-subtitle">
-            This installs/registers the native host, adds the MCP endpoint to Claude Code and Codex,
-            and installs the OpenClaw plugin (<span class="mono">openclaw-mcp-plugin</span>).
+            This registers the MCP server, adds the MCP endpoint to Claude Code and Codex, and
+            installs the OpenClaw plugin (<span class="mono">openclaw-mcp-plugin</span>).
           </div>
 
           <div class="code-row">

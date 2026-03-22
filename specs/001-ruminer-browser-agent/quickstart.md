@@ -56,8 +56,8 @@ In the extension Options page:
 The repo includes OpenClaw plugin modules under `app/openclaw-extensions/`.
 
 - `evermemos`: provides `evermemos.addMemory`, `evermemos.searchMemory` (Gateway methods)
-- `mcp-client`: registers MCP tools from Ruminer’s local MCP server and routes tool calls to it
-  (OpenClaw → `mcp-client` → Ruminer native server `http://127.0.0.1:12306/mcp`)
+- `openclaw-mcp-plugin`: registers MCP tools from Ruminer’s local MCP server and routes tool calls to it
+  (OpenClaw → `openclaw-mcp-plugin` → Ruminer native server `http://127.0.0.1:12306/mcp`)
 
 How these are installed depends on your OpenClaw environment:
 
@@ -68,7 +68,7 @@ openclaw plugins install "/absolute/path/to/ruminer-browser-agent/app/openclaw-e
 openclaw plugins enable evermemos
 
 openclaw plugins install --pin openclaw-mcp-plugin
-openclaw plugins enable mcp-client
+openclaw plugins enable openclaw-mcp-plugin
 ```
 
 - **If your OpenClaw uses a plugin allowlist / plugin roots**, add the plugin directories to the

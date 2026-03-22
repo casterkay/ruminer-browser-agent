@@ -1,6 +1,6 @@
 # Ruminer Browser Agent
 
-[Demo video coming soon!] [Landing page coming soon!]
+[Demo Video]() [Landing Page](https://chrome.ruminer.app)
 
 **The AI agent you love with central long-term memory integrating from all your AI chat platforms.**
 

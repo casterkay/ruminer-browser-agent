@@ -5,7 +5,7 @@ endpoint at `http://127.0.0.1:12306/mcp`).
 
 ## Configuration
 
-Set via `plugins.entries.mcp-client.config`:
+Set via `plugins.entries.openclaw-mcp-plugin.config`:
 
 - `mcpUrl` (string): MCP server endpoint. Default: `http://127.0.0.1:12306/mcp`
 - `transport` (`auto` | `streamable-http` | `sse`): Transport preference. Default: `auto`
@@ -15,15 +15,14 @@ Set via `plugins.entries.mcp-client.config`:
 
 ```bash
 openclaw plugins install --pin openclaw-mcp-plugin
-openclaw plugins enable mcp-client
-openclaw config set plugins.entries.mcp-client.config.mcpUrl "http://127.0.0.1:12306/mcp"
+openclaw plugins enable openclaw-mcp-plugin
+openclaw config set 'plugins.entries["openclaw-mcp-plugin"].config.mcpUrl' "http://127.0.0.1:12306/mcp"
 ```
 
 ## Publish (maintainers)
 
-From repo root (recommended):
+From this directory:
 
 ```bash
-pnpm --filter openclaw-mcp-plugin build
-pnpm --filter openclaw-mcp-plugin publish
+npm publish --access public
 ```
