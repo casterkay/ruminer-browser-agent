@@ -353,6 +353,7 @@ app/
 │   ├── debug.sh
 │   ├── install.md
 │   ├── jest.config.js
+│   ├── LICENSE
 │   ├── package.json
 │   ├── README.md
 │   ├── src
@@ -398,15 +399,17 @@ app/
 │   │   │   └── index.ts
 │   │   ├── file-handler.ts
 │   │   ├── index.ts
+│   │   ├── lib.ts
 │   │   ├── mcp
 │   │   │   ├── mcp-server-stdio.ts
 │   │   │   ├── mcp-server.ts
 │   │   │   ├── register-tools.ts
 │   │   │   └── stdio-config.json
+│   │   ├── native-messaging-host-instance.ts
 │   │   ├── native-messaging-host.ts
 │   │   ├── scripts
 │   │   │   ├── browser-config.ts
-│   │   │   ├── build.ts
+│   │   │   ├── build.js
 │   │   │   ├── constant.ts
 │   │   │   ├── doctor.ts
 │   │   │   ├── postinstall.ts
@@ -421,7 +424,8 @@ app/
 │   │   │   ├── routes
 │   │   │   │   ├── agent.ts
 │   │   │   │   └── index.ts
-│   │   │   └── server.test.ts
+│   │   │   ├── server.test.ts
+│   │   │   └── server.ts
 │   │   ├── shims
 │   │   │   └── devtools.d.ts
 │   │   ├── trace-analyzer.ts
@@ -440,9 +444,13 @@ app/
     │   └── types.ts
     └── mcp-client
         ├── index.ts
+        ├── LICENSE
         ├── openclaw.plugin.json
         ├── package.json
         ├── README.md
-        └── tools.ts
+        ├── scripts
+        │   └── check-versions.js
+        ├── tools.ts
+        └── tsconfig.json
 
-98 directories, 323 files
+99 directories, 330 files
