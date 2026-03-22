@@ -255,7 +255,7 @@ register_native_host() {
     return 0
   fi
 
-  install_or_update_global_npm "@casterkay/chrome-mcp-server" "chrome-mcp-server" "chrome-mcp-server"
+  install_or_update_global_npm "@poetrycoder/chrome-mcp-server" "chrome-mcp-server" "chrome-mcp-server"
   require_cmd chrome-mcp-server
 
   log "Registering Native Messaging host (user-level)..."

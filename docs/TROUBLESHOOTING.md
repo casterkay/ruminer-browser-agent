@@ -21,7 +21,7 @@ chrome-mcp-server doctor --fix
 If the `chrome-mcp-server` command is missing, install it:
 
 ```bash
-npm install -g @casterkay/chrome-mcp-server
+npm install -g @poetrycoder/chrome-mcp-server
 ```
 
 ### Tools show up, but calls fail immediately
