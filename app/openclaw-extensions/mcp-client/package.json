@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-mcp-client",
+  "name": "openclaw-mcp-plugin",
   "version": "0.2.0",
   "description": "MCP client plugin for OpenClaw (routes tool calls to a configurable Streamable HTTP MCP server)",
   "type": "module",
@@ -25,11 +25,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/casterkay/openclaw-mcp-client.git"
+    "url": "git+https://github.com/casterkay/openclaw-mcp-plugin.git"
   },
-  "homepage": "https://github.com/casterkay/openclaw-mcp-client#readme",
+  "homepage": "https://github.com/casterkay/openclaw-mcp-plugin#readme",
   "bugs": {
-    "url": "https://github.com/casterkay/openclaw-mcp-client/issues"
+    "url": "https://github.com/casterkay/openclaw-mcp-plugin/issues"
   },
   "publishConfig": {
     "access": "public"

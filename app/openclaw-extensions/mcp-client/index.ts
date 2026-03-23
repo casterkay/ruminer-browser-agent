@@ -78,7 +78,7 @@ class McpClientManager {
   }
 
   private createClient(): Client {
-    const name = (this.config.clientName || 'openclaw-mcp-client').trim() || 'openclaw-mcp-client';
+    const name = (this.config.clientName || 'openclaw-mcp-plugin').trim() || 'openclaw-mcp-plugin';
     const c = new Client({ name, version: '1.0.0' });
     c.onerror = (error) => {
       this.api.logger.error('mcp-client MCP error', { error: String(error) });
@@ -276,7 +276,7 @@ type McpCallPayload = {
 };
 
 export default definePluginEntry({
-  id: 'openclaw-mcp-client',
+  id: 'openclaw-mcp-plugin',
   name: 'MCP Client Plugin',
   description: 'Routes OpenClaw tool calls to a configurable MCP server URL.',
   register(api: OpenClawPluginApi) {

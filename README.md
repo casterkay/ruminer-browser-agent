@@ -117,7 +117,7 @@ This installer (best-effort):
 
 - Installs `chrome-mcp-server` and registers the Native Messaging host (allowlisted to your extension ID)
 - Adds Ruminer MCP endpoint to Claude Code and Codex (`ruminer-chrome`)
-- Installs + enables the OpenClaw plugin (`openclaw-mcp-client`) and points it to Ruminer MCP URL
+- Installs + enables the OpenClaw plugin (`openclaw-mcp-plugin`) and points it to Ruminer MCP URL
 
 ### 2) Load the extension
 
