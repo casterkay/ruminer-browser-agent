@@ -509,7 +509,6 @@ function getDisplayTextFromMetadata(metadata: Record<string, unknown> | undefine
 
 function stripInjectedContext(content: string): string {
   const text = String(content || '');
-  // Best-effort: if the selection wrapper is present, return the user's original input.
   const marker = '[UserRequest]\n';
   const idx = text.indexOf(marker);
   if (idx >= 0) {
@@ -1627,7 +1626,9 @@ function buildInstructionWithSelectionContext(userInput: string): string {
   }
 
   // Combine context with user request
-  return `${contextLines.join('\n')}\n\n[UserRequest]\n${userInput}`;
+  // Add an extra blank line after the [UserRequest] marker so the user's
+  // text is visually separated from injected context in prompts.
+  return `${contextLines.join('\n')}\n\n[UserRequest]\n\n${userInput}`;
 }
 
 function injectToolRestrictions(

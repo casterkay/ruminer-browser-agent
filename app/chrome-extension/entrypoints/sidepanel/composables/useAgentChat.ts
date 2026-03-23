@@ -291,7 +291,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
       id: `temp-${requestId}`,
       sessionId,
       role: 'user',
-      // IMPORTANT: keep UX clean (show user-visible text, not injected context).
       content: (chatOptions.displayText ?? rawInput).trim(),
       messageType: 'chat',
       requestId,

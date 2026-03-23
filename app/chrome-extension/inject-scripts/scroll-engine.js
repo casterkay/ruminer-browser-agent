@@ -168,7 +168,7 @@
     const maxPages =
       typeof options.maxPages === 'number' && Number.isFinite(options.maxPages)
         ? clamp(Math.floor(options.maxPages), 1, 100_000)
-        : 800;
+        : 1000;
 
     const yieldInitial = options.yieldInitial !== false;
     const topEpsilonPx =

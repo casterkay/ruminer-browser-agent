@@ -6,7 +6,11 @@ export const COMMAND_NAME = 'chrome-mcp-server';
 export const HOST_NAME = 'com.chromemcp.nativehost';
 export const DESCRIPTION = 'Node.js Host for Browser Bridge Extension';
 
-const LEGACY_EXTENSION_IDS = ['chbienkbakdikbkehibcoolnafdjdkln'];
+const ALLOWED_EXTENSION_IDS = [
+  'chbienkbakdikbkehibcoolnafdjdkln', // dev version
+  'mokkfddophggcjcaccomgpjdgfjpmicl', // built version
+  'lbccjohfpdpimbhpckljimgolndfmfif', // published version
+];
 
 function normalizeExtensionId(raw: string): string | null {
   const trimmed = raw.trim();
@@ -89,7 +93,7 @@ export function getExtensionIds(): string[] {
     candidates.push(derivedExtensionId);
   }
 
-  candidates.push(...LEGACY_EXTENSION_IDS);
+  candidates.push(...ALLOWED_EXTENSION_IDS);
 
   const ids = candidates
     .map((value) => normalizeExtensionId(value))
