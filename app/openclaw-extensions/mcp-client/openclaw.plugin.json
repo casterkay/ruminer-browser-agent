@@ -1,8 +1,8 @@
 {
   "id": "openclaw-mcp-plugin",
-  "name": "OpenClaw MCP Client Plugin",
-  "description": "Routes OpenClaw tool calls to a local MCP server.",
-  "version": "0.1.1",
+  "name": "MCP Client Plugin",
+  "description": "Routes OpenClaw tool calls to a configurable MCP server URL.",
+  "version": "0.2.0",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -10,7 +10,7 @@
       "mcpUrl": {
         "type": "string",
         "default": "http://127.0.0.1:12306/mcp",
-        "description": "MCP server endpoint for Ruminer's native-host bridge."
+        "description": "MCP server endpoint (Streamable HTTP preferred)."
       },
       "transport": {
         "type": "string",
@@ -20,13 +20,13 @@
       },
       "clientName": {
         "type": "string",
-        "description": "Optional MCP client name shown to the MCP server."
+        "description": "Optional MCP client name shown to the MCP server (for diagnostics)."
       }
     }
   },
   "uiHints": {
-    "mcpUrl": { "label": "Ruminer MCP URL", "placeholder": "http://127.0.0.1:12306/mcp" },
+    "mcpUrl": { "label": "MCP Server URL", "placeholder": "http://127.0.0.1:12306/mcp" },
     "transport": { "label": "Transport", "placeholder": "auto" },
-    "clientName": { "label": "Client Name", "placeholder": "ruminer-mcp-client" }
+    "clientName": { "label": "Client Name", "placeholder": "openclaw-mcp-client" }
   }
 }

@@ -1,7 +1,6 @@
 # `openclaw-mcp-plugin`
 
-OpenClaw plugin that routes tool calls to a Streamable HTTP MCP server (e.g. Ruminer’s local MCP
-endpoint at `http://127.0.0.1:12306/mcp`).
+OpenClaw plugin that routes tool calls to a Streamable HTTP MCP server (configured via URL).
 
 Requires OpenClaw's new Plugin SDK runtime (this package externalizes `openclaw/*` imports and expects the host to provide them) and Node.js `>=22`.
 

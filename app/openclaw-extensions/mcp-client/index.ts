@@ -5,7 +5,7 @@ import { definePluginEntry, type OpenClawPluginApi } from 'openclaw/plugin-sdk/p
 
 type McpClientPluginConfig = {
   /**
-   * MCP endpoint for the Ruminer native-host server.
+   * MCP endpoint for an MCP server (Streamable HTTP preferred).
    * Example: http://127.0.0.1:12306/mcp
    */
   mcpUrl?: string;
@@ -78,7 +78,7 @@ class McpClientManager {
   }
 
   private createClient(): Client {
-    const name = (this.config.clientName || 'ruminer-mcp-client').trim() || 'ruminer-mcp-client';
+    const name = (this.config.clientName || 'openclaw-mcp-client').trim() || 'openclaw-mcp-client';
     const c = new Client({ name, version: '1.0.0' });
     c.onerror = (error) => {
       this.api.logger.error('mcp-client MCP error', { error: String(error) });
@@ -277,8 +277,8 @@ type McpCallPayload = {
 
 export default definePluginEntry({
   id: 'openclaw-mcp-plugin',
-  name: 'Ruminer MCP Client Plugin',
-  description: 'Routes OpenClaw tool calls to a local MCP server (Ruminer native-host bridge).',
+  name: 'MCP Client Plugin',
+  description: 'Routes OpenClaw tool calls to a configurable MCP server URL.',
   register(api: OpenClawPluginApi) {
     // api.config is the full gateway config — never use it as plugin config.
     const config = normalizeConfig(api.pluginConfig ?? {});
@@ -330,7 +330,7 @@ export default definePluginEntry({
       api.logger.warn('mcp-client initial tool discovery failed', { error: String(error) });
     });
 
-    api.logger.info('mcp-client plugin ready (OpenClaw → MCP client → Ruminer MCP server)', {
+    api.logger.info('mcp-client plugin ready (OpenClaw → MCP client → MCP server)', {
       registeredCount: manager.getRegisteredToolCount(),
       mcpUrl: resolveMcpUrl(config),
       transport: config.transport || 'auto',
