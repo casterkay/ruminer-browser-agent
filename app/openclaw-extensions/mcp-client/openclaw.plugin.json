@@ -1,6 +1,7 @@
 {
   "id": "openclaw-mcp-plugin",
-  "name": "Ruminer MCP Client Plugin",
+  "name": "OpenClaw MCP Client Plugin",
+  "description": "Routes OpenClaw tool calls to a local MCP server.",
   "version": "0.1.1",
   "configSchema": {
     "type": "object",

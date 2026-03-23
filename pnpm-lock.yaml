@@ -245,7 +245,7 @@ importers:
   app/openclaw-extensions/mcp-client:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.11.0
+        specifier: ^1.27.1
         version: 1.27.1(zod@3.25.76)
     devDependencies:
       '@types/node':

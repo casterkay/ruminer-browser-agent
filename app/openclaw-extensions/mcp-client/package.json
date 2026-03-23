@@ -13,7 +13,7 @@
     "plugin"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,8 +37,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup index.ts --format esm --dts --clean",
-    "dev": "tsup index.ts --format esm --dts --watch",
+    "build": "tsup index.ts --format esm --dts --clean --external openclaw",
+    "dev": "tsup index.ts --format esm --dts --watch --external openclaw",
     "clean": "rm -rf dist",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -57,7 +57,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.11.0"
+    "@modelcontextprotocol/sdk": "^1.27.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

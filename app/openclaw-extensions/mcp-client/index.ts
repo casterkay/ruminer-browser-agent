@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { TOOL_SCHEMAS } from './tools.js';
+import { definePluginEntry, type OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 type McpClientPluginConfig = {
   /**
@@ -20,65 +20,6 @@ type McpClientPluginConfig = {
    * Optional MCP client name shown to the server.
    */
   clientName?: string;
-};
-
-type PluginServiceCtx = {
-  config: Record<string, unknown>;
-  workspaceDir?: string;
-  stateDir: string;
-  logger: {
-    info: (msg: string) => void;
-    warn: (msg: string) => void;
-    error: (msg: string) => void;
-  };
-};
-
-type GatewayHandlerOpts = {
-  params: Record<string, unknown>;
-  respond: (
-    ok: boolean,
-    payload?: unknown,
-    error?: { message: string; code?: string },
-    meta?: Record<string, unknown>,
-  ) => void;
-  [key: string]: unknown;
-};
-
-type OpenClawPluginApi = {
-  id: string;
-  name: string;
-  source: string;
-  // Full gateway config — NOT the plugin config.
-  config: Record<string, unknown>;
-  // Plugin-scoped config from plugins.entries.<id>.config — use this.
-  pluginConfig?: Record<string, unknown>;
-  logger: {
-    info: (message: string, meta?: unknown) => void;
-    warn: (message: string, meta?: unknown) => void;
-    error: (message: string, meta?: unknown) => void;
-  };
-  resolvePath: (input: string) => string;
-  registerGatewayMethod(
-    method: string,
-    handler: (opts: GatewayHandlerOpts) => void | Promise<void>,
-  ): void;
-  registerService(svc: {
-    id: string;
-    start: (ctx: PluginServiceCtx) => Promise<void> | void;
-    stop?: (ctx: PluginServiceCtx) => Promise<void> | void;
-  }): void;
-  registerTool?(
-    def: {
-      name: string;
-      description: string;
-      parameters: unknown;
-      execute: (
-        id: string,
-        params: unknown,
-      ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-    },
-    opts?: { optional?: boolean },
-  ): void;
 };
 
 const DEFAULT_MCP_URL = 'http://127.0.0.1:12306/mcp';
@@ -105,115 +46,204 @@ function resolveMcpUrl(config: McpClientPluginConfig): string {
   return trimmed || DEFAULT_MCP_URL;
 }
 
-let client: Client | null = null;
-let transport: { close: () => Promise<void>; terminateSession?: () => Promise<void> } | null = null;
-let connectPromise: Promise<Client> | null = null;
+type McpTransport = { close: () => Promise<void>; terminateSession?: () => Promise<void> };
+type TransportKind = 'none' | 'streamable-http' | 'sse';
 
-function createClient(api: OpenClawPluginApi, config: McpClientPluginConfig): Client {
-  const name = (config.clientName || 'ruminer-mcp-client').trim() || 'ruminer-mcp-client';
-  const c = new Client({ name, version: '1.0.0' });
-  c.onerror = (error) => {
-    api.logger.error('mcp-client MCP error', { error: String(error) });
-  };
-  return c;
-}
+class McpClientManager {
+  private client: Client | null = null;
+  private transport: McpTransport | null = null;
+  private connectPromise: Promise<Client> | null = null;
+  private transportKind: TransportKind = 'none';
+  private registeredToolNames = new Set<string>();
 
-async function connectStreamableHttp(
-  api: OpenClawPluginApi,
-  config: McpClientPluginConfig,
-  baseUrl: URL,
-): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
-  const c = createClient(api, config);
-  const t = new StreamableHTTPClientTransport(baseUrl);
-  await c.connect(t);
-  return { client: c, transport: t };
-}
+  constructor(
+    private api: OpenClawPluginApi,
+    private config: McpClientPluginConfig,
+  ) {}
 
-async function connectSse(
-  api: OpenClawPluginApi,
-  config: McpClientPluginConfig,
-  baseUrl: URL,
-): Promise<{ client: Client; transport: SSEClientTransport }> {
-  const c = createClient(api, config);
-  const t = new SSEClientTransport(baseUrl);
-  await c.connect(t);
-  return { client: c, transport: t };
-}
-
-async function connectMcp(api: OpenClawPluginApi, config: McpClientPluginConfig): Promise<Client> {
-  const url = resolveMcpUrl(config);
-  const baseUrl = new URL(url);
-  const pref = (config.transport || 'auto').toLowerCase();
-
-  if (pref === 'streamable-http') {
-    const connected = await connectStreamableHttp(api, config, baseUrl);
-    client = connected.client;
-    transport = connected.transport;
-    return connected.client;
+  public isConnected(): boolean {
+    return this.client !== null;
   }
 
-  if (pref === 'sse') {
-    const connected = await connectSse(api, config, baseUrl);
-    client = connected.client;
-    transport = connected.transport;
-    return connected.client;
+  public getTransportKind(): TransportKind {
+    return this.transportKind;
   }
 
-  // auto: Streamable HTTP first, then fallback to deprecated SSE transport.
-  try {
-    const connected = await connectStreamableHttp(api, config, baseUrl);
-    client = connected.client;
-    transport = connected.transport;
-    return connected.client;
-  } catch (error) {
-    api.logger.warn('mcp-client Streamable HTTP connect failed; falling back to SSE', {
-      error: String(error),
-      mcpUrl: url,
-    });
-    const connected = await connectSse(api, config, baseUrl);
-    client = connected.client;
-    transport = connected.transport;
-    return connected.client;
+  public markToolRegistered(name: string): void {
+    if (name) this.registeredToolNames.add(name);
   }
-}
 
-async function ensureClient(
-  api: OpenClawPluginApi,
-  config: McpClientPluginConfig,
-): Promise<Client> {
-  if (client) return client;
-  if (connectPromise) return connectPromise;
+  public getRegisteredToolCount(): number {
+    return this.registeredToolNames.size;
+  }
 
-  connectPromise = connectMcp(api, config)
-    .then((connected) => {
-      api.logger.info('mcp-client connected', { mcpUrl: resolveMcpUrl(config) });
-      return connected;
-    })
-    .catch((error) => {
-      client = null;
-      transport = null;
-      connectPromise = null;
-      throw error;
-    })
-    .finally(() => {
-      connectPromise = null;
-    });
+  private createClient(): Client {
+    const name = (this.config.clientName || 'ruminer-mcp-client').trim() || 'ruminer-mcp-client';
+    const c = new Client({ name, version: '1.0.0' });
+    c.onerror = (error) => {
+      this.api.logger.error('mcp-client MCP error', { error: String(error) });
+    };
+    return c;
+  }
 
-  return connectPromise;
-}
+  private async connectStreamableHttp(baseUrl: URL): Promise<void> {
+    const c = this.createClient();
+    const t = new StreamableHTTPClientTransport(baseUrl);
+    await c.connect(t);
+    this.client = c;
+    this.transport = t;
+    this.transportKind = 'streamable-http';
+  }
 
-async function disconnectMcp(api: OpenClawPluginApi): Promise<void> {
-  const t = transport;
-  client = null;
-  transport = null;
-  connectPromise = null;
+  private async connectSse(baseUrl: URL): Promise<void> {
+    const c = this.createClient();
+    const t = new SSEClientTransport(baseUrl);
+    await c.connect(t);
+    this.client = c;
+    this.transport = t;
+    this.transportKind = 'sse';
+  }
 
-  if (!t) return;
-  try {
-    await t.close();
-    api.logger.info('mcp-client disconnected');
-  } catch (error) {
-    api.logger.warn('mcp-client disconnect failed', { error: String(error) });
+  private async connectMcp(): Promise<Client> {
+    const url = resolveMcpUrl(this.config);
+    const baseUrl = new URL(url);
+    const pref = (this.config.transport || 'auto').toLowerCase();
+
+    // Clear any previous partial state before (re)connecting.
+    this.client = null;
+    this.transport = null;
+    this.transportKind = 'none';
+
+    if (pref === 'streamable-http') {
+      await this.connectStreamableHttp(baseUrl);
+      return this.client!;
+    }
+
+    if (pref === 'sse') {
+      await this.connectSse(baseUrl);
+      return this.client!;
+    }
+
+    // auto: Streamable HTTP first, then fallback to deprecated SSE transport.
+    try {
+      await this.connectStreamableHttp(baseUrl);
+      return this.client!;
+    } catch (error) {
+      this.api.logger.warn('mcp-client Streamable HTTP connect failed; falling back to SSE', {
+        error: String(error),
+        mcpUrl: url,
+      });
+      await this.connectSse(baseUrl);
+      return this.client!;
+    }
+  }
+
+  public async ensureClient(): Promise<Client> {
+    if (this.client) return this.client;
+    if (this.connectPromise) return this.connectPromise;
+
+    this.connectPromise = this.connectMcp()
+      .then((connected) => {
+        this.api.logger.info('mcp-client connected', { mcpUrl: resolveMcpUrl(this.config) });
+        return connected;
+      })
+      .catch((error) => {
+        this.client = null;
+        this.transport = null;
+        this.transportKind = 'none';
+        this.connectPromise = null;
+        throw error;
+      })
+      .finally(() => {
+        this.connectPromise = null;
+      });
+
+    return this.connectPromise;
+  }
+
+  public async disconnect(): Promise<void> {
+    const t = this.transport;
+    this.client = null;
+    this.transport = null;
+    this.transportKind = 'none';
+    this.connectPromise = null;
+
+    if (!t) return;
+    try {
+      await t.close();
+      this.api.logger.info('mcp-client disconnected');
+    } catch (error) {
+      this.api.logger.warn('mcp-client disconnect failed', { error: String(error) });
+    }
+  }
+
+  public async callTool(payload: McpCallPayload): Promise<unknown> {
+    if (!payload?.name) {
+      throw new Error('Missing required field: name');
+    }
+
+    const c = await this.ensureClient();
+    const args = isObjectRecord(payload.args) ? payload.args : {};
+    const options =
+      typeof payload.timeoutMs === 'number' &&
+      Number.isFinite(payload.timeoutMs) &&
+      payload.timeoutMs > 0
+        ? { timeout: Math.floor(payload.timeoutMs) }
+        : undefined;
+
+    return c.callTool({ name: payload.name, arguments: args }, undefined, options);
+  }
+
+  /**
+   * Best-effort: list MCP tools and register any that we haven't already
+   * registered from our static list. This is mainly to surface dynamic tools
+   * (e.g. `flow.*`) and new server-side tools without shipping a plugin update.
+   */
+  public async refreshToolsFromMcp(): Promise<void> {
+    if (typeof this.api.registerTool !== 'function') return;
+
+    const c = await this.ensureClient();
+    const toolsResult = await c.listTools();
+    const tools = Array.isArray((toolsResult as any)?.tools) ? (toolsResult as any).tools : [];
+
+    for (const tool of tools) {
+      const name = typeof tool?.name === 'string' ? tool.name : '';
+      if (!name || this.registeredToolNames.has(name)) continue;
+
+      try {
+        this.api.registerTool(
+          {
+            name,
+            description:
+              typeof tool?.description === 'string' && tool.description.trim()
+                ? tool.description
+                : `MCP tool: ${name}`,
+            parameters: tool?.inputSchema || { type: 'object', properties: {}, required: [] },
+            execute: async (_id, params) => {
+              const result = await this.callTool({
+                name,
+                args: isObjectRecord(params) ? params : {},
+              });
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: serializeToolResultText(result),
+                  },
+                ],
+              };
+            },
+          },
+          { optional: false },
+        );
+        this.registeredToolNames.add(name);
+      } catch (error) {
+        this.api.logger.warn('failed to register dynamic MCP tool via mcp-client plugin', {
+          toolName: name,
+          error: String(error),
+        });
+      }
+    }
   }
 }
 
@@ -245,102 +275,65 @@ type McpCallPayload = {
   timeoutMs?: number;
 };
 
-async function callToolViaMcp(
-  api: OpenClawPluginApi,
-  config: McpClientPluginConfig,
-  payload: McpCallPayload,
-): Promise<unknown> {
-  if (!payload?.name) {
-    throw new Error('Missing required field: name');
-  }
+export default definePluginEntry({
+  id: 'openclaw-mcp-plugin',
+  name: 'Ruminer MCP Client Plugin',
+  description: 'Routes OpenClaw tool calls to a local MCP server (Ruminer native-host bridge).',
+  register(api: OpenClawPluginApi) {
+    // api.config is the full gateway config — never use it as plugin config.
+    const config = normalizeConfig(api.pluginConfig ?? {});
+    const manager = new McpClientManager(api, config);
 
-  const c = await ensureClient(api, config);
-  const args = isObjectRecord(payload.args) ? payload.args : {};
-  const options =
-    typeof payload.timeoutMs === 'number' &&
-    Number.isFinite(payload.timeoutMs) &&
-    payload.timeoutMs > 0
-      ? { timeout: Math.floor(payload.timeoutMs) }
-      : undefined;
+    api.registerGatewayMethod('mcp-client.status', ({ respond }) => {
+      respond(true, {
+        connected: manager.isConnected(),
+        mcpUrl: resolveMcpUrl(config),
+        transport: config.transport || 'auto',
+      });
+    });
 
-  return c.callTool({ name: payload.name, arguments: args }, undefined, options);
-}
+    api.registerGatewayMethod('mcp-client.disconnect', ({ respond }) => {
+      manager
+        .disconnect()
+        .then(() => respond(true, { disconnected: true }))
+        .catch((error) => respond(false, { error: String(error) }));
+    });
 
-export default function register(api: OpenClawPluginApi) {
-  // api.config is the full gateway config — never use it as plugin config.
-  const config = normalizeConfig(api.pluginConfig ?? {});
+    api.registerGatewayMethod('mcp-client.request', ({ params, respond }) => {
+      const body = (params || {}) as McpCallPayload;
+      manager.refreshToolsFromMcp().catch(() => undefined);
+      manager
+        .callTool(body)
+        .then((result) => respond(true, { result }))
+        .catch((error) => {
+          api.logger.error('mcp-client.request failed', { error: String(error), tool: body?.name });
+          respond(false, { error: error instanceof Error ? error.message : String(error) });
+        });
+    });
 
-  api.registerGatewayMethod('mcp-client.status', ({ respond }) => {
-    respond(true, {
-      connected: client !== null,
+    api.registerService({
+      id: 'mcp-client-connection',
+      start: async () => {
+        try {
+          await manager.refreshToolsFromMcp();
+        } catch (error) {
+          api.logger.warn('mcp-client tool refresh on startup failed', { error: String(error) });
+        }
+      },
+      stop: async () => {
+        await manager.disconnect();
+      },
+    });
+
+    // Kick off a best-effort tool discovery immediately (do not block plugin registration).
+    manager.refreshToolsFromMcp().catch((error) => {
+      api.logger.warn('mcp-client initial tool discovery failed', { error: String(error) });
+    });
+
+    api.logger.info('mcp-client plugin ready (OpenClaw → MCP client → Ruminer MCP server)', {
+      registeredCount: manager.getRegisteredToolCount(),
       mcpUrl: resolveMcpUrl(config),
       transport: config.transport || 'auto',
     });
-  });
-
-  api.registerGatewayMethod('mcp-client.disconnect', ({ respond }) => {
-    disconnectMcp(api)
-      .then(() => respond(true, { disconnected: true }))
-      .catch((error) => respond(false, { error: String(error) }));
-  });
-
-  api.registerGatewayMethod('mcp-client.request', ({ params, respond }) => {
-    const body = (params || {}) as McpCallPayload;
-    callToolViaMcp(api, config, body)
-      .then((result) => respond(true, { result }))
-      .catch((error) => {
-        api.logger.error('mcp-client.request failed', { error: String(error), tool: body?.name });
-        respond(false, { error: error instanceof Error ? error.message : String(error) });
-      });
-  });
-
-  api.registerService({
-    id: 'mcp-client-connection',
-    start: async (_ctx) => {
-      return;
-    },
-    stop: async (_ctx) => {
-      await disconnectMcp(api);
-    },
-  });
-
-  if (typeof api.registerTool === 'function') {
-    for (const tool of TOOL_SCHEMAS) {
-      try {
-        api.registerTool(
-          {
-            name: tool.name,
-            description: tool.description || `MCP tool: ${tool.name}`,
-            parameters: tool.inputSchema || { type: 'object', properties: {}, required: [] },
-            execute: async (_id, params) => {
-              const result = await callToolViaMcp(api, config, {
-                name: tool.name,
-                args: isObjectRecord(params) ? params : {},
-              });
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: serializeToolResultText(result),
-                  },
-                ],
-              };
-            },
-          },
-          { optional: false },
-        );
-      } catch (error) {
-        api.logger.warn('failed to register tool via mcp-client plugin', {
-          toolName: tool.name,
-          error: String(error),
-        });
-      }
-    }
-  }
-
-  api.logger.info('mcp-client plugin ready (OpenClaw → MCP client → Ruminer MCP server)', {
-    registeredCount: TOOL_SCHEMAS.length,
-    mcpUrl: resolveMcpUrl(config),
-    transport: config.transport || 'auto',
-  });
-}
+  },
+});
