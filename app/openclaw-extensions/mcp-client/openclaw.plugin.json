@@ -1,5 +1,5 @@
 {
-  "id": "openclaw-mcp-plugin",
+  "id": "openclaw-mcp-client",
   "name": "MCP Client Plugin",
   "description": "Routes OpenClaw tool calls to a configurable MCP server URL.",
   "version": "0.2.0",

@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { definePluginEntry, type OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 type McpClientPluginConfig = {
@@ -276,7 +276,7 @@ type McpCallPayload = {
 };
 
 export default definePluginEntry({
-  id: 'openclaw-mcp-plugin',
+  id: 'openclaw-mcp-client',
   name: 'MCP Client Plugin',
   description: 'Routes OpenClaw tool calls to a configurable MCP server URL.',
   register(api: OpenClawPluginApi) {

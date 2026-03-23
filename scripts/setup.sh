@@ -361,15 +361,15 @@ install_openclaw_plugin() {
     return 0
   fi
 
-  log "Installing OpenClaw plugin: openclaw-mcp-plugin..."
-  if ! openclaw_cmd plugins install --pin openclaw-mcp-plugin; then
+  log "Installing OpenClaw plugin: openclaw-mcp-client..."
+  if ! openclaw_cmd plugins install --pin openclaw-mcp-client; then
     warn "OpenClaw plugin install failed (best-effort)."
   fi
-  if ! openclaw_cmd plugins enable openclaw-mcp-plugin; then
+  if ! openclaw_cmd plugins enable openclaw-mcp-client; then
     warn "OpenClaw plugin enable failed (best-effort)."
   fi
 
-  if ! openclaw_cmd config set "plugins.entries[\"openclaw-mcp-plugin\"].config.mcpUrl" "${RUMINER_MCP_URL}"; then
+  if ! openclaw_cmd config set "plugins.entries[\"openclaw-mcp-client\"].config.mcpUrl" "${RUMINER_MCP_URL}"; then
     warn "OpenClaw plugin config write failed (best-effort)."
   fi
 
@@ -379,8 +379,8 @@ install_openclaw_plugin() {
   alsoAllowRaw="$(openclaw_cmd config get tools.alsoAllow --json 2>/dev/null || printf 'null')"
 
   local allowNext alsoAllowNext
-  allowNext="$(json_merge_add_string_to_array "${allowRaw}" "openclaw-mcp-plugin")"
-  alsoAllowNext="$(json_merge_add_string_to_array "${alsoAllowRaw}" "openclaw-mcp-plugin")"
+  allowNext="$(json_merge_add_string_to_array "${allowRaw}" "openclaw-mcp-client")"
+  alsoAllowNext="$(json_merge_add_string_to_array "${alsoAllowRaw}" "openclaw-mcp-client")"
 
   if ! openclaw_cmd config set --strict-json plugins.allow "${allowNext}"; then
     warn "OpenClaw plugins.allow update failed (best-effort)."
@@ -388,7 +388,7 @@ install_openclaw_plugin() {
   if ! openclaw_cmd config set --strict-json tools.alsoAllow "${alsoAllowNext}"; then
     warn "OpenClaw tools.alsoAllow update failed (best-effort)."
   fi
-  if ! openclaw_cmd config set "plugins.entries[\"openclaw-mcp-plugin\"].enabled" true; then
+  if ! openclaw_cmd config set "plugins.entries[\"openclaw-mcp-client\"].enabled" true; then
     warn "OpenClaw plugin enable flag update failed (best-effort)."
   fi
 

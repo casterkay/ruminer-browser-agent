@@ -7,7 +7,7 @@ If you ran the one-shot installer (`scripts/setup.sh`) without `--skip-claude`, 
 
 - Register the Native Messaging host via `chrome-mcp-server`
 - Add the MCP endpoint to Claude Code + Codex as `ruminer-chrome`
-- Install/enable/configure the OpenClaw plugin `openclaw-mcp-plugin`
+- Install/enable/configure the OpenClaw plugin `openclaw-mcp-client`
 
 If something still looks wrong, use the sections below to verify and manually fix configuration.
 
@@ -88,9 +88,9 @@ codex mcp add ruminer-chrome --url http://127.0.0.1:12306/mcp
 Install and enable the plugin:
 
 ```bash
-openclaw plugins install --pin openclaw-mcp-plugin
-openclaw plugins enable openclaw-mcp-plugin
-openclaw config set 'plugins.entries["openclaw-mcp-plugin"].config.mcpUrl' "http://127.0.0.1:12306/mcp"
+openclaw plugins install --pin openclaw-mcp-client
+openclaw plugins enable openclaw-mcp-client
+openclaw config set 'plugins.entries["openclaw-mcp-client"].config.mcpUrl' "http://127.0.0.1:12306/mcp"
 ```
 
 Then restart the gateway if it’s already running:
