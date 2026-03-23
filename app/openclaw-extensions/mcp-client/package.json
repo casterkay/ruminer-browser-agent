@@ -1,6 +1,6 @@
 {
   "name": "openclaw-mcp-client",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP client plugin for OpenClaw (routes tool calls to a configurable Streamable HTTP MCP server)",
   "type": "module",
   "license": "MIT",
@@ -25,12 +25,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/casterkay/ruminer-browser-agent.git",
-    "directory": "app/openclaw-extensions/mcp-client"
+    "url": "git+https://github.com/casterkay/openclaw-mcp-client.git"
   },
-  "homepage": "https://github.com/casterkay/ruminer-browser-agent/tree/master/app/openclaw-extensions/mcp-client#readme",
+  "homepage": "https://github.com/casterkay/openclaw-mcp-client#readme",
   "bugs": {
-    "url": "https://github.com/casterkay/ruminer-browser-agent/issues"
+    "url": "https://github.com/casterkay/openclaw-mcp-client/issues"
   },
   "publishConfig": {
     "access": "public"

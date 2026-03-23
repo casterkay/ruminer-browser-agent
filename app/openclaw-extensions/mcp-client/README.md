@@ -14,18 +14,10 @@ Set via `plugins.entries.openclaw-mcp-client.config`:
 - `transport` (`auto` | `streamable-http` | `sse`): Transport preference. Default: `auto`
 - `clientName` (string): Optional MCP client name shown to the server
 
-## Install (users)
+## Installation
 
 ```bash
 openclaw plugins install --pin openclaw-mcp-client
 openclaw plugins enable openclaw-mcp-client
 openclaw config set 'plugins.entries["openclaw-mcp-client"].config.mcpUrl' "http://127.0.0.1:12306/mcp"
-```
-
-## Publish (maintainers)
-
-From this directory:
-
-```bash
-npm publish --access public
 ```
