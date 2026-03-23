@@ -248,6 +248,35 @@ export async function createManifestContent(): Promise<any> {
   };
 }
 
+function getExistingAllowedOrigins(manifestPath: string): string[] {
+  try {
+    if (!fs.existsSync(manifestPath)) {
+      return [];
+    }
+    const raw = fs.readFileSync(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw) as { allowed_origins?: unknown };
+    if (!Array.isArray(parsed.allowed_origins)) {
+      return [];
+    }
+    return parsed.allowed_origins.filter((value): value is string => typeof value === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function mergeAllowedOrigins(
+  manifest: { allowed_origins?: string[]; [key: string]: any },
+  existingOrigins: string[],
+): { allowed_origins: string[]; [key: string]: any } {
+  const mergedAllowedOrigins = Array.from(
+    new Set([...(manifest.allowed_origins ?? []), ...existingOrigins]),
+  );
+  return {
+    ...manifest,
+    allowed_origins: mergedAllowedOrigins,
+  };
+}
+
 /**
  * 验证Windows注册表项是否存在且指向正确路径
  */
@@ -333,8 +362,12 @@ export async function tryRegisterUserLevelHost(targetBrowsers?: BrowserType[]): 
         // 确保目录存在
         await mkdir(path.dirname(config.userManifestPath), { recursive: true });
 
+        // Merge with existing allowlist so re-registration does not drop previously whitelisted IDs.
+        const existingOrigins = getExistingAllowedOrigins(config.userManifestPath);
+        const mergedManifest = mergeAllowedOrigins(manifest, existingOrigins);
+
         // 写入清单文件
-        await writeFile(config.userManifestPath, JSON.stringify(manifest, null, 2));
+        await writeFile(config.userManifestPath, JSON.stringify(mergedManifest, null, 2));
         console.log(colorText(`✓ Manifest written to ${config.userManifestPath}`, 'green'));
 
         // Windows需要额外注册表项
@@ -414,11 +447,15 @@ export async function registerWithElevatedPermissions(): Promise<void> {
     // 3. 获取系统级清单路径
     const manifestPath = getSystemManifestPath();
 
-    // 4. 创建临时清单文件
-    const tempManifestPath = path.join(os.tmpdir(), `${HOST_NAME}.json`);
-    await writeFile(tempManifestPath, JSON.stringify(manifest, null, 2));
+    // 4. Keep existing allowlist entries to avoid losing manually or previously registered IDs.
+    const existingOrigins = getExistingAllowedOrigins(manifestPath);
+    const mergedManifest = mergeAllowedOrigins(manifest, existingOrigins);
 
-    // 5. 检测是否已经有管理员权限
+    // 5. 创建临时清单文件
+    const tempManifestPath = path.join(os.tmpdir(), `${HOST_NAME}.json`);
+    await writeFile(tempManifestPath, JSON.stringify(mergedManifest, null, 2));
+
+    // 6. 检测是否已经有管理员权限
     const isRoot = process.getuid && process.getuid() === 0; // Unix/Linux/Mac
     const hasAdminRights = process.platform === 'win32' ? isAdmin() : false; // Windows平台检测管理员权限
     const hasElevatedPermissions = isRoot || hasAdminRights;
@@ -480,7 +517,7 @@ export async function registerWithElevatedPermissions(): Promise<void> {
       throw new Error('Administrator privileges required for system-level installation');
     }
 
-    // 6. Windows特殊处理 - 设置系统级注册表
+    // 7. Windows特殊处理 - 设置系统级注册表
     if (os.platform() === 'win32') {
       const registryKey = `HKLM\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
       // 注意：不需要手动双写反斜杠，reg 命令会正确处理 Windows 路径
