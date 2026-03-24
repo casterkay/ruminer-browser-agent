@@ -680,12 +680,24 @@ function platformDisplayName(platform: string): string {
 }
 
 function toIsoOrNow(value: string | null | undefined): string {
+  const nowIso = new Date().toISOString();
   const raw = typeof value === 'string' ? value.trim() : '';
-  if (raw) {
-    const ts = Date.parse(raw);
-    if (Number.isFinite(ts)) return new Date(ts).toISOString();
+  if (!raw) return nowIso;
+
+  // Accept epoch seconds/millis provided as numeric string.
+  if (/^-?\d+(\.\d+)?$/.test(raw)) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) {
+      const ms = Math.abs(n) < 10_000_000_000 ? n * 1000 : n;
+      const d = new Date(ms);
+      if (Number.isFinite(d.getTime())) return d.toISOString();
+      return nowIso;
+    }
   }
-  return new Date().toISOString();
+
+  const ts = Date.parse(raw);
+  if (Number.isFinite(ts)) return new Date(ts).toISOString();
+  return nowIso;
 }
 
 export async function ensureImportedConversationsProject(): Promise<{ projectId: string }> {

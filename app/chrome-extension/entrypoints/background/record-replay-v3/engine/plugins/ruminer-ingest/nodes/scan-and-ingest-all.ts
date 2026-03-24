@@ -471,12 +471,6 @@ function toTrimmedLedgerDigest(entry: ConversationLedgerEntry | undefined): stri
   return typeof raw === 'string' ? raw.trim() : '';
 }
 
-function toLedgerCount(entry: ConversationLedgerEntry | undefined): number | null {
-  const n = entry?.message_count;
-  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
-  return Math.max(0, Math.floor(n));
-}
-
 let emptyDigestPromise: Promise<string> | null = null;
 function emptyConversationDigest(): Promise<string> {
   // The user request is explicit: treat empty conversations as ingested with sha256('').
@@ -1141,33 +1135,16 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             // Persist an "ingested" empty digest to avoid retrying forever.
             skipped += 1;
           } else if (!existing || !digestsMatch) {
-            // Prefix-only optimization for appended messages: if old digest matches new prefix, ingest suffix only.
-            let baseIndex = 0;
-            let messagesToIngest = messages;
-            const oldCount = toLedgerCount(existing);
-            if (
-              existing?.status === 'ingested' &&
-              ledgerDigest &&
-              oldCount &&
-              oldCount <= messageCount
-            ) {
-              const prefix = messages.slice(0, oldCount);
-              const { digest: prefixDigest } = await computeConversationDigestFromMessages(prefix);
-              if (prefixDigest === ledgerDigest) {
-                baseIndex = oldCount;
-                messagesToIngest = messages.slice(oldCount);
-              }
-            }
-
+            // Always ingest the full conversation to keep downstream session storage consistent.
+            // (Suffix-only ingest can corrupt native-server session message indices.)
             const ingestResp = await ruminerIngestConversation({
               platform,
               conversationId: item.conversationId,
               runId: ctx.runId,
-              baseIndex,
               messageCount,
               conversationTitle: item.conversationTitle,
               conversationUrl: item.conversationUrl,
-              messages: messagesToIngest.map((m) => ({ role: m.role, content: m.content })),
+              messages: messages.map((m) => ({ role: m.role, content: m.content })),
             });
 
             if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {

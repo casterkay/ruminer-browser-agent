@@ -93,11 +93,35 @@ function isStringList(value: unknown): value is string[] {
 }
 
 function isoOrNow(value: unknown): string {
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Date.parse(value);
+  const nowIso = new Date().toISOString();
+
+  // Accept epoch seconds/millis as number or numeric string.
+  const asNumber = (() => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string') return null;
+    const s = value.trim();
+    if (!s) return null;
+    // Allow integer or float numeric strings.
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  })();
+
+  if (asNumber !== null) {
+    const ms = Math.abs(asNumber) < 10_000_000_000 ? asNumber * 1000 : asNumber;
+    const d = new Date(ms);
+    if (Number.isFinite(d.getTime())) return d.toISOString();
+    return nowIso;
+  }
+
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s) return nowIso;
+    const parsed = Date.parse(s);
     if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
   }
-  return new Date().toISOString();
+
+  return nowIso;
 }
 
 type StoredServerStatus = { isRunning?: boolean; port?: unknown } | null;
