@@ -1,8 +1,7 @@
 import type { FlowV3, NodeV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
 import { FLOW_SCHEMA_VERSION } from '@/entrypoints/background/record-replay-v3/domain/flow';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
 
-const UNIVERSAL_DOMAIN_BINDINGS = [
+const AI_CHAT_DOMAIN_BINDINGS = [
   { kind: 'domain' as const, value: 'chatgpt.com' },
   { kind: 'domain' as const, value: 'chat.openai.com' },
   { kind: 'domain' as const, value: 'claude.ai' },
@@ -10,12 +9,7 @@ const UNIVERSAL_DOMAIN_BINDINGS = [
   { kind: 'domain' as const, value: 'chat.deepseek.com' },
 ];
 
-const UNIVERSAL_DEFAULT_REQUIRED_TOOLS = [
-  TOOL_NAMES.BROWSER.NAVIGATE,
-  TOOL_NAMES.BROWSER.JAVASCRIPT,
-] as const;
-
-export function createUniversalIngestBuiltinFlow(nowIso: string): FlowV3 {
+export function createSingleIngestBuiltinFlow(nowIso: string): FlowV3 {
   const nodes: NodeV3[] = [
     {
       id: 'n.ingest',
@@ -43,8 +37,7 @@ export function createUniversalIngestBuiltinFlow(nowIso: string): FlowV3 {
     variables: [],
     meta: {
       tags: ['ingestor', 'builtin'],
-      bindings: UNIVERSAL_DOMAIN_BINDINGS,
-      requiredTools: [...UNIVERSAL_DEFAULT_REQUIRED_TOOLS],
+      bindings: AI_CHAT_DOMAIN_BINDINGS,
     },
     policy: {
       runTimeoutMs: 300_000,

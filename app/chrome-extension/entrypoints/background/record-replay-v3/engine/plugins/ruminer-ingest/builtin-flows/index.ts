@@ -6,10 +6,10 @@ import type { ISODateTimeString } from '@/entrypoints/background/record-replay-v
 import { sha256Hex } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/hash';
 import { stableJson } from '@/entrypoints/shared/utils/stable-json';
 import { createChatgptBuiltinFlows } from './chatgpt';
-import { createGeminiBuiltinFlows } from './gemini';
 import { createClaudeBuiltinFlows } from './claude';
 import { createDeepseekBuiltinFlows } from './deepseek';
-import { createUniversalIngestBuiltinFlow } from './universal-ingest';
+import { createGeminiBuiltinFlows } from './gemini';
+import { createSingleIngestBuiltinFlow } from './single-ingest';
 
 function listBuiltinFlows(nowIso: string): FlowV3[] {
   return [
@@ -17,7 +17,7 @@ function listBuiltinFlows(nowIso: string): FlowV3[] {
     ...createGeminiBuiltinFlows(nowIso),
     ...createClaudeBuiltinFlows(nowIso),
     ...createDeepseekBuiltinFlows(nowIso),
-    createUniversalIngestBuiltinFlow(nowIso),
+    createSingleIngestBuiltinFlow(nowIso),
   ];
 }
 
