@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-mcp-plugin",
+  "name": "openclaw-mcp-client-plugin",
   "version": "0.2.1",
   "description": "MCP client plugin for OpenClaw (routes tool calls to a configurable Streamable HTTP MCP server)",
   "type": "module",
