@@ -42,6 +42,7 @@ function normalizePlatformLabel(platform: string): string {
     claude: 'Claude',
     gemini: 'Gemini',
     deepseek: 'DeepSeek',
+    grok: 'Grok',
     codex: 'Codex',
   };
   return labels[key] || platform.trim();

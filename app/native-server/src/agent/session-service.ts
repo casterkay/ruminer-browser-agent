@@ -646,7 +646,7 @@ const IMPORTED_CONVERSATIONS_PROJECT_ID = 'ruminer.imported_conversations';
 const IMPORTED_CONVERSATIONS_PROJECT_NAME = 'Imported Conversations';
 
 export interface UpsertIngestedConversationSessionInput {
-  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
+  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek' | 'grok';
   conversationId: string;
   conversationTitle?: string | null;
   conversationUrl?: string | null;
@@ -674,6 +674,8 @@ function platformDisplayName(platform: string): string {
       return 'Claude';
     case 'deepseek':
       return 'DeepSeek';
+    case 'grok':
+      return 'Grok';
     default:
       return platform.trim() || 'Chat';
   }

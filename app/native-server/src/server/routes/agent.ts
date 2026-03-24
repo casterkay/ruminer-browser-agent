@@ -789,7 +789,8 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         platform !== 'chatgpt' &&
         platform !== 'gemini' &&
         platform !== 'claude' &&
-        platform !== 'deepseek'
+        platform !== 'deepseek' &&
+        platform !== 'grok'
       ) {
         return reply.status(HTTP_STATUS.BAD_REQUEST).send({ ok: false, error: 'Invalid platform' });
       }

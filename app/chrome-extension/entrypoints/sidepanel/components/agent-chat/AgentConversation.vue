@@ -129,6 +129,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   claude: 'Claude',
   deepseek: 'DeepSeek',
+  grok: 'Grok',
 };
 
 function compactSnippet(content: string): string {

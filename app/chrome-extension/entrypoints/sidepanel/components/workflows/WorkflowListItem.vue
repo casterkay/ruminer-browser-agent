@@ -420,6 +420,7 @@ const PLATFORM_ICONS: Record<string, { file: string; alt: string }> = {
   gemini: { file: 'gemini.svg', alt: 'Gemini' },
   claude: { file: 'claude.png', alt: 'Claude' },
   deepseek: { file: 'deepseek.svg', alt: 'DeepSeek' },
+  grok: { file: 'grok.svg', alt: 'Grok' },
   ingestor: { file: 'inbox.svg', alt: 'Ingestor' },
 };
 

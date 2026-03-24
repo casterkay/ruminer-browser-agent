@@ -643,6 +643,8 @@ const sourcePlatformIconFile = computed(() => {
       return 'claude.png';
     case 'deepseek':
       return 'deepseek.svg';
+    case 'grok':
+      return 'grok.svg';
     default:
       return null;
   }

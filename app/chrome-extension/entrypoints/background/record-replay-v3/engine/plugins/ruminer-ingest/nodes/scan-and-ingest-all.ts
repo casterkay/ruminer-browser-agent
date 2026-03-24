@@ -44,7 +44,7 @@ import { toErrorResult } from '../utils';
  * - Ingest phase: `finished=processedCount`, `total=scanned.length` (total fixed, finished grows).
  */
 const scanAndIngestConfigSchema = z.object({
-  platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek']),
+  platform: z.enum(['chatgpt', 'gemini', 'claude', 'deepseek', 'grok']),
   listPageSize: z.number().int().min(1).max(500).default(100),
   digestThrottleMs: z.number().int().min(0).max(5_000).default(0),
   listThrottleMs: z.number().int().min(0).max(2_000).default(0),
@@ -153,6 +153,8 @@ function platformHomeUrl(platform: ChatPlatform): string {
       return 'https://gemini.google.com/';
     case 'deepseek':
       return 'https://chat.deepseek.com/';
+    case 'grok':
+      return 'https://grok.com/';
     default:
       return 'about:blank';
   }

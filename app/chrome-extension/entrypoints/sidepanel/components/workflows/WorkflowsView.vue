@@ -1328,7 +1328,7 @@ const isIngestorResult = computed(() => resultModalTags.value.includes('ingestor
 const isScannerResult = computed(() => resultModalTags.value.includes('scanner'));
 
 function inferPlatformFromTags(tags: string[]): ChatPlatform | null {
-  return ['chatgpt', 'gemini', 'claude', 'deepseek'].find((tag) =>
+  return ['chatgpt', 'gemini', 'claude', 'deepseek', 'grok'].find((tag) =>
     tags.includes(tag),
   ) as ChatPlatform | null;
 }

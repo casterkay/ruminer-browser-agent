@@ -8,7 +8,7 @@
 
 ## 2. Executive Summary
 
-Ruminer Browser Agent turns the user's everyday Chrome into a **browser agent with centralized AI chat history**. Its single mission: integrate all of a user's conversations on various AI chat platforms (ChatGPT, Gemini, Claude, DeepSeek) into a central long-term memory system, **EverMemOS (EMOS)**.
+Ruminer Browser Agent turns the user's everyday Chrome into a **browser agent with centralized AI chat history**. Its single mission: integrate all of a user's conversations on various AI chat platforms (ChatGPT, Gemini, Claude, DeepSeek, Grok) into a central long-term memory system, **EverMemOS (EMOS)**.
 
 The user interacts with Ruminer through a **sidepanel** that provides:
 
@@ -24,7 +24,7 @@ The user interacts with Ruminer through a **sidepanel** that provides:
 2. **Chat with memory search**: live EMOS search as user types; press Enter to send to OpenClaw; chat messages saved to EMOS.
 3. **Tool group toggles**: browser tools divided into groups by effects so users can quickly enable/disable categories (e.g., allow DOM manipulation vs. read-only).
 4. **Adopt RR-V3 as the automation runtime** (queue + leasing + crash recovery) for MV3 reliability.
-5. **AI chat history ingestion**: build workflows that extract conversations from ChatGPT, Gemini, Claude, and DeepSeek into EMOS.
+5. **AI chat history ingestion**: build workflows that extract conversations from ChatGPT, Gemini, Claude, DeepSeek, and Grok into EMOS.
 
 ### 3.2 Non-Goals (Out of Scope)
 
@@ -314,7 +314,7 @@ Reliably ingest a user's AI chat conversations into EMOS, one platform at a time
 ### 7.2 MVP Platform Packs
 
 - **MVP**: **ChatGPT** (conversation list -> conversation thread -> messages)
-- **Later**: Gemini / Claude / DeepSeek and additional AI platforms iteratively post-MVP.
+- **Later**: Gemini / Claude / DeepSeek / Grok and additional AI platforms iteratively post-MVP.
 
 ### 7.3 Characteristics
 
@@ -560,7 +560,7 @@ When extraction fails repeatedly:
 
 ### Phase 2 -- Remaining Platforms + Memory Tab
 
-1. Build platform packs for **Gemini**, **Claude**, and **DeepSeek**.
+1. Build platform packs for **Gemini**, **Claude**, **DeepSeek**, and **Grok**.
 2. Implement sidepanel Memory tab: search/browse EMOS items, filter by platform/date, view details, open canonical URL, delete item.
 3. Implement sidepanel Workflows tab: list workflows, one-click run, active run progress, run history with event timeline.
 

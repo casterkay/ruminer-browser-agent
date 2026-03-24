@@ -6,6 +6,7 @@
  * - Gemini
  * - Claude
  * - DeepSeek
+ * - Grok
  *
  * 支持的 URL 格式：
  * - https://chatgpt.com/c/1234567890
@@ -13,9 +14,11 @@
  * - https://claude.ai/chat/1234567890
  * - https://gemini.google.com/app/1234567890
  * - https://chat.deepseek.com/c/1234567890
+ * - https://grok.com/c/1234567890
+ * - https://x.com/i/grok (best-effort)
  */
 
-export type ChatPlatform = 'chatgpt' | 'claude' | 'gemini' | 'deepseek';
+export type ChatPlatform = 'chatgpt' | 'claude' | 'gemini' | 'deepseek' | 'grok';
 
 /**
  * Infer platform from URL
@@ -28,6 +31,12 @@ export function inferPlatformFromUrl(urlString: string): ChatPlatform | null {
     if (host === 'claude.ai') return 'claude';
     if (host === 'gemini.google.com') return 'gemini';
     if (host === 'chat.deepseek.com') return 'deepseek';
+    if (host === 'grok.com' || host === 'www.grok.com') return 'grok';
+    if (
+      (host === 'x.com' || host === 'www.x.com') &&
+      String(u.pathname || '').startsWith('/i/grok')
+    )
+      return 'grok';
     return null;
   } catch {
     return null;

@@ -3,7 +3,7 @@ export type ConversationLedgerStatus = 'ingested' | 'failed';
 export interface ConversationLedgerEntry {
   /** Primary key: `${platform}:${conversationId}` */
   group_id: string;
-  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek';
+  platform: 'chatgpt' | 'gemini' | 'claude' | 'deepseek' | 'grok';
   conversation_id: string;
   conversation_url: string | null;
   conversation_title: string | null;

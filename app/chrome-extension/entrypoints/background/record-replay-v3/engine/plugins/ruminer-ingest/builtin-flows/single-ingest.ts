@@ -7,6 +7,7 @@ const AI_CHAT_DOMAIN_BINDINGS = [
   { kind: 'domain' as const, value: 'claude.ai' },
   { kind: 'domain' as const, value: 'gemini.google.com' },
   { kind: 'domain' as const, value: 'chat.deepseek.com' },
+  { kind: 'domain' as const, value: 'grok.com' },
 ];
 
 export function createSingleIngestBuiltinFlow(nowIso: string): FlowV3 {
@@ -30,7 +31,7 @@ export function createSingleIngestBuiltinFlow(nowIso: string): FlowV3 {
     id: 'auto.conversation_ingest.v1',
     name: 'Import Current Conversation',
     description:
-      'Save the conversation on the current tab to a session in Ruminer. Supports ChatGPT, Gemini, Claude, and DeepSeek.',
+      'Save the conversation on the current tab to a session in Ruminer. Supports ChatGPT, Gemini, Claude, DeepSeek, and Grok.',
     entryNodeId: 'n.ingest',
     nodes,
     edges: [],

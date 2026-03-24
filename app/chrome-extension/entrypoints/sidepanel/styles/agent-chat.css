@@ -169,6 +169,10 @@
     --ac-plt-deepseek-fg: #eef2ff;
     --ac-plt-deepseek-border: #4338ca;
 
+    --ac-plt-grok-bg: #090909;
+    --ac-plt-grok-fg: #fdfbfb;
+    --ac-plt-grok-border: #707070;
+
     /* Scrollbar */
     --ac-scrollbar-thumb: #e5e5e5;
     --ac-scrollbar-thumb-hover: #d4d4d4;

@@ -9,6 +9,7 @@ import { createChatgptBuiltinFlows } from './chatgpt';
 import { createClaudeBuiltinFlows } from './claude';
 import { createDeepseekBuiltinFlows } from './deepseek';
 import { createGeminiBuiltinFlows } from './gemini';
+import { createGrokBuiltinFlows } from './grok';
 import { createSingleIngestBuiltinFlow } from './single-ingest';
 
 function listBuiltinFlows(nowIso: string): FlowV3[] {
@@ -17,6 +18,7 @@ function listBuiltinFlows(nowIso: string): FlowV3[] {
     ...createGeminiBuiltinFlows(nowIso),
     ...createClaudeBuiltinFlows(nowIso),
     ...createDeepseekBuiltinFlows(nowIso),
+    ...createGrokBuiltinFlows(nowIso),
     createSingleIngestBuiltinFlow(nowIso),
   ];
 }

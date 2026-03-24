@@ -160,6 +160,8 @@ function platformLabel(platform: string): string {
       return 'Claude';
     case 'deepseek':
       return 'DeepSeek';
+    case 'grok':
+      return 'Grok';
     default:
       return platform.trim() || 'Bot';
   }
@@ -431,7 +433,8 @@ function buildEmosMessageId(
 
 function ensurePlatform(value: unknown): IngestConversationRequest['platform'] | null {
   const v = toTrimmedString(value).toLowerCase();
-  if (v === 'chatgpt' || v === 'gemini' || v === 'claude' || v === 'deepseek') return v;
+  if (v === 'chatgpt' || v === 'gemini' || v === 'claude' || v === 'deepseek' || v === 'grok')
+    return v;
   return null;
 }
 

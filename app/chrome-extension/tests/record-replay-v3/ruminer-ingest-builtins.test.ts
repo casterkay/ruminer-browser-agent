@@ -5,6 +5,7 @@ import { createChatgptBuiltinFlows } from '@/entrypoints/background/record-repla
 import { createClaudeBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/claude';
 import { createDeepseekBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/deepseek';
 import { createGeminiBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/gemini';
+import { createGrokBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/grok';
 
 function collectBuiltins(nowIso: string): FlowV3[] {
   return [
@@ -12,6 +13,7 @@ function collectBuiltins(nowIso: string): FlowV3[] {
     ...createClaudeBuiltinFlows(nowIso),
     ...createDeepseekBuiltinFlows(nowIso),
     ...createGeminiBuiltinFlows(nowIso),
+    ...createGrokBuiltinFlows(nowIso),
   ];
 }
 

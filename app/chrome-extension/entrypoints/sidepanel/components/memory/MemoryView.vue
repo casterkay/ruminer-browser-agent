@@ -189,7 +189,15 @@ import MemoryItemDetails from './MemoryItemDetails.vue';
 
 const memory = useEmosSearch();
 const detailsOpen = ref(false);
-const ALL_PLATFORMS = ['openclaw', 'claude', 'chatgpt', 'codex', 'gemini', 'deepseek'] as const;
+const ALL_PLATFORMS = [
+  'openclaw',
+  'claude',
+  'chatgpt',
+  'codex',
+  'gemini',
+  'deepseek',
+  'grok',
+] as const;
 const DEFAULT_SPEAKERS = ['me', 'bot'];
 const speakerOptions = ref<string[]>([...DEFAULT_SPEAKERS]);
 const dateMenuVisible = ref(false);
@@ -225,6 +233,11 @@ const platformColors: Record<string, { bg: string; color: string; border: string
     color: 'var(--ac-plt-deepseek-fg)',
     border: 'var(--ac-plt-deepseek-border)',
   },
+  grok: {
+    bg: 'var(--ac-plt-grok-bg)',
+    color: 'var(--ac-plt-grok-fg)',
+    border: 'var(--ac-plt-grok-border)',
+  },
 };
 
 const tempDateRange = reactive({ start: '', end: '' });
@@ -235,6 +248,7 @@ const KNOWN_PLATFORM_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   claude: 'Claude',
   deepseek: 'DeepSeek',
+  grok: 'Grok',
   codex: 'Codex',
   openclaw: 'OpenClaw',
 };

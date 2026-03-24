@@ -207,6 +207,7 @@ const platformOptions = [
   { label: 'Codex', value: 'codex' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'DeepSeek', value: 'deepseek' },
+  { label: 'Grok', value: 'grok' },
 ] as const;
 
 const allPlatformValues = platformOptions.map((option) => option.value);
@@ -345,6 +346,11 @@ const platformColors: Record<string, { bg: string; color: string; border: string
     bg: 'var(--ac-plt-deepseek-bg)',
     color: 'var(--ac-plt-deepseek-fg)',
     border: 'var(--ac-plt-deepseek-border)',
+  },
+  grok: {
+    bg: 'var(--ac-plt-grok-bg)',
+    color: 'var(--ac-plt-grok-fg)',
+    border: 'var(--ac-plt-grok-border)',
   },
 };
 

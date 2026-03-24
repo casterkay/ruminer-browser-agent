@@ -2,7 +2,7 @@
 
 **The AI agent you love with central long-term memory integrating from all your AI chat platforms.**
 
-- Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, and DeepSeek.
+- Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, DeepSeek, and Grok.
 - Your user credentials on these platforms stay secure in your own browser, never uploaded to cloud.
 - Freely choose your AI agent backend: OpenClaw, Claude Code, or Codex.
 - Make your agent understand you deeply and faithfully via RAG from your centralized EverMemOS memory store.
@@ -51,7 +51,7 @@ flowchart TB
     end
 
     subgraph AIPlatforms[AI Chat Platforms]
-        ChatPlatforms[ChatGPT, Gemini, Claude, DeepSeek]
+        ChatPlatforms[ChatGPT, Gemini, Claude, DeepSeek, Grok]
     end
 
     MCP_Clients <-->|"Streamable HTTP"| McpServer

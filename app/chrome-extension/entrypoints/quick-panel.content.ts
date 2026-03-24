@@ -166,6 +166,7 @@ export default defineContentScript({
       if (p === 'claude') return 'Claude';
       if (p === 'gemini') return 'Gemini';
       if (p === 'deepseek') return 'DeepSeek';
+      if (p === 'grok') return 'Grok';
       return null;
     }
 

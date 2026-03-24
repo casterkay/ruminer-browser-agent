@@ -27,6 +27,8 @@ const IMPORT_CURRENT_DOCUMENT_URL_PATTERNS = [
   'https://claude.ai/*',
   'https://gemini.google.com/*',
   'https://chat.deepseek.com/*',
+  'https://grok.com/*',
+  'https://x.com/i/grok*',
 ];
 
 let ensureContextMenusPromise: Promise<void> | null = null;
