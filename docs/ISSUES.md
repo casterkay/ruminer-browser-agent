@@ -13,13 +13,10 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 ## Misc Issues
 
 - [ ] Gemini user message needs to be expanded to get full content.
-- [ ] Ingested Gemini messages are not properly formatted (newlines lost).
 - [ ] Use openclaw workspace as project dir for openclaw engine.
 - [ ] Attached images are not read by agent.
-- [ ] Replace floating icon animation with CSS image sprites or WebM.
 - [ ] Add a new tool for agent to freely modify the DOM.
 - [ ] Design and implement the system for agent-driven workflow development.
-- [ ] Claude scan and ingest API calls get 403 errors
 - [ ] Claude scan by DOM goes to a new page every time - optimize by utilizing client-side navigation (e.g. clicking the conversation links in sidebar)
 - [ ] ChatGPT scan workflow has long delay after page loading
 
@@ -34,8 +31,8 @@ flow” fails the way it does)
   engine/plugins/ruminer-ingest/nodes/scan-and-ingest-
   all.ts.
 - For non-ChatGPT platforms (Gemini/Claude/DeepSeek),
-  scan iterates offset=0..N and when it hits a
-  conversation that already exists in the ledger it
+  scan iterates through the conversation list and, for
+  conversations that already exist in the ledger, it
   calls getConversationMessages() and then hard-fails
   the entire run if normalizeConversationMessages(...)
   returns an empty array (“Conversation has no
@@ -97,7 +94,7 @@ is unreliable
   navigation. If so:
   - a.click() does nothing
   - openConversationInPlace() times out after 15s and
-    returns true (not a failure)
+    returns { ok: false, error: 'navigation_timeout' }
   - extraction runs on whatever route you were on
     (often /new)
 - That matches your diagnostics: conversationUrl was /
@@ -135,27 +132,27 @@ click-navigation entirely.)
 
 ———
 
-## DeepSeek: ends with error (likely same two classes of
-
-problems)
+## DeepSeek: ends with error (likely same two classes of problems)
 
 From app/chrome-extension/inject-scripts/ruminer.deepseek.js:
 
 ### Likely cause A: brittle selectors
 
-- It depends on hashed classnames like .fbb737a4 for
-  user turns, which are inherently unstable across
-  releases.
-- Even if this happened to match the exporter you
-  referenced, any UI update can zero it out.
+- Older versions depended on hashed classnames like
+  .fbb737a4 for user turns, which are inherently
+  unstable across releases.
+- The extractor should instead iterate stable
+  structural blocks (`.ds-message`) and classify turns
+  by the presence of assistant markdown that is not
+  under `.ds-think-content`.
 
 ### Likely cause B: same synthetic-click navigation
 
 failure mode as Claude
 
 - openConversationInPlace() also prefers a.click() when
-  it finds a matching anchor, and returns true on
-  timeout.
+  it finds a matching anchor, and should fail with
+  `navigation_timeout` on timeout (not succeed).
 - If DeepSeek’s router ignores untrusted clicks, you’ll
   extract from the wrong page and get 0 messages.
 
@@ -175,9 +172,10 @@ conversation navigation + readiness.)
    - Claude failure strongly indicates this. Gemini/
      DeepSeek are exposed to the same risk.
 2. “Timeout == success” in openConversationInPlace()
-   - Returning true after failing to navigate makes the
-     pipeline proceed and then fail later with “no
-     extractable messages”, losing the real root cause.
+   - This is a pure footgun: if navigation fails, the
+     extractor must return `{ ok: false, error:
+'navigation_timeout' }` so the caller can retry or
+     fail with the true root cause.
 3. Hard-fail on empty messages in scan-and-ingest-all.ts
    - Any empty chat, transient load race, DOM drift, or
      nav failure immediately kills the entire scan.

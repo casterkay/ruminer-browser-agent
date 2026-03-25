@@ -14,6 +14,11 @@
     try {
       const u = new URL(String(urlString || ''));
       const pathname = String(u.pathname || '');
+      // Examples:
+      // - /chat/<uuid>
+      // - /a/chat/s/<uuid>
+      const m = pathname.match(/\/(?:a\/)?chat(?:\/s)?\/([^/?#]+)/);
+      if (m && m[1]) return m[1];
       return pathname.split('/').filter(Boolean).pop() || null;
     } catch {
       return null;
@@ -236,28 +241,32 @@
     done: false,
   };
 
-  const compareDomOrder = (a, b) => {
-    if (a === b) return 0;
-    const pos = a.compareDocumentPosition(b);
-    return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-  };
-
   const extractMessagesFromDom = () => {
-    const userQuestions = Array.from(document.querySelectorAll('.fbb737a4'));
-    const aiResponses = Array.from(
-      document.querySelectorAll('.ds-message .ds-markdown:not(.ds-think-content .ds-markdown)'),
-    );
-    const all = [];
-    for (const el of userQuestions) all.push({ el, role: 'user' });
-    for (const el of aiResponses) all.push({ el, role: 'assistant' });
-    all.sort((x, y) => compareDomOrder(x.el, y.el));
-    return all
-      .map((x) => ({ role: x.role, content: normalizeContent(x.el.textContent || '') }))
-      .filter((m) => m.content);
+    const nodes = Array.from(document.querySelectorAll('.ds-message'));
+    const out = [];
+
+    for (const msg of nodes) {
+      const mds = Array.from(msg.querySelectorAll('.ds-markdown')).filter(
+        (md) => !md.closest('.ds-think-content'),
+      );
+
+      if (mds.length > 0) {
+        const content = normalizeContent(mds.map((md) => md.textContent || '').join('\n\n'));
+        if (content) out.push({ role: 'assistant', content });
+        continue;
+      }
+
+      // User turns usually have no markdown and the meaningful text is nested inside hashed inner divs.
+      const userContent = normalizeContent(msg.textContent || '');
+      if (userContent) out.push({ role: 'user', content: userContent });
+    }
+
+    return out;
   };
 
   const openConversationInPlace = async (url) => {
     const targetPath = new URL(url, location.origin).pathname;
+    if (location.pathname === targetPath) return { ok: true, alreadyThere: true };
     const anchors = Array.from(document.querySelectorAll('a[href]'));
     const a = anchors.find((x) => {
       try {
@@ -271,15 +280,22 @@
       a.click();
     } else {
       location.assign(url);
-      return false;
+      return { ok: false, error: 'navigation_started' };
     }
 
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      if (location.pathname === targetPath) return;
+      if (location.pathname === targetPath) return { ok: true, clicked: true };
       await sleep(200);
     }
-    return true;
+    return {
+      ok: false,
+      error: 'navigation_timeout',
+      diagnostics: {
+        targetPath,
+        currentPath: String(location.pathname || ''),
+      },
+    };
   };
 
   async function ensureSidebarCacheSize(targetCount) {
@@ -316,7 +332,9 @@
 
     for (const a of anchors) {
       const href = String(a.getAttribute('href') || '');
-      if (!href.includes('/chat/')) continue;
+      // Prefer stable, explicit conversation links.
+      if (!href.startsWith('/a/chat/s/') && !href.startsWith('/chat/') && !href.includes('/chat/'))
+        continue;
       let url;
       try {
         url = new URL(href, location.origin);
@@ -353,8 +371,8 @@
   async function extractConversation({ conversationUrl }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
-    const opened = await openConversationInPlace(url);
-    if (opened === false) return { ok: false, error: 'navigation_started' };
+    const nav = await openConversationInPlace(url);
+    if (!nav.ok) return nav;
     await sleep(400);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.

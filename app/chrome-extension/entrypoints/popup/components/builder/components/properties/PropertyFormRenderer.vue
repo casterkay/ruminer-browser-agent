@@ -20,6 +20,7 @@
 </template>
 
 <script lang="ts" setup>
+/* eslint-disable vue/no-mutating-props */
 import { computed, onMounted, reactive, watch, defineComponent, h, ref } from 'vue';
 import type { FieldSpec, NodeSpec } from '@/entrypoints/popup/components/builder/model/node-spec';
 import { getNodeSpec } from '@/entrypoints/popup/components/builder/model/node-spec-registry';

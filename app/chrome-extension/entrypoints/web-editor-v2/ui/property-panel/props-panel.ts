@@ -667,11 +667,11 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
         const filteredEnumValues = rawEnumValues.filter(
           (v): v is string => typeof v === 'string' && v.trim().length > 0,
         );
-        const hasEnumValues =
+        const canRenderEnumSelect =
           entryEditable && entry.value.kind === 'string' && filteredEnumValues.length > 0;
 
         // Render editable controls for primitives
-        if (hasEnumValues) {
+        if (canRenderEnumSelect) {
           // Render Select for enum props
           const select = document.createElement('select');
           select.className = 'we-select we-props-input';
@@ -680,7 +680,7 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
           select.dataset.propKind = 'enum';
           select.setAttribute('aria-label', `Select prop ${entry.key}`);
 
-          const currentValue = entry.value.value ?? '';
+          const currentValue = entry.value.kind === 'string' ? (entry.value.value ?? '') : '';
           const seen = new Set<string>();
 
           // Add current value first if not in enum list

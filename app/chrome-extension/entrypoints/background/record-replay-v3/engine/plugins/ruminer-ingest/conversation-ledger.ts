@@ -12,6 +12,10 @@ export interface ConversationLedgerEntry {
   /** sha256(stableJson([{ role, content }...])) for the whole message list. */
   messages_digest: string | null;
   message_count: number | null;
+  /** Whether native-server session upsert succeeded (best-effort). */
+  session_save_ok?: boolean | null;
+  last_session_error?: string | null;
+  last_session_saved_at?: string | null;
   first_seen_at: string;
   last_seen_at: string;
   last_ingested_at: string | null;
@@ -30,7 +34,7 @@ export interface ConversationState {
 }
 
 const DB_NAME = 'ruminer_rr_v3';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'conversation_ledger';
 
 function openDb(): Promise<IDBDatabase> {
@@ -39,13 +43,19 @@ function openDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const db = request.result;
-      // No migration/backward compatibility: wipe and recreate the store.
-      if (db.objectStoreNames.contains(STORE_NAME)) {
-        db.deleteObjectStore(STORE_NAME);
+      let store: IDBObjectStore;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        store = db.createObjectStore(STORE_NAME, { keyPath: 'group_id' });
+      } else {
+        store = request.transaction!.objectStore(STORE_NAME);
       }
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'group_id' });
-      store.createIndex('status', 'status', { unique: false });
-      store.createIndex('platform', 'platform', { unique: false });
+
+      if (!store.indexNames.contains('status')) {
+        store.createIndex('status', 'status', { unique: false });
+      }
+      if (!store.indexNames.contains('platform')) {
+        store.createIndex('platform', 'platform', { unique: false });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);

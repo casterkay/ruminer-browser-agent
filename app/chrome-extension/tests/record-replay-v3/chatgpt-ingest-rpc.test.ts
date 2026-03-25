@@ -154,7 +154,7 @@ describe('ingest workflow rpc', () => {
     expect(entry).toBeNull();
   });
 
-  it('supports suffix-only ingestion via baseIndex', async () => {
+  it('rejects suffix-only ingestion via baseIndex', async () => {
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
       if (
         keys === STORAGE_KEYS.EMOS_SETTINGS ||
@@ -173,30 +173,8 @@ describe('ingest workflow rpc', () => {
       return {};
     });
 
-    const fetchSpy = globalThis.fetch as any;
-    fetchSpy.mockClear?.();
-
     initIngestWorkflowRpc();
     const listener = getLastOnMessageListener();
-
-    const r1 = (await callOnMessage(listener, {
-      type: 'ruminer.ingest.ingestConversation',
-      platform: 'chatgpt',
-      conversationId: 'c_lcp',
-      conversationTitle: 't',
-      conversationUrl: 'https://chatgpt.com/c/c_lcp',
-      messages: [
-        { role: 'user', content: 'hi' },
-        { role: 'assistant', content: 'hello' },
-      ],
-    })) as any;
-    expect(r1.ok).toBe(true);
-    expect(r1.result.upserted).toBe(2);
-
-    const callsAfter1 = (fetchSpy.mock.calls as any[]).filter((c) =>
-      String(c?.[0] || '').startsWith('https://emos.test/api/v0/memories'),
-    ).length;
-    expect(callsAfter1).toBe(2);
 
     const r2 = (await callOnMessage(listener, {
       type: 'ruminer.ingest.ingestConversation',
@@ -208,14 +186,8 @@ describe('ingest workflow rpc', () => {
       conversationUrl: 'https://chatgpt.com/c/c_lcp',
       messages: [{ role: 'assistant', content: 'new tail' }],
     })) as any;
-    expect(r2.ok).toBe(true);
-    expect(r2.result.skipped).toBe(2);
-    expect(r2.result.upserted).toBe(1);
-
-    const callsAfter2 = (fetchSpy.mock.calls as any[]).filter((c) =>
-      String(c?.[0] || '').startsWith('https://emos.test/api/v0/memories'),
-    ).length;
-    expect(callsAfter2).toBe(3);
+    expect(r2.ok).toBe(false);
+    expect(String(r2.error || '')).toContain('Suffix-only ingestion');
   });
 
   it('fails fast on the first failed message (monotonic prefix semantics)', async () => {
@@ -241,19 +213,6 @@ describe('ingest workflow rpc', () => {
 
     initIngestWorkflowRpc();
     const listener = getLastOnMessageListener();
-
-    const ok1 = (await callOnMessage(listener, {
-      type: 'ruminer.ingest.ingestConversation',
-      platform: 'chatgpt',
-      conversationId,
-      conversationTitle: 't',
-      conversationUrl: `https://chatgpt.com/c/${conversationId}`,
-      messages: [
-        { role: 'user', content: 'hi' },
-        { role: 'assistant', content: 'hello' },
-      ],
-    })) as any;
-    expect(ok1.ok).toBe(true);
 
     const fetchSpy = globalThis.fetch as any;
     fetchSpy.mockImplementation(async (url: any, init?: any) => {
@@ -283,16 +242,19 @@ describe('ingest workflow rpc', () => {
       type: 'ruminer.ingest.ingestConversation',
       platform: 'chatgpt',
       conversationId,
-      baseIndex: 2,
       messageCount: 3,
       conversationTitle: 't',
       conversationUrl: `https://chatgpt.com/c/${conversationId}`,
-      messages: [{ role: 'assistant', content: 'new tail' }],
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+        { role: 'assistant', content: 'new tail' },
+      ],
     })) as any;
     expect(bad.ok).toBe(false);
-    expect(bad.result.startIndex).toBe(2);
+    expect(bad.result.startIndex).toBe(0);
 
-    // Next run resumes from the same baseIndex (caller-provided).
+    // Next run retries the full conversation.
     fetchSpy.mockImplementation(async (url: any) => {
       const u = String(url || '');
       if (u.includes('/agent/evermemos/settings')) {
@@ -322,15 +284,18 @@ describe('ingest workflow rpc', () => {
       type: 'ruminer.ingest.ingestConversation',
       platform: 'chatgpt',
       conversationId,
-      baseIndex: 2,
       messageCount: 3,
       conversationTitle: 't',
       conversationUrl: `https://chatgpt.com/c/${conversationId}`,
-      messages: [{ role: 'assistant', content: 'new tail' }],
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+        { role: 'assistant', content: 'new tail' },
+      ],
     })) as any;
     expect(ok3.ok).toBe(true);
-    expect(ok3.result.startIndex).toBe(2);
-    expect(ok3.result.upserted).toBe(1);
+    expect(ok3.result.startIndex).toBe(0);
+    expect(ok3.result.upserted).toBe(3);
   });
 
   it('enqueueRuns best-effort dedupes against active queue items', async () => {

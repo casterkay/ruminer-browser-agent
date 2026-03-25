@@ -507,6 +507,13 @@ async function handleIngestConversation(
     typeof baseIndexRaw === 'number' && Number.isFinite(baseIndexRaw) && baseIndexRaw > 0
       ? Math.floor(baseIndexRaw)
       : 0;
+  if (baseIndex > 0) {
+    return {
+      ok: false,
+      error:
+        'Suffix-only ingestion via baseIndex is disabled. Pass the full conversation messages with baseIndex=0.',
+    };
+  }
   const fullMessageCountRaw = req.messageCount;
   const fullMessageCount =
     typeof fullMessageCountRaw === 'number' && Number.isFinite(fullMessageCountRaw)
@@ -719,19 +726,14 @@ async function handleIngestConversation(
     });
   }
 
-  if (!sessionSaveOk) {
-    return {
-      ok: false,
-      error: sessionSaveError || 'Failed to save session',
-      result: {
-        ...emosResult,
-      },
-    };
-  }
-
   return {
     ok: true,
-    result: { ...emosResult, ...(sessionSaveResult ? { session: sessionSaveResult } : {}) },
+    result: {
+      ...emosResult,
+      sessionSaveOk,
+      ...(sessionSaveError ? { sessionSaveError } : {}),
+      ...(sessionSaveResult ? { session: sessionSaveResult } : {}),
+    },
   };
 }
 

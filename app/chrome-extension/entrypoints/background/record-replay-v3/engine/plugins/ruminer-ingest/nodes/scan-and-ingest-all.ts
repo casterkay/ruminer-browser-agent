@@ -339,6 +339,8 @@ async function callScanRpc<T>(
       const retryable =
         isRetryableSendMessageError(e) ||
         msg.includes('navigation_started') ||
+        msg.includes('navigation_timeout') ||
+        msg.includes('transcript_not_ready') ||
         msg.includes('__RUMINER_PLATFORM__ not found on window');
       if (retryable && attempt + 1 < MAX_ATTEMPTS) {
         await waitForTabComplete(tabId, 15_000).catch(() => undefined);
@@ -465,6 +467,8 @@ function shouldStopScan(entry: ConversationLedgerEntry | undefined, digest: stri
   if (!entry) return false;
   if (entry.status !== 'ingested') return false;
   if (typeof entry.messages_digest !== 'string' || !entry.messages_digest.trim()) return false;
+  // If the last run couldn't save the native-server session, keep scanning so we can retry later.
+  if (entry.session_save_ok === false) return false;
   return entry.messages_digest.trim() === digest;
 }
 
@@ -490,8 +494,19 @@ function buildIngestedLedgerEntry(args: {
   conversationTitle: string | null;
   digest: string;
   messageCount: number;
+  sessionSaveOk?: boolean | null;
+  sessionSaveError?: string | null;
 }): ConversationLedgerEntry {
   const groupId = toGroupId(args.platform, args.conversationId);
+  const existingSessionOk = args.existing?.session_save_ok;
+  const sessionSaveOk =
+    typeof args.sessionSaveOk === 'boolean' ? args.sessionSaveOk : (existingSessionOk ?? null);
+  const lastSessionError =
+    sessionSaveOk === false
+      ? (args.sessionSaveError ?? args.existing?.last_session_error ?? null)
+      : null;
+  const lastSessionSavedAt =
+    sessionSaveOk === true ? args.nowIso : (args.existing?.last_session_saved_at ?? null);
   return {
     group_id: groupId,
     platform: args.platform,
@@ -501,6 +516,9 @@ function buildIngestedLedgerEntry(args: {
     status: 'ingested',
     messages_digest: args.digest,
     message_count: args.messageCount,
+    ...(sessionSaveOk !== null ? { session_save_ok: sessionSaveOk } : {}),
+    ...(lastSessionError !== null ? { last_session_error: lastSessionError } : {}),
+    ...(lastSessionSavedAt !== null ? { last_session_saved_at: lastSessionSavedAt } : {}),
     first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
     last_seen_at: args.nowIso,
     last_ingested_at: args.nowIso,
@@ -528,6 +546,15 @@ function buildFailedLedgerEntry(args: {
     // Do not change digest/count on failure.
     messages_digest: args.existing?.messages_digest ?? null,
     message_count: args.existing?.message_count ?? null,
+    ...(typeof args.existing?.session_save_ok === 'boolean'
+      ? { session_save_ok: args.existing.session_save_ok }
+      : {}),
+    ...(args.existing?.last_session_error != null
+      ? { last_session_error: args.existing.last_session_error }
+      : {}),
+    ...(args.existing?.last_session_saved_at != null
+      ? { last_session_saved_at: args.existing.last_session_saved_at }
+      : {}),
     first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
     last_seen_at: args.nowIso,
     last_ingested_at: args.existing?.last_ingested_at ?? null,
@@ -925,129 +952,146 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           }
         } else {
           let offset = 0;
+          let stop = false;
+
           for (;;) {
             if (!(await cooperativeGate())) {
               aborted = true;
               break;
             }
 
-            let list = await callListConversations(tabId, platform, { offset, limit: 1 });
-            let c = list.items[0];
-            if (!c) {
-              if (offset === 0) {
-                const dom0 = await collectDomDiagnostics(tabId);
-                const shouldRetryForLoadingUi =
-                  dom0 !== null &&
-                  dom0.counts.anchors === 0 &&
-                  dom0.counts.buttons === 0 &&
-                  dom0.counts.forms === 0;
+            let list = await callListConversations(tabId, platform, {
+              offset,
+              limit: listPageSize,
+            });
+            let items = list.items;
 
-                // Some SPAs can render a mostly-empty DOM while the sidebar is still loading.
-                // Treat "no conversations at offset=0" as a transient state and retry briefly before failing.
-                if (shouldRetryForLoadingUi) {
-                  const deadline = Date.now() + 10_000;
-                  while (Date.now() < deadline) {
-                    if (!(await cooperativeGate())) {
-                      aborted = true;
-                      break;
-                    }
-                    await sleep(500);
-                    list = await callListConversations(tabId, platform, { offset, limit: 1 });
-                    c = list.items[0];
-                    if (c) break;
+            if (items.length === 0 && offset === 0) {
+              const dom0 = await collectDomDiagnostics(tabId);
+              const shouldRetryForLoadingUi =
+                dom0 !== null &&
+                dom0.counts.anchors === 0 &&
+                dom0.counts.buttons === 0 &&
+                dom0.counts.forms === 0;
+
+              // Some SPAs can render a mostly-empty DOM while the sidebar is still loading.
+              // Treat "no conversations at offset=0" as a transient state and retry briefly before failing.
+              if (shouldRetryForLoadingUi) {
+                const deadline = Date.now() + 10_000;
+                while (Date.now() < deadline) {
+                  if (!(await cooperativeGate())) {
+                    aborted = true;
+                    break;
                   }
-                }
-
-                if (aborted) break;
-
-                if (!c) {
-                  const probe = await probeScanApi(tabId);
-                  const dom = dom0 ?? (await collectDomDiagnostics(tabId));
-                  const diag = { probe, dom };
-                  throw new Error(
-                    `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
-                  );
+                  await sleep(500);
+                  list = await callListConversations(tabId, platform, {
+                    offset,
+                    limit: listPageSize,
+                  });
+                  items = list.items;
+                  if (items.length > 0) break;
                 }
               }
-              if (!c) break;
+
+              if (aborted) break;
+
+              if (items.length === 0) {
+                const probe = await probeScanApi(tabId);
+                const dom = dom0 ?? (await collectDomDiagnostics(tabId));
+                const diag = { probe, dom };
+                throw new Error(
+                  `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
+                );
+              }
             }
 
-            const groupId = toGroupId(platform, c.conversationId);
-            const entry = ledgerByGroupId.get(groupId);
+            if (items.length === 0) break;
 
-            // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
-            if (!entry) {
-              scanned.push({
-                groupId,
-                conversationId: c.conversationId,
-                conversationUrl: c.conversationUrl,
-                conversationTitle: c.conversationTitle,
-              });
-              onStepCompleted();
-              await emitProgress();
-              offset += 1;
-              if (listThrottleMs > 0) await sleep(listThrottleMs);
-              continue;
-            }
+            for (const c of items) {
+              if (!(await cooperativeGate())) {
+                aborted = true;
+                break;
+              }
 
-            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+              const groupId = toGroupId(platform, c.conversationId);
+              const entry = ledgerByGroupId.get(groupId);
 
-            const conv = await callConversationMessages(tabId, platform, {
-              conversationId: c.conversationId,
-              conversationUrl: c.conversationUrl,
-            });
-
-            const messages = normalizeConversationMessages(conv.messages);
-            if (messages.length === 0) {
-              const rawIsEmpty =
-                Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
-              if (rawIsEmpty) {
-                const digest = await emptyConversationDigest();
-                const messageCount = 0;
-
-                // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
+              // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
+              if (!entry) {
                 scanned.push({
                   groupId,
                   conversationId: c.conversationId,
                   conversationUrl: c.conversationUrl,
                   conversationTitle: c.conversationTitle,
-                  snapshot: { messages: [], digest, messageCount },
                 });
                 onStepCompleted();
                 await emitProgress();
-
-                offset += 1;
-                if (listThrottleMs > 0) await sleep(listThrottleMs);
                 continue;
               }
 
-              const probe = await probeScanApi(tabId);
-              const dom = await collectDomDiagnostics(tabId);
-              throw new Error(
-                `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
-                  conv.conversationUrl || c.conversationUrl || '',
-                )}; diagnostics=${JSON.stringify({ probe, dom })})`,
-              );
+              if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+
+              const conv = await callConversationMessages(tabId, platform, {
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+              });
+
+              const messages = normalizeConversationMessages(conv.messages);
+              if (messages.length === 0) {
+                const rawIsEmpty =
+                  Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
+                if (rawIsEmpty) {
+                  const digest = await emptyConversationDigest();
+                  const messageCount = 0;
+
+                  // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
+                  scanned.push({
+                    groupId,
+                    conversationId: c.conversationId,
+                    conversationUrl: c.conversationUrl,
+                    conversationTitle: c.conversationTitle,
+                    snapshot: { messages: [], digest, messageCount },
+                  });
+                  onStepCompleted();
+                  await emitProgress();
+                  continue;
+                }
+
+                const probe = await probeScanApi(tabId);
+                const dom = await collectDomDiagnostics(tabId);
+                throw new Error(
+                  `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
+                    conv.conversationUrl || c.conversationUrl || '',
+                  )}; diagnostics=${JSON.stringify({ probe, dom })})`,
+                );
+              }
+
+              const { digest, messageCount } =
+                await computeConversationDigestFromMessages(messages);
+
+              if (shouldStopScan(entry, digest)) {
+                stop = true;
+                break;
+              }
+
+              scanned.push({
+                groupId,
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+                conversationTitle: c.conversationTitle,
+                snapshot: { messages, digest, messageCount },
+              });
+              onStepCompleted();
+              await emitProgress();
             }
 
-            const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
+            if (aborted) break;
+            if (stop) break;
 
-            if (shouldStopScan(entry, digest)) {
-              break;
-            }
-
-            scanned.push({
-              groupId,
-              conversationId: c.conversationId,
-              conversationUrl: c.conversationUrl,
-              conversationTitle: c.conversationTitle,
-              snapshot: { messages, digest, messageCount },
-            });
-            onStepCompleted();
             await emitProgress();
-
-            offset += 1;
             if (listThrottleMs > 0) await sleep(listThrottleMs);
+            if (list.nextOffset === null) break;
+            offset = list.nextOffset;
           }
         }
       } catch (e) {
@@ -1131,12 +1175,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           const { messages, digest, messageCount } = item.snapshot;
           const ledgerDigest = toTrimmedLedgerDigest(existing);
           const digestsMatch = Boolean(ledgerDigest && ledgerDigest === digest);
+          const needsSessionSaveRetry = existing?.session_save_ok === false;
 
           if (messageCount === 0) {
             // Empty conversations exist (e.g. created then abandoned / deleted content).
             // Persist an "ingested" empty digest to avoid retrying forever.
             skipped += 1;
-          } else if (!existing || !digestsMatch) {
+          } else if (!existing || !digestsMatch || needsSessionSaveRetry) {
             // Always ingest the full conversation to keep downstream session storage consistent.
             // (Suffix-only ingest can corrupt native-server session message indices.)
             const ingestResp = await ruminerIngestConversation({
@@ -1146,7 +1191,12 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               messageCount,
               conversationTitle: item.conversationTitle,
               conversationUrl: item.conversationUrl,
-              messages: messages.map((m) => ({ role: m.role, content: m.content })),
+              messages: messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+                ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
+                ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
+              })),
             });
 
             if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {
@@ -1187,6 +1237,38 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             }
 
             ingested += 1;
+
+            let sessionSaveOk: boolean | null = null;
+            let sessionSaveError: string | null = null;
+            const respResult = isRecord((ingestResp as any).result)
+              ? ((ingestResp as any).result as any)
+              : null;
+            if (respResult) {
+              sessionSaveOk =
+                typeof respResult.sessionSaveOk === 'boolean' ? respResult.sessionSaveOk : null;
+              sessionSaveError =
+                typeof respResult.sessionSaveError === 'string' &&
+                respResult.sessionSaveError.trim()
+                  ? respResult.sessionSaveError.trim()
+                  : null;
+            }
+
+            const nowIso = new Date().toISOString();
+            const nextOk = buildIngestedLedgerEntry({
+              existing,
+              nowIso,
+              platform,
+              conversationId: item.conversationId,
+              conversationUrl: item.conversationUrl,
+              conversationTitle: item.conversationTitle,
+              digest,
+              messageCount,
+              ...(sessionSaveOk !== null ? { sessionSaveOk } : {}),
+              ...(sessionSaveError !== null ? { sessionSaveError } : {}),
+            });
+            await upsertConversationEntry(nextOk);
+            ledgerByGroupId.set(item.groupId, nextOk);
+            continue;
           } else {
             skipped += 1;
           }

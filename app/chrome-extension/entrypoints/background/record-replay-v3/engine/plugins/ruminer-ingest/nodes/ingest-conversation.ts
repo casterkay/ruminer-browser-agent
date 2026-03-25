@@ -268,6 +268,8 @@ export type IngestConversationInTabResult = {
   messagesDigest: string;
   sessionId: string | null;
   projectId: string | null;
+  sessionSaveOk: boolean;
+  sessionSaveError: string | null;
 };
 
 function toGroupId(platform: ChatPlatform, conversationId: string): string {
@@ -283,6 +285,8 @@ function buildManualImportLedgerEntry(args: {
   conversationTitle: string | null;
   digest: string;
   messageCount: number;
+  sessionSaveOk: boolean;
+  sessionSaveError: string | null;
 }): ConversationLedgerEntry {
   const groupId = toGroupId(args.platform, args.conversationId);
   return {
@@ -295,6 +299,11 @@ function buildManualImportLedgerEntry(args: {
     status: null,
     messages_digest: args.digest,
     message_count: args.messageCount,
+    session_save_ok: args.sessionSaveOk,
+    last_session_error: args.sessionSaveOk ? null : args.sessionSaveError,
+    last_session_saved_at: args.sessionSaveOk
+      ? args.nowIso
+      : (args.existing?.last_session_saved_at ?? null),
     first_seen_at: args.existing?.first_seen_at ?? args.nowIso,
     last_seen_at: args.nowIso,
     last_ingested_at: args.nowIso,
@@ -448,7 +457,20 @@ export async function ingestConversationInTab(
 
   let sessionId: string | null = null;
   let projectId: string | null = null;
+  let sessionSaveOk = false;
+  let sessionSaveError: string | null = null;
   try {
+    const respResult = isRecord((ingestResp as any).result)
+      ? ((ingestResp as any).result as any)
+      : null;
+    if (respResult) {
+      sessionSaveOk =
+        typeof respResult.sessionSaveOk === 'boolean' ? respResult.sessionSaveOk : false;
+      sessionSaveError =
+        typeof respResult.sessionSaveError === 'string' && respResult.sessionSaveError.trim()
+          ? respResult.sessionSaveError.trim()
+          : null;
+    }
     const result = isRecord((ingestResp as any).result)
       ? ((ingestResp as any).result as any)
       : null;
@@ -470,6 +492,8 @@ export async function ingestConversationInTab(
     messagesDigest,
     sessionId,
     projectId,
+    sessionSaveOk,
+    sessionSaveError,
   };
 }
 
@@ -623,6 +647,8 @@ export const ingestCurrentNodeDefinition: NodeDefinition<
         conversationTitle: result.conversationTitle,
         digest: result.messagesDigest,
         messageCount: result.messageCount,
+        sessionSaveOk: result.sessionSaveOk,
+        sessionSaveError: result.sessionSaveError,
       });
       await upsertConversationEntry(next);
     } catch (e) {

@@ -825,7 +825,8 @@ class GifRecorderTool extends BaseBrowserToolExecutor {
             };
 
             // Save GIF file
-            const blob = new Blob([stopResult.gifData], { type: 'image/gif' });
+            const blobBytes = Uint8Array.from(stopResult.gifData);
+            const blob = new Blob([blobBytes], { type: 'image/gif' });
             const dataUrl = await blobToDataUrl(blob);
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -980,7 +981,8 @@ class GifRecorderTool extends BaseBrowserToolExecutor {
 
           if (download) {
             // Download mode
-            const blob = new Blob([lastRecordedGif.gifData], { type: 'image/gif' });
+            const blobBytes = Uint8Array.from(lastRecordedGif.gifData);
+            const blob = new Blob([blobBytes], { type: 'image/gif' });
             const dataUrl = await blobToDataUrl(blob);
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

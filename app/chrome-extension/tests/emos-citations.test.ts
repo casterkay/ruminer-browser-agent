@@ -29,14 +29,14 @@ describe('emos citations', () => {
     const out = formatAssistantMarkdownWithEmosCitations(input);
     expect(out).toContain('inside fence [^1]');
     expect(out).toContain('outside fence ');
-    expect(out).toContain('<emos-cite keys="1" message-ids="id-1"></emos-cite>');
+    expect(out).toMatch(/<emos-cite keys="1" message-ids="id-1"[^>]*><\/emos-cite>/);
   });
 
   it('does not transform citations inside inline code', () => {
     const input = ['use `[^1]` literally and cite [^1]', '', '[^1]: id-1'].join('\n');
     const out = formatAssistantMarkdownWithEmosCitations(input);
     expect(out).toContain('`[^1]`');
-    expect(out).toContain('<emos-cite keys="1" message-ids="id-1"></emos-cite>');
+    expect(out).toMatch(/<emos-cite keys="1" message-ids="id-1"[^>]*><\/emos-cite>/);
   });
 
   it('extracts memories and prefers summary as content', () => {

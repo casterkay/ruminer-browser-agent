@@ -608,6 +608,7 @@
 
   const openConversationInPlace = async (url) => {
     const targetPath = new URL(url, location.origin).pathname;
+    if (location.pathname === targetPath) return { ok: true, alreadyThere: true };
     const anchors = Array.from(document.querySelectorAll('a[href]'));
     const a = anchors.find((x) => {
       try {
@@ -621,15 +622,22 @@
       a.click();
     } else {
       location.assign(url);
-      return false;
+      return { ok: false, error: 'navigation_started' };
     }
 
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      if (location.pathname === targetPath) return;
+      if (location.pathname === targetPath) return { ok: true, clicked: true };
       await sleep(200);
     }
-    return true;
+    return {
+      ok: false,
+      error: 'navigation_timeout',
+      diagnostics: {
+        targetPath,
+        currentPath: String(location.pathname || ''),
+      },
+    };
   };
 
   const sidebarCache = {
@@ -773,8 +781,8 @@
       }
     }
 
-    const opened = await openConversationInPlace(url);
-    if (opened === false) return { ok: false, error: 'navigation_started' };
+    const nav = await openConversationInPlace(url);
+    if (!nav.ok) return nav;
     await sleep(400);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.
