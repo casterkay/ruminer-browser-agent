@@ -3,7 +3,7 @@
  * Note: Native message types are imported from the shared package
  */
 
-import type { AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
+import type { AgentCliPreference, AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
 
 // Message targets for routing
 export enum MessageTarget {
@@ -88,6 +88,7 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
   QUICK_PANEL_OPEN_SIDEPANEL: 'quick_panel_open_sidepanel',
   QUICK_PANEL_GET_BRANDING: 'quick_panel_get_branding',
+  QUICK_PANEL_SET_SESSION_ENGINE: 'quick_panel_set_session_engine',
   QUICK_PANEL_ACTIVATE_SESSION: 'quick_panel_activate_session',
   QUICK_PANEL_OPEN_SESSION: 'quick_panel_open_session',
   QUICK_PANEL_DELETE_SESSION: 'quick_panel_delete_session',
@@ -284,10 +285,30 @@ export interface QuickPanelSendToAIMessage {
 /** Request current engine branding (engine name + icon URL) for Quick Panel header. */
 export interface QuickPanelGetBrandingMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING;
+  payload?: { sessionId?: string };
 }
 
 export type QuickPanelGetBrandingResponse =
   | { success: true; engineName: string; engineDisplayName: string; brandIconUrl: string }
+  | { success: false; error: string };
+
+export interface QuickPanelSetSessionEnginePayload {
+  sessionId: string;
+  engineName: AgentCliPreference;
+}
+
+export interface QuickPanelSetSessionEngineMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_SET_SESSION_ENGINE;
+  payload: QuickPanelSetSessionEnginePayload;
+}
+
+export type QuickPanelSetSessionEngineResponse =
+  | {
+      success: true;
+      engineName: AgentCliPreference;
+      engineDisplayName: string;
+      brandIconUrl: string;
+    }
   | { success: false; error: string };
 
 /**

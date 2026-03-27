@@ -33,6 +33,8 @@ export interface QuickPanelLauncherOptions {
   maxRecentMessages?: number;
   /** Optional callback when expanded state changes. */
   onExpandedChange?: (expanded: boolean) => void;
+  /** Optional callback when active session changes (including engine/branding changes that depend on it). */
+  onSessionChange?: (info: { sessionId: string | null; isQuickSession: boolean }) => void;
 }
 
 export interface QuickPanelLauncherManager {
@@ -740,6 +742,17 @@ export function createQuickPanelLauncher(
   const messageQueue: QueuedMessage[] = [];
   let historyLoaded = false;
 
+  function notifySessionChange(): void {
+    try {
+      options.onSessionChange?.({
+        sessionId: activeSessionId,
+        isQuickSession: activeSessionIsQuick,
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   function isTerminalState(state: typeof requestState): boolean {
     return state === 'completed' || state === 'cancelled' || state === 'error';
   }
@@ -888,6 +901,7 @@ export function createQuickPanelLauncher(
       const id = createQuickSessionId();
       activeSessionId = id;
       activeSessionIsQuick = true;
+      notifySessionChange();
 
       const result = await options.agentBridge.activateSession({
         reason: 'expand',
@@ -898,6 +912,7 @@ export function createQuickPanelLauncher(
       if (result.sessionId && result.sessionId !== activeSessionId) {
         activeSessionId = result.sessionId;
       }
+      notifySessionChange();
 
       branding = {
         ...branding,
@@ -1536,6 +1551,7 @@ export function createQuickPanelLauncher(
 
     activeSessionId = result.sessionId;
     activeSessionIsQuick = false;
+    notifySessionChange();
     branding = {
       ...branding,
       sessionName: result.sessionName,
@@ -1559,6 +1575,7 @@ export function createQuickPanelLauncher(
     const id = createQuickSessionId();
     activeSessionId = id;
     activeSessionIsQuick = true;
+    notifySessionChange();
     setHistory([]);
 
     const result = await options.agentBridge.activateSession({
@@ -1576,6 +1593,10 @@ export function createQuickPanelLauncher(
       engineDisplayName: result.engineDisplayName,
       brandIconUrl: result.brandIconUrl,
     };
+    if (result.sessionId && result.sessionId !== activeSessionId) {
+      activeSessionId = result.sessionId;
+      notifySessionChange();
+    }
     if (Array.isArray(result.recentMessages) && result.recentMessages.length > 0) {
       setHistory(result.recentMessages);
     }

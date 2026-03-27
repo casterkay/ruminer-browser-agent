@@ -49,6 +49,12 @@ export interface FloatingIconTooltipState {
   platformLabel?: string | null;
   /** Persist toggle state. */
   persistEnabled: boolean;
+  /** Current session engine (internal id like "claude"). */
+  engineName?: string | null;
+  /** Current session engine display name (e.g. "Claude Code"). */
+  engineDisplayName?: string | null;
+  /** Switch engine for the current session (ephemeral sessions only). */
+  onSetEngine?: (engineName: string) => void;
   onSaveChat?: () => void;
   onTogglePersist?: (nextEnabled: boolean) => void;
   onNewQuickChat?: () => void;
@@ -895,6 +901,126 @@ const FLOATING_ICON_STYLES = /* css */ `
     --ruminer-action-icon: rgb(57, 239, 239);
   }
 
+  .floating-icon-tooltip-action--engine {
+    --ruminer-action-icon: rgba(229, 169, 61, 0.96);
+  }
+
+  .floating-icon-tooltip-action-suffix {
+    flex-shrink: 0;
+    opacity: 0.7;
+    margin-left: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Engine flyout submenu (opens to the left of the Engine row) */
+  .floating-icon-tooltip-flyout {
+    position: absolute;
+    right: calc(100% + 10px);
+    top: 0;
+    width: min(180px, calc(100vw - 36px));
+    padding: 8px;
+    background: linear-gradient(145deg, rgba(30, 27, 24, 0.96), rgba(18, 16, 14, 0.92));
+    border: 1px solid rgba(255, 200, 100, 0.18);
+    border-radius: 16px;
+    box-shadow:
+      0 22px 60px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    opacity: 0;
+    transform: translateX(10px) scale(0.985);
+    pointer-events: none;
+    transition:
+      opacity 180ms ease,
+      transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1);
+    z-index: 2;
+  }
+
+  .floating-icon-tooltip-flyout[data-open='true'] {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    pointer-events: auto;
+  }
+
+  .floating-icon-tooltip-flyout-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 248, 240, 0.86);
+    letter-spacing: 0.14px;
+    padding: 2px 6px 8px 6px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .floating-icon-tooltip-flyout-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .floating-icon-tooltip-flyout-item {
+    appearance: none;
+    cursor: pointer;
+    border: 1px solid rgba(255, 200, 100, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(245, 230, 211, 0.95);
+    font-size: 12px;
+    font-weight: 520;
+    letter-spacing: 0.15px;
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 160ms ease,
+      background 180ms ease,
+      box-shadow 220ms ease;
+    text-align: left;
+  }
+
+  .floating-icon-tooltip-flyout-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(229, 169, 61, 0.38);
+    background: rgba(229, 169, 61, 0.08);
+    box-shadow:
+      0 18px 54px rgba(0, 0, 0, 0.32),
+      0 0 0 4px rgba(229, 169, 61, 0.06);
+  }
+
+  .floating-icon-tooltip-flyout-item:active {
+    transform: translateY(0) scale(0.99);
+  }
+
+  .floating-icon-tooltip-flyout-item[disabled] {
+    opacity: 0.55;
+    cursor: default;
+    filter: saturate(0.85);
+  }
+
+  .floating-icon-tooltip-flyout-item-check {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0;
+    color: rgba(229, 169, 61, 0.96);
+  }
+
+  .floating-icon-tooltip-flyout-item[data-active='true'] .floating-icon-tooltip-flyout-item-check {
+    opacity: 1;
+  }
+
+  .floating-icon-tooltip-flyout-item-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* Dialog (anchored, non-blocking) */
   .floating-icon-dialog {
     position: absolute;
@@ -1088,6 +1214,29 @@ const ICON_DOWNLOAD = createSvgIcon([
 const ICON_PIN = createSvgIcon(['M12 17v5', 'M9 3h6l1 7 2 2v2H6v-2l2-2 1-7z']);
 const ICON_PIN_OFF = createSvgIcon(['M12 17v5', 'M9 3h6l1 7 2 2v2H6v-2l2-2 1-7z', 'M3 3l18 18']);
 const ICON_PLUS = createSvgIcon(['M12 5v14', 'M5 12h14']);
+const ICON_CPU = createSvgIcon([
+  'M4 4h16v16H4z',
+  'M9 9h6v6H9z',
+  'M9 1v3',
+  'M15 1v3',
+  'M9 20v3',
+  'M15 20v3',
+  'M1 9h3',
+  'M1 15h3',
+  'M20 9h3',
+  'M20 15h3',
+]);
+const ICON_CHEVRON_LEFT = createSvgIcon(['M15 18l-6-6 6-6']);
+const ICON_CHECK = createSvgIcon(['M20 6L9 17l-5-5']);
+
+const ENGINE_CHOICES: Array<{ engineName: string; label: string }> = [
+  { engineName: 'claude', label: 'Claude Code' },
+  { engineName: 'openclaw', label: 'OpenClaw' },
+  { engineName: 'codex', label: 'Codex' },
+  { engineName: 'cursor', label: 'Cursor' },
+  { engineName: 'qwen', label: 'Qwen' },
+  { engineName: 'glm', label: 'GLM' },
+];
 
 // ============================================================
 // Main Factory
@@ -1102,6 +1251,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let tooltipElement: HTMLElement | null = null;
   let tooltipGreetingElement: HTMLElement | null = null;
   let tooltipListElement: HTMLElement | null = null;
+  let tooltipEngineChip: HTMLButtonElement | null = null;
   let tooltipSaveChip: HTMLButtonElement | null = null;
   let tooltipPersistChip: HTMLButtonElement | null = null;
   let tooltipNewChip: HTMLButtonElement | null = null;
@@ -1109,6 +1259,10 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   let tooltipOpen = false;
   let tooltipAnimationTimer: ReturnType<typeof setTimeout> | null = null;
   let tooltipCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let engineFlyoutElement: HTMLElement | null = null;
+  let engineFlyoutListElement: HTMLElement | null = null;
+  let engineFlyoutOpen = false;
 
   let dialogElement: HTMLElement | null = null;
   let dialogTitleElement: HTMLElement | null = null;
@@ -1377,10 +1531,25 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
       'floating-icon-tooltip-row floating-icon-tooltip-row--greeting';
     tooltipGreetingElement.textContent = 'Ruminer is Here, At Your Service!';
 
+    // Engine flyout submenu (mounted under tooltip, positioned dynamically)
+    engineFlyoutElement = document.createElement('div');
+    engineFlyoutElement.className = 'floating-icon-tooltip-flyout';
+    engineFlyoutElement.dataset.open = 'false';
+
+    const flyoutTitle = document.createElement('div');
+    flyoutTitle.className = 'floating-icon-tooltip-flyout-title';
+    flyoutTitle.textContent = 'Select Engine';
+
+    engineFlyoutListElement = document.createElement('div');
+    engineFlyoutListElement.className = 'floating-icon-tooltip-flyout-list';
+
+    engineFlyoutElement.append(flyoutTitle, engineFlyoutListElement);
+
     const createActionRow = (params: {
       className: string;
       iconHtml: string;
       label: string;
+      suffixHtml?: string;
     }): HTMLButtonElement => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1397,6 +1566,13 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
       btn.append(icon, text);
 
+      if (params.suffixHtml) {
+        const suffix = document.createElement('span');
+        suffix.className = 'floating-icon-tooltip-action-suffix';
+        suffix.innerHTML = params.suffixHtml;
+        btn.appendChild(suffix);
+      }
+
       const stop = (e: Event) => {
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
@@ -1407,6 +1583,18 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
       return btn;
     };
+
+    tooltipEngineChip = createActionRow({
+      className: 'floating-icon-tooltip-action--engine',
+      iconHtml: ICON_CPU,
+      label: 'Engine',
+      suffixHtml: ICON_CHEVRON_LEFT,
+    });
+    tooltipEngineChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      toggleEngineFlyout();
+    });
 
     tooltipSaveChip = createActionRow({
       className: 'floating-icon-tooltip-action--save',
@@ -1446,11 +1634,13 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
     tooltipListElement.append(
       tooltipGreetingElement,
+      tooltipEngineChip,
       tooltipSaveChip,
       tooltipPersistChip,
       tooltipNewChip,
     );
     tooltipElement.appendChild(tooltipListElement);
+    tooltipElement.appendChild(engineFlyoutElement);
     iconElement.appendChild(tooltipElement);
 
     // Workflow progress overlay (hidden by default)
@@ -1741,6 +1931,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
   function setTooltipState(next: FloatingIconTooltipState | null): void {
     tooltipState = next;
+    if (!next) setEngineFlyoutOpen(false);
     updateTooltipUi();
   }
 
@@ -1750,6 +1941,7 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     if (workflowProgress && next) next = false;
 
     tooltipOpen = next;
+    if (!next) setEngineFlyoutOpen(false);
 
     if (tooltipAnimationTimer) clearTimeout(tooltipAnimationTimer);
     tooltipAnimationTimer = null;
@@ -1858,8 +2050,97 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     });
   }
 
+  function layoutEngineFlyout(): void {
+    const tooltip = tooltipElement;
+    const engineChip = tooltipEngineChip;
+    const flyout = engineFlyoutElement;
+    if (!tooltip || !engineChip || !flyout) return;
+
+    try {
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const chipRect = engineChip.getBoundingClientRect();
+      const rawTop = chipRect.top - tooltipRect.top;
+      const maxTop = Math.max(0, tooltipRect.height - flyout.offsetHeight);
+      const top = Math.max(0, Math.min(rawTop, maxTop));
+      flyout.style.top = `${top}px`;
+    } catch {
+      // ignore
+    }
+  }
+
+  function rebuildEngineFlyoutItems(): void {
+    const flyoutList = engineFlyoutListElement;
+    if (!flyoutList) return;
+
+    const current =
+      typeof tooltipState?.engineName === 'string' ? tooltipState.engineName.trim() : '';
+    const canSet = typeof tooltipState?.onSetEngine === 'function';
+
+    flyoutList.textContent = '';
+    for (const choice of ENGINE_CHOICES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'floating-icon-tooltip-flyout-item';
+      btn.dataset.active = choice.engineName === current ? 'true' : 'false';
+      btn.disabled = !canSet;
+
+      const check = document.createElement('span');
+      check.className = 'floating-icon-tooltip-flyout-item-check';
+      check.innerHTML = ICON_CHECK;
+
+      const label = document.createElement('span');
+      label.className = 'floating-icon-tooltip-flyout-item-label';
+      label.textContent = choice.label;
+
+      btn.append(check, label);
+
+      const stop = (e: Event) => {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+      };
+      btn.addEventListener('pointerdown', stop);
+      btn.addEventListener('mousedown', stop);
+      btn.addEventListener('touchstart', stop, { passive: false } as any);
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+        if (!canSet) return;
+        tooltipState?.onSetEngine?.(choice.engineName);
+        setEngineFlyoutOpen(false);
+      });
+
+      flyoutList.appendChild(btn);
+    }
+  }
+
+  function setEngineFlyoutOpen(next: boolean): void {
+    if (!engineFlyoutElement) return;
+    engineFlyoutOpen = next;
+    engineFlyoutElement.dataset.open = next ? 'true' : 'false';
+
+    if (!next) return;
+
+    rebuildEngineFlyoutItems();
+    requestAnimationFrame(() => layoutEngineFlyout());
+  }
+
+  function toggleEngineFlyout(): void {
+    if (!tooltipOpen) return;
+    if (!tooltipEngineChip || !engineFlyoutElement) return;
+
+    if (engineFlyoutOpen) {
+      setEngineFlyoutOpen(false);
+      return;
+    }
+
+    // If engine switching isn't supported for the current session, do nothing (but keep UI consistent).
+    if (typeof tooltipState?.onSetEngine !== 'function') return;
+    setEngineFlyoutOpen(true);
+  }
+
   function updateTooltipUi(): void {
-    if (!tooltipPersistChip || !tooltipNewChip || !tooltipSaveChip) return;
+    if (!tooltipPersistChip || !tooltipNewChip || !tooltipSaveChip || !tooltipEngineChip) return;
 
     const platformLabelRaw = tooltipState?.platformLabel;
     const platformLabel = typeof platformLabelRaw === 'string' ? platformLabelRaw.trim() : '';
@@ -1882,7 +2163,24 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
 
     tooltipNewChip.disabled = typeof tooltipState?.onNewQuickChat !== 'function';
 
+    const engineDisplayNameRaw = tooltipState?.engineDisplayName;
+    const engineDisplayName =
+      typeof engineDisplayNameRaw === 'string' && engineDisplayNameRaw.trim()
+        ? engineDisplayNameRaw.trim()
+        : 'Agent';
+    const engineLabelEl = tooltipEngineChip.querySelector(
+      '.floating-icon-tooltip-action-label',
+    ) as HTMLElement | null;
+    if (engineLabelEl) engineLabelEl.textContent = `Engine: ${engineDisplayName}`;
+    tooltipEngineChip.disabled = typeof tooltipState?.onSetEngine !== 'function';
+
     syncTooltipAnimationVars();
+
+    // If flyout is open, keep items/layout in sync with latest state.
+    if (engineFlyoutOpen) {
+      rebuildEngineFlyoutItems();
+      requestAnimationFrame(() => layoutEngineFlyout());
+    }
   }
 
   function getTooltipVisibleItemCount(): number {
@@ -2183,11 +2481,15 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
     tooltipElement = null;
     tooltipGreetingElement = null;
     tooltipListElement = null;
+    tooltipEngineChip = null;
     tooltipSaveChip = null;
     tooltipPersistChip = null;
     tooltipNewChip = null;
     tooltipState = null;
     tooltipOpen = false;
+    engineFlyoutElement = null;
+    engineFlyoutListElement = null;
+    engineFlyoutOpen = false;
     dialogElement = null;
     dialogTitleElement = null;
     dialogMessageElement = null;

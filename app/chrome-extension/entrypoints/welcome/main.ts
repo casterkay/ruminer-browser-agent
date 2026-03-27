@@ -6,11 +6,7 @@ import {
   type QuickPanelAgentBridge,
   type QuickPanelLauncherManager,
 } from '@/shared/quick-panel';
-import {
-  BACKGROUND_MESSAGE_TYPES,
-  type QuickPanelGetBrandingMessage,
-  type QuickPanelGetBrandingResponse,
-} from '@/common/message-types';
+// Branding is resolved via the Quick Panel agent bridge.
 import { createApp } from 'vue';
 import App from './App.vue';
 
@@ -31,6 +27,9 @@ void (async () => {
     let persistEnabled = false;
     let pendingDeleteSessionId: string | null = null;
     let pendingDeleteTimer: ReturnType<typeof setTimeout> | null = null;
+    let currentEngineName = '';
+    let currentEngineDisplayName = 'Claude Code';
+    let currentEngineIconUrl = '';
 
     const tabContext: { tabId?: number; windowId?: number } = {};
 
@@ -44,30 +43,40 @@ void (async () => {
     async function resolveSelectedEngineBranding(): Promise<{
       engineDisplayName: string;
       brandIconUrl: string;
+      engineName: string;
     }> {
       try {
-        const response = (await chrome.runtime.sendMessage({
-          type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING,
-        } satisfies QuickPanelGetBrandingMessage)) as QuickPanelGetBrandingResponse;
+        const sessionId = launcher?.getActiveSessionId?.() || undefined;
+        const response = await ensureBridge().getBranding(sessionId ? { sessionId } : undefined);
 
         if (response?.success) {
           return {
             engineDisplayName: response.engineDisplayName || 'Agent',
             brandIconUrl: response.brandIconUrl || '',
+            engineName: response.engineName || '',
           };
         }
       } catch {
         // ignore
       }
 
-      return { engineDisplayName: 'Agent', brandIconUrl: '' };
+      return { engineDisplayName: 'Agent', brandIconUrl: '', engineName: '' };
     }
 
     function refreshBranding(): void {
       if (!launcher) return;
-      void resolveSelectedEngineBranding().then(({ engineDisplayName, brandIconUrl }) => {
-        launcher?.setBranding({ engineDisplayName, brandIconUrl });
-      });
+      void resolveSelectedEngineBranding().then(
+        ({ engineName, engineDisplayName, brandIconUrl }) => {
+          currentEngineName = engineName || '';
+          currentEngineDisplayName = engineDisplayName || 'Agent';
+          currentEngineIconUrl = brandIconUrl || '';
+          launcher?.setBranding({
+            engineDisplayName: currentEngineDisplayName,
+            brandIconUrl: currentEngineIconUrl,
+          });
+          refreshTooltipState();
+        },
+      );
     }
 
     function ensureLauncher(): QuickPanelLauncherManager {
@@ -79,13 +88,20 @@ void (async () => {
           agentBridge: ensureBridge(),
           placeholder: 'Ask Ruminer…',
           maxRecentMessages: 10,
+          onSessionChange: () => {
+            refreshBranding();
+          },
           onExpandedChange: (expanded) => {
             if (pendingDeleteTimer) {
               clearTimeout(pendingDeleteTimer);
               pendingDeleteTimer = null;
             }
 
-            if (expanded) return;
+            if (expanded) {
+              refreshBranding();
+              refreshTooltipState();
+              return;
+            }
             if (!pendingDeleteSessionId) return;
 
             const idToDelete = pendingDeleteSessionId;
@@ -141,10 +157,44 @@ void (async () => {
 
     function refreshTooltipState(): void {
       if (!floatingIcon) return;
+      const activeSessionId = launcher?.getActiveSessionId?.() || null;
+      const messageCount = launcher?.exportTranscript?.()?.length ?? 0;
+      const canConfigureEngine =
+        !!activeSessionId && launcher?.isQuickSession?.() === true && messageCount === 0;
 
       floatingIcon.setTooltipState({
         platformLabel: null,
         persistEnabled,
+        engineName: currentEngineName,
+        engineDisplayName: currentEngineDisplayName,
+        onSetEngine: canConfigureEngine
+          ? (nextEngineName) => {
+              void (async () => {
+                const resp = await ensureBridge().setSessionEngine({
+                  sessionId: activeSessionId,
+                  engineName: nextEngineName as any,
+                });
+
+                if (!resp.success) {
+                  floatingIcon?.showDialog({
+                    kind: 'error',
+                    title: 'Switch Engine',
+                    message: resp.error || 'Failed to switch engine',
+                  });
+                  return;
+                }
+
+                currentEngineName = resp.engineName;
+                currentEngineDisplayName = resp.engineDisplayName;
+                currentEngineIconUrl = resp.brandIconUrl;
+                launcher?.setBranding({
+                  engineDisplayName: currentEngineDisplayName,
+                  brandIconUrl: currentEngineIconUrl,
+                });
+                refreshTooltipState();
+              })();
+            }
+          : undefined,
         onTogglePersist: (nextEnabled) => {
           void (async () => {
             const wasEnabled = persistEnabled;

@@ -26,12 +26,6 @@ import {
 import { inferPlatformFromUrl } from '@/common/chat-platforms';
 
 import {
-  BACKGROUND_MESSAGE_TYPES,
-  type QuickPanelGetBrandingMessage,
-  type QuickPanelGetBrandingResponse,
-} from '@/common/message-types';
-
-import {
   RR_V3_PORT_NAME,
   createRpcRequest,
   isRpcResponse,
@@ -66,6 +60,9 @@ export default defineContentScript({
     let lastTooltipUrl = '';
     let lastIngestOpenedSessionId: string | null = null;
     let lastIngestOpenedAt = 0;
+    let currentEngineName = '';
+    let currentEngineDisplayName = 'Claude Code';
+    let currentEngineIconUrl = '';
 
     async function resolveSelectedEngineBranding(): Promise<{
       engineDisplayName: string;
@@ -73,9 +70,8 @@ export default defineContentScript({
       engineName: string;
     }> {
       try {
-        const response = (await chrome.runtime.sendMessage({
-          type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING,
-        } satisfies QuickPanelGetBrandingMessage)) as QuickPanelGetBrandingResponse;
+        const sessionId = launcher?.getActiveSessionId?.() || undefined;
+        const response = await ensureBridge().getBranding(sessionId ? { sessionId } : undefined);
 
         if (response?.success) {
           return {
@@ -94,9 +90,18 @@ export default defineContentScript({
     function refreshBranding(): void {
       if (!launcher) return;
 
-      void resolveSelectedEngineBranding().then(({ engineDisplayName, brandIconUrl }) => {
-        launcher?.setBranding({ engineDisplayName, brandIconUrl });
-      });
+      void resolveSelectedEngineBranding().then(
+        ({ engineName, engineDisplayName, brandIconUrl }) => {
+          currentEngineName = engineName || '';
+          currentEngineDisplayName = engineDisplayName || 'Agent';
+          currentEngineIconUrl = brandIconUrl || '';
+          launcher?.setBranding({
+            engineDisplayName: currentEngineDisplayName,
+            brandIconUrl: currentEngineIconUrl,
+          });
+          refreshTooltipState();
+        },
+      );
     }
 
     /**
@@ -132,13 +137,20 @@ export default defineContentScript({
           agentBridge: ensureBridge(),
           placeholder: 'Ask about this page…',
           maxRecentMessages: 10,
+          onSessionChange: () => {
+            refreshBranding();
+          },
           onExpandedChange: (expanded) => {
             if (pendingDeleteTimer) {
               clearTimeout(pendingDeleteTimer);
               pendingDeleteTimer = null;
             }
 
-            if (expanded) return;
+            if (expanded) {
+              refreshBranding();
+              refreshTooltipState();
+              return;
+            }
 
             // Only delete a persisted session after persistence is toggled OFF and the launcher collapses.
             if (!pendingDeleteSessionId) return;
@@ -212,10 +224,44 @@ export default defineContentScript({
       }
 
       const platformLabel = platformLabelFromUrl(location.href);
+      const activeSessionId = launcher?.getActiveSessionId?.() || null;
+      const messageCount = launcher?.exportTranscript?.()?.length ?? 0;
+      const canConfigureEngine =
+        !!activeSessionId && launcher?.isQuickSession?.() === true && messageCount === 0;
 
       floatingIcon.setTooltipState({
         platformLabel,
         persistEnabled,
+        engineName: currentEngineName,
+        engineDisplayName: currentEngineDisplayName,
+        onSetEngine: canConfigureEngine
+          ? (nextEngineName) => {
+              void (async () => {
+                const resp = await ensureBridge().setSessionEngine({
+                  sessionId: activeSessionId,
+                  engineName: nextEngineName as any,
+                });
+
+                if (!resp.success) {
+                  floatingIcon?.showDialog({
+                    kind: 'error',
+                    title: 'Switch Engine',
+                    message: resp.error || 'Failed to switch engine',
+                  });
+                  return;
+                }
+
+                currentEngineName = resp.engineName;
+                currentEngineDisplayName = resp.engineDisplayName;
+                currentEngineIconUrl = resp.brandIconUrl;
+                launcher?.setBranding({
+                  engineDisplayName: currentEngineDisplayName,
+                  brandIconUrl: currentEngineIconUrl,
+                });
+                refreshTooltipState();
+              })();
+            }
+          : undefined,
         onSaveChat: platformLabel
           ? () => {
               void chrome.runtime

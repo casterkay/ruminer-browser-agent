@@ -38,6 +38,7 @@ import {
   type QuickPanelActivateSessionResponse,
   type QuickPanelCancelAIResponse,
   type QuickPanelDeleteSessionResponse,
+  type QuickPanelGetBrandingResponse,
   type QuickPanelOpenSidepanelPayload,
   type QuickPanelOpenSidepanelResponse,
   type QuickPanelOpenSessionPayload,
@@ -46,6 +47,8 @@ import {
   type QuickPanelPersistSessionResponse,
   type QuickPanelSendToAIPayload,
   type QuickPanelSendToAIResponse,
+  type QuickPanelSetSessionEnginePayload,
+  type QuickPanelSetSessionEngineResponse,
 } from '@/common/message-types';
 
 // ============================================================
@@ -377,6 +380,51 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to persist session' };
+    }
+  }
+
+  /**
+   * Resolve engine branding for a session (or default branding when no sessionId is provided).
+   */
+  async getBranding(payload?: { sessionId?: string }): Promise<QuickPanelGetBrandingResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_BRANDING,
+        payload,
+      });
+      return response as QuickPanelGetBrandingResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to resolve branding' };
+    }
+  }
+
+  /**
+   * Set engine for an ephemeral Quick Panel session.
+   */
+  async setSessionEngine(
+    payload: QuickPanelSetSessionEnginePayload,
+  ): Promise<QuickPanelSetSessionEngineResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+    if (!sessionId) return { success: false, error: 'sessionId is required' };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_SET_SESSION_ENGINE,
+        payload: { ...payload, sessionId },
+      });
+      return response as QuickPanelSetSessionEngineResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to set session engine' };
     }
   }
 
