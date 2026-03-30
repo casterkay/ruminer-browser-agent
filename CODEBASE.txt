@@ -390,6 +390,8 @@ app/
 │   │   │   ├── project-service.ts
 │   │   │   ├── project-types.ts
 │   │   │   ├── session-service.ts
+│   │   │   ├── sessions-stream-events.ts
+│   │   │   ├── sessions-stream-manager.ts
 │   │   │   ├── storage.ts
 │   │   │   ├── stream-manager.ts
 │   │   │   ├── tool-bridge.ts
@@ -455,4 +457,4 @@ app/
         │   └── check-versions.js
         └── tsconfig.json
 
-99 directories, 332 files
+99 directories, 334 files

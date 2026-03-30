@@ -19,6 +19,7 @@ import {
   touchSessionActivity,
   type AgentSession,
 } from './session-service';
+import { publishSessionUpdated } from './sessions-stream-events';
 import { attachmentService, type SavedAttachment } from './attachment-service';
 import {
   getEphemeralSessionState,
@@ -249,6 +250,7 @@ export class AgentChatService {
         // Update session activity timestamp so it appears at top of session list
         if (dbSessionId) {
           await touchSessionActivity(dbSessionId);
+          publishSessionUpdated({ sessionId: dbSessionId, updatedAt: new Date().toISOString() });
         }
         await persistAgentMessage({
           projectId,
@@ -319,6 +321,19 @@ export class AgentChatService {
           }).catch((error) => {
             console.error('[AgentChatService] Failed to persist agent message:', error);
           });
+
+          if (dbSessionId) {
+            void touchSessionActivity(dbSessionId)
+              .then(() => {
+                publishSessionUpdated({
+                  sessionId: dbSessionId,
+                  updatedAt: new Date().toISOString(),
+                });
+              })
+              .catch(() => {
+                publishSessionUpdated({ sessionId: dbSessionId });
+              });
+          }
         }
       },
       // Callback to persist Claude session ID when SDK returns system/init message

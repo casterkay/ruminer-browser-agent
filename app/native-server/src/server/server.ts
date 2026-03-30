@@ -23,6 +23,8 @@ import {
   runWithMcpToolTelemetryContext,
   setMcpToolTelemetryStreamManager,
 } from '../agent/mcp-tool-telemetry';
+import { setSessionsStreamManager } from '../agent/sessions-stream-events';
+import { AgentSessionsStreamManager } from '../agent/sessions-stream-manager';
 import { AgentStreamManager } from '../agent/stream-manager';
 import {
   ERROR_MESSAGES,
@@ -54,12 +56,15 @@ export class Server {
   private transportsMap: Map<string, StreamableHTTPServerTransport | SSEServerTransport> =
     new Map();
   private agentStreamManager: AgentStreamManager;
+  private agentSessionsStreamManager: AgentSessionsStreamManager;
   private agentChatService: AgentChatService;
 
   constructor() {
     this.fastify = Fastify({ logger: SERVER_CONFIG.LOGGER_ENABLED });
     this.agentStreamManager = new AgentStreamManager();
+    this.agentSessionsStreamManager = new AgentSessionsStreamManager();
     setMcpToolTelemetryStreamManager(this.agentStreamManager);
+    setSessionsStreamManager(this.agentSessionsStreamManager);
     this.agentChatService = new AgentChatService({
       engines: [new OpenClawEngine(), new CodexEngine(), new ClaudeEngine()],
       streamManager: this.agentStreamManager,
@@ -103,6 +108,7 @@ export class Server {
     // Agent routes (delegated to separate module)
     registerAgentRoutes(this.fastify, {
       streamManager: this.agentStreamManager,
+      sessionsStreamManager: this.agentSessionsStreamManager,
       chatService: this.agentChatService,
     });
 
@@ -377,11 +383,15 @@ export class Server {
     }
 
     try {
+      this.agentStreamManager.closeAll();
+      this.agentSessionsStreamManager.closeAll();
       await this.fastify.close();
       closeDb();
       this.isRunning = false;
     } catch (err) {
       this.isRunning = false;
+      this.agentStreamManager.closeAll();
+      this.agentSessionsStreamManager.closeAll();
       closeDb();
       throw err;
     }

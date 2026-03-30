@@ -2140,6 +2140,9 @@ onMounted(async () => {
   await server.initialize();
 
   if (server.isServerReady.value) {
+    // Keep sessions list reactive (global sessions SSE stream)
+    sessions.openSessionsStream();
+
     // Ensure default project exists and load projects
     await projects.ensureDefaultProject();
     await projects.fetchProjects();
@@ -2210,6 +2213,12 @@ onMounted(async () => {
 watch(
   () => server.isServerReady.value,
   async (ready) => {
+    if (ready) {
+      sessions.openSessionsStream();
+    } else {
+      sessions.closeSessionsStream();
+    }
+
     if (ready && projects.projects.value.length === 0) {
       await projects.ensureDefaultProject();
       await projects.fetchProjects();
@@ -2277,6 +2286,7 @@ onUnmounted(() => {
   chrome.runtime.onMessage.removeListener(handleSessionsInvalidateMessage);
   window.removeEventListener(AGENT_CHAT_NAVIGATE_EVENT, handleNavigateSessionEvent);
   emosSuggestions.clear();
+  sessions.closeSessionsStream();
   if (toastTimer) {
     clearTimeout(toastTimer);
     toastTimer = null;

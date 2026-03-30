@@ -69,6 +69,21 @@ export type RealtimeEvent =
   | { type: 'heartbeat'; data: AgentHeartbeatEvent }
   | { type: 'usage'; data: AgentUsageStats };
 
+/**
+ * Global sessions stream events (not scoped to a single session chat stream).
+ *
+ * Used by the sidepanel to keep the sessions list reactive without refetching.
+ */
+export type AgentSessionsStreamEvent =
+  | { type: 'connected'; data: { transport: StreamTransport; timestamp: string } }
+  | { type: 'heartbeat'; data: AgentHeartbeatEvent }
+  | { type: 'session.created'; data: { session: AgentSession } }
+  | {
+      type: 'session.updated';
+      data: { sessionId: string; updatedAt?: string; session?: AgentSession };
+    }
+  | { type: 'session.deleted'; data: { sessionId: string; projectId?: string } };
+
 // ============================================================
 // HTTP API Contracts
 // ============================================================

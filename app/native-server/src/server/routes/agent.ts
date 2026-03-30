@@ -78,13 +78,21 @@ import {
   getSession,
   getSessionsByProject,
   getSessionsByProjectAndEngine,
+  touchSessionActivity,
   updateSession,
   upsertIngestedConversationSession,
   type CreateSessionOptions,
   type UpdateSessionInput,
 } from '../../agent/session-service';
+import type { AgentSessionsStreamEvent } from 'chrome-mcp-shared';
+import {
+  publishSessionCreated,
+  publishSessionDeleted,
+  publishSessionUpdated,
+} from '../../agent/sessions-stream-events';
 import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/storage';
 import { AgentStreamManager } from '../../agent/stream-manager';
+import { AgentSessionsStreamManager } from '../../agent/sessions-stream-manager';
 import type {
   AgentActRequest,
   AgentActResponse,
@@ -170,6 +178,7 @@ function isValidOpenTarget(target: string): target is OpenProjectTarget {
 
 export interface AgentRoutesOptions {
   streamManager: AgentStreamManager;
+  sessionsStreamManager: AgentSessionsStreamManager;
   chatService: AgentChatService;
 }
 
@@ -181,7 +190,7 @@ export interface AgentRoutesOptions {
  * Register all agent-related routes on the Fastify instance.
  */
 export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRoutesOptions): void {
-  const { streamManager, chatService } = options;
+  const { streamManager, sessionsStreamManager, chatService } = options;
 
   // ============================================================
   // Engine Routes
@@ -880,6 +889,34 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
     }
   });
 
+  // Global sessions list streaming (SSE)
+  fastify.get('/agent/sessions/stream', async (_request, reply) => {
+    try {
+      reply.raw.writeHead(HTTP_STATUS.OK, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+
+      reply.raw.write(':\n\n');
+      sessionsStreamManager.addSseStream(reply.raw);
+
+      const connectedEvent: AgentSessionsStreamEvent = {
+        type: 'connected',
+        data: { transport: 'sse', timestamp: new Date().toISOString() },
+      };
+      sessionsStreamManager.publish(connectedEvent);
+
+      reply.raw.on('close', () => {
+        sessionsStreamManager.removeSseStream(reply.raw);
+      });
+    } catch {
+      if (!reply.sent) {
+        reply.code(HTTP_STATUS.INTERNAL_SERVER_ERROR).send(ERROR_MESSAGES.INTERNAL_SERVER_ERROR);
+      }
+    }
+  });
+
   // List sessions for a project
   fastify.get(
     '/agent/projects/:projectId/sessions',
@@ -944,6 +981,11 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
           systemPromptConfig: body.systemPromptConfig,
           optionsConfig: body.optionsConfig,
         });
+        try {
+          publishSessionCreated(session as any);
+        } catch {
+          // ignore
+        }
         return reply.status(HTTP_STATUS.CREATED).send({ session });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1005,11 +1047,16 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         const desiredName = typeof request.body?.name === 'string' ? request.body.name.trim() : '';
 
         if (!existing) {
-          await createSession(projectId, engineName, {
+          const created = await createSession(projectId, engineName, {
             id,
             name: desiredName || `Quick Chat (${engineName})`,
             engineSessionId: state?.claudeSessionId,
           });
+          try {
+            publishSessionCreated(created as any);
+          } catch {
+            // ignore
+          }
         } else {
           const patch: UpdateSessionInput = {};
           if (desiredName && !existing.name) patch.name = desiredName;
@@ -1018,6 +1065,13 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
           }
           if (Object.keys(patch).length > 0) {
             await updateSession(id, patch);
+            try {
+              const updated = await getSession(id);
+              if (updated) publishSessionUpdated({ sessionId: id, session: updated as any });
+              else publishSessionUpdated({ sessionId: id });
+            } catch {
+              publishSessionUpdated({ sessionId: id });
+            }
           }
         }
 
@@ -1053,6 +1107,19 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
             requestId: typeof msg.requestId === 'string' ? msg.requestId : undefined,
             createdAt,
           });
+        }
+
+        // Touch session ordering after transcript backfill.
+        await touchSessionActivity(id);
+        try {
+          const updatedSession = await getSession(id);
+          publishSessionUpdated({
+            sessionId: id,
+            updatedAt: updatedSession?.updatedAt,
+            session: updatedSession ? (updatedSession as any) : undefined,
+          });
+        } catch {
+          publishSessionUpdated({ sessionId: id });
         }
 
         if (state) clearEphemeralSessionState(id);
@@ -1119,6 +1186,12 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
 
         await updateSession(sessionId, updates);
         const updated = await getSession(sessionId);
+        try {
+          if (updated) publishSessionUpdated({ sessionId, session: updated as any });
+          else publishSessionUpdated({ sessionId });
+        } catch {
+          // ignore
+        }
         return reply.status(HTTP_STATUS.OK).send({ session: updated });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1140,8 +1213,14 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       }
 
       try {
+        const existing = await getSession(sessionId).catch(() => undefined);
         await deleteSession(sessionId);
         clearEphemeralSessionState(sessionId);
+        try {
+          publishSessionDeleted({ sessionId, projectId: existing?.projectId });
+        } catch {
+          // ignore
+        }
         return reply.status(HTTP_STATUS.NO_CONTENT).send();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1227,6 +1306,12 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         await updateSession(sessionId, { engineSessionId: null });
         const deletedMessages = await deleteMessagesBySessionId(sessionId);
         const updated = await getSession(sessionId);
+        try {
+          if (updated) publishSessionUpdated({ sessionId, session: updated as any });
+          else publishSessionUpdated({ sessionId });
+        } catch {
+          // ignore
+        }
 
         return reply.status(HTTP_STATUS.OK).send({
           success: true,
@@ -1633,6 +1718,18 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
           id: body.id,
           createdAt: body.createdAt,
         });
+
+        if (stored.sessionId) {
+          try {
+            await touchSessionActivity(stored.sessionId);
+            publishSessionUpdated({
+              sessionId: stored.sessionId,
+              updatedAt: new Date().toISOString(),
+            });
+          } catch {
+            publishSessionUpdated({ sessionId: stored.sessionId });
+          }
+        }
 
         reply.status(HTTP_STATUS.CREATED).send({ success: true, data: stored });
       } catch (error) {

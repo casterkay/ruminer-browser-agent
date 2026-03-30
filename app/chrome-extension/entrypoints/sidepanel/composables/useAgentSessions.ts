@@ -6,6 +6,7 @@
 import type {
   AgentManagementInfo,
   AgentSession,
+  AgentSessionsStreamEvent,
   AgentStoredMessage,
   CreateAgentSessionInput,
   UpdateAgentSessionInput,
@@ -30,6 +31,10 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
   const isLoadingAllSessions = ref(false);
   const isCreatingSession = ref(false);
   const sessionError = ref<string | null>(null);
+
+  // Global sessions list SSE stream
+  const sessionsStream = ref<EventSource | null>(null);
+  let sessionsStreamPort: number | null = null;
 
   // Computed
   const selectedSession = computed(() => {
@@ -163,6 +168,117 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
       sessionError.value = error instanceof Error ? error.message : 'Failed to fetch sessions';
     } finally {
       isLoadingAllSessions.value = false;
+    }
+  }
+
+  function sortByUpdatedAtDesc(list: AgentSession[]): AgentSession[] {
+    return [...list].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  }
+
+  function upsertAllSessions(next: AgentSession): void {
+    const idx = allSessions.value.findIndex((s) => s.id === next.id);
+    if (idx >= 0) {
+      allSessions.value[idx] = { ...allSessions.value[idx], ...next };
+    } else {
+      allSessions.value.unshift(next);
+    }
+    allSessions.value = sortByUpdatedAtDesc(allSessions.value);
+  }
+
+  function applySessionsStreamEvent(event: AgentSessionsStreamEvent): void {
+    if (!event || typeof event !== 'object') return;
+
+    if (event.type === 'session.created') {
+      const session = (event as any).data?.session as AgentSession | undefined;
+      if (!session?.id) return;
+      upsertAllSessions(session);
+      return;
+    }
+
+    if (event.type === 'session.updated') {
+      const data = (event as any).data as
+        | { sessionId?: string; updatedAt?: string; session?: AgentSession }
+        | undefined;
+      const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
+      if (!sessionId) return;
+
+      const session = data?.session;
+      if (session?.id) {
+        upsertAllSessions(session);
+      } else if (typeof data?.updatedAt === 'string' && data.updatedAt) {
+        const idx = allSessions.value.findIndex((s) => s.id === sessionId);
+        if (idx >= 0) {
+          allSessions.value[idx] = { ...allSessions.value[idx], updatedAt: data.updatedAt };
+          allSessions.value = sortByUpdatedAtDesc(allSessions.value);
+        }
+      }
+
+      // Best-effort: keep current-project sessions in sync only if present.
+      const localIdx = sessions.value.findIndex((s) => s.id === sessionId);
+      if (localIdx >= 0) {
+        if (session?.id) sessions.value[localIdx] = { ...sessions.value[localIdx], ...session };
+        else if (typeof data?.updatedAt === 'string' && data.updatedAt) {
+          sessions.value[localIdx] = { ...sessions.value[localIdx], updatedAt: data.updatedAt };
+        }
+      }
+      return;
+    }
+
+    if (event.type === 'session.deleted') {
+      const data = (event as any).data as { sessionId?: string } | undefined;
+      const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : '';
+      if (!sessionId) return;
+      allSessions.value = allSessions.value.filter((s) => s.id !== sessionId);
+      sessions.value = sessions.value.filter((s) => s.id !== sessionId);
+      if (selectedSessionId.value === sessionId) {
+        selectedSessionId.value = sessions.value[0]?.id || '';
+        void saveSelectedSessionId();
+      }
+    }
+  }
+
+  function closeSessionsStream(): void {
+    if (sessionsStream.value) {
+      try {
+        sessionsStream.value.close();
+      } catch {
+        // ignore
+      }
+    }
+    sessionsStream.value = null;
+    sessionsStreamPort = null;
+  }
+
+  function openSessionsStream(): void {
+    const serverPort = options.getServerPort();
+    if (!serverPort) return;
+
+    // Already connected to this port.
+    if (sessionsStream.value && sessionsStreamPort === serverPort) return;
+
+    closeSessionsStream();
+    sessionsStreamPort = serverPort;
+
+    try {
+      const url = `http://127.0.0.1:${serverPort}/agent/sessions/stream`;
+      const es = new EventSource(url);
+      es.onmessage = (e) => {
+        try {
+          const parsed = JSON.parse(e.data) as AgentSessionsStreamEvent;
+          applySessionsStreamEvent(parsed);
+        } catch {
+          // ignore
+        }
+      };
+      es.onerror = () => {
+        // Browser EventSource will auto-retry; keep the instance.
+      };
+      sessionsStream.value = es;
+    } catch (error) {
+      console.error('Failed to open sessions stream:', error);
+      closeSessionsStream();
     }
   }
 
@@ -507,6 +623,8 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     clearSelectedSession,
     fetchSessions,
     fetchAllSessions,
+    openSessionsStream,
+    closeSessionsStream,
     createSession,
     getSession,
     updateSession,
