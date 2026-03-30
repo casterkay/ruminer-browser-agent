@@ -135,7 +135,7 @@ const activeHostname = ref<string>('');
 
 const workflows = useWorkflowsV3({
   autoConnect: true,
-  autoRefreshMs: 10_000,
+  autoRefreshMs: 1_000,
 });
 
 const workflowRefreshing = ref(false);

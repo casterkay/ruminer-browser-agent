@@ -58,6 +58,12 @@ const STORAGE_KEY_SELECTED_PROJECT = 'agent-selected-project-id';
 
 const STORAGE_KEY_QP_PERSIST_ENABLED = 'quick-panel-persist-enabled';
 
+/**
+ * Runtime message used to prompt sidepanel UI to refresh session lists.
+ * Sidepanel listens in `AgentChat.vue`.
+ */
+const RUNTIME_MESSAGE_SESSIONS_INVALIDATE = 'ruminer.agent.sessions.invalidate';
+
 /** Number of messages to return to the launcher on expand. */
 const QUICK_PANEL_RECENT_MESSAGES_LIMIT = 12;
 
@@ -211,6 +217,19 @@ function sleep(ms: number): Promise<void> {
 
 function isTerminalStatus(status: string): boolean {
   return status === 'completed' || status === 'error' || status === 'cancelled';
+}
+
+function notifySessionsInvalidated(): void {
+  try {
+    const maybePromise = chrome.runtime.sendMessage({
+      type: RUNTIME_MESSAGE_SESSIONS_INVALIDATE,
+    });
+    if (maybePromise && typeof (maybePromise as any).catch === 'function') {
+      (maybePromise as any).catch(() => undefined);
+    }
+  } catch {
+    // ignore
+  }
 }
 
 // ============================================================
@@ -789,6 +808,7 @@ async function handleSendToAI(
   // Persisted mode: ensure DB session exists for this quick session id.
   // For non-quick sessions, persistence is always on and sessions must already exist.
   const shouldPersist = !isQuickSession || persistEnabled;
+  let createdPersistedSession = false;
   if (isQuickSession && shouldPersist && !sessionExists) {
     // Try materializing from ephemeral server-side state first (captures claude resume state).
     const persistUrl = `http://127.0.0.1:${port}/agent/ephemeral-sessions/${encodeURIComponent(effectiveSessionId)}/persist`;
@@ -804,6 +824,7 @@ async function handleSendToAI(
         effectiveSessionId = persistedSessionId;
       }
       sessionExists = true;
+      createdPersistedSession = true;
     } else {
       const created = await createSessionForProject({
         port,
@@ -815,6 +836,7 @@ async function handleSendToAI(
       if (created?.id) {
         effectiveSessionId = created.id;
         sessionExists = true;
+        createdPersistedSession = true;
       } else {
         sessionExists = false;
       }
@@ -827,6 +849,10 @@ async function handleSendToAI(
 
   const persistence: 'ephemeral' | 'persisted' = shouldPersist ? 'persisted' : 'ephemeral';
   const dbSessionId = shouldPersist && sessionExists ? effectiveSessionId : undefined;
+
+  if (createdPersistedSession) {
+    notifySessionsInvalidated();
+  }
 
   // Create request state
   const requestId = createRequestId();
@@ -1022,6 +1048,7 @@ async function handleDeleteSession(
     return { success: false, error: msg || 'Failed to delete session' };
   }
 
+  notifySessionsInvalidated();
   return { success: true };
 }
 
@@ -1064,6 +1091,7 @@ async function handlePersistSession(
       return { success: false, error: text || `HTTP ${resp.status}` };
     }
 
+    notifySessionsInvalidated();
     return { success: true, sessionId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

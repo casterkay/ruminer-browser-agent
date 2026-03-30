@@ -12,6 +12,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ## Misc Issues
 
+- [ ] ChatGPT scan workflow progress is stuck at 0%.
 - [ ] Gemini user message needs to be expanded to get full content.
 - [ ] Use openclaw workspace as project dir for openclaw engine.
 - [ ] Attached images are not read by agent.
