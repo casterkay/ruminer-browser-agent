@@ -93,6 +93,76 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms))));
 }
 
+class CancelGraceTimeoutError extends Error {
+  graceMs: number;
+
+  constructor(graceMs: number) {
+    super(`Cancellation grace timeout exceeded (${graceMs}ms)`);
+    this.name = 'CancelGraceTimeoutError';
+    this.graceMs = graceMs;
+  }
+}
+
+function isCancelGraceTimeoutError(err: unknown): err is CancelGraceTimeoutError {
+  return err instanceof CancelGraceTimeoutError;
+}
+
+function createCancelGraceTimeout(
+  runId: string,
+  graceMs: number,
+): {
+  race: <T>(promise: Promise<T>) => Promise<T>;
+  dispose: () => void;
+} {
+  const rid = String(runId || '').trim();
+  const grace = clampInt(Number.isFinite(graceMs) ? graceMs : 0, 0, 60_000);
+
+  let disposed = false;
+  let armed = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let graceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let rejectFn: ((err: unknown) => void) | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    rejectFn = reject;
+  });
+
+  function armIfCanceled(): void {
+    if (disposed || armed) return;
+    if (!rid) return;
+    if (!isCancelRequested(rid as any)) return;
+    armed = true;
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    graceTimer = setTimeout(() => {
+      if (disposed) return;
+      rejectFn?.(new CancelGraceTimeoutError(grace));
+    }, grace);
+  }
+
+  // Poll for cancellation so in-flight awaits can be cut short.
+  pollTimer = setInterval(armIfCanceled, 100);
+  armIfCanceled();
+
+  function race<T>(promise: Promise<T>): Promise<T> {
+    armIfCanceled();
+    return Promise.race([promise, timeoutPromise]);
+  }
+
+  function dispose(): void {
+    disposed = true;
+    if (pollTimer) clearInterval(pollTimer);
+    if (graceTimer) clearTimeout(graceTimer);
+    pollTimer = null;
+    graceTimer = null;
+    rejectFn = null;
+  }
+
+  return { race, dispose };
+}
+
 async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
   const ms = Math.max(0, Math.floor(timeoutMs));
   if (ms === 0) return;
@@ -662,6 +732,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
     const listPageSize = clampInt(node.config.listPageSize, 1, 500);
 
     const runsStore = createRunsStore();
+    const cancelGrace = createCancelGraceTimeout(ctx.runId, 3_000);
 
     try {
       await registerAutomationTab({ tabId, runId: ctx.runId });
@@ -681,6 +752,9 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
     let phase: 'scan' | 'ingest' = 'scan';
     let ingestProcessed = 0;
     const scanned: ScannedConversation[] = [];
+    let ingested = 0;
+    let skipped = 0;
+    let failed = 0;
 
     function onStepCompleted(): void {
       const now = Date.now();
@@ -707,18 +781,20 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       const percent =
         total > 0 ? clampInt((finished / total) * 100, 0, 100) : phase === 'ingest' ? 100 : 0;
       const estimatedTotalMs = computeEstimatedTotalMs(now);
-      await emitter.emit(
-        {
-          runId: ctx.runId,
-          platform,
-          status: paused ? 'paused' : 'running',
-          percent,
-          finished,
-          total,
-          elapsedMs: now - runStartedAt,
-          estimatedTotalMs,
-        },
-        opts,
+      await cancelGrace.race(
+        emitter.emit(
+          {
+            runId: ctx.runId,
+            platform,
+            status: paused ? 'paused' : 'running',
+            percent,
+            finished,
+            total,
+            elapsedMs: now - runStartedAt,
+            estimatedTotalMs,
+          },
+          opts,
+        ),
       );
 
       structuredLogger.emit({
@@ -753,28 +829,31 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
         if (!isPaused) return true;
 
-        await sleep(250);
+        await cancelGrace.race(sleep(250));
       }
     }
 
     try {
-      await emitter.emit(
-        {
-          runId: ctx.runId,
-          platform,
-          status: 'running',
-          percent: 0,
-          finished: 0,
-          total: 0,
-          elapsedMs: 0,
-          estimatedTotalMs: null,
-        },
-        { force: true },
+      await cancelGrace.race(
+        emitter.emit(
+          {
+            runId: ctx.runId,
+            platform,
+            status: 'running',
+            percent: 0,
+            finished: 0,
+            total: 0,
+            elapsedMs: 0,
+            estimatedTotalMs: null,
+          },
+          { force: true },
+        ),
       );
 
       try {
-        await chrome.tabs.update(tabId, { url: platformHomeUrl(platform) });
+        await cancelGrace.race(chrome.tabs.update(tabId, { url: platformHomeUrl(platform) }));
       } catch (e) {
+        if (isCancelGraceTimeoutError(e)) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         return toErrorResult(RR_ERROR_CODES.NAVIGATION_FAILED, `Failed to open platform: ${msg}`, {
           error: msg,
@@ -786,8 +865,9 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       await waitForTabComplete(tabId, 15_000).catch(() => undefined);
 
       try {
-        await ensureScanRpcInjected(tabId, platform);
+        await cancelGrace.race(ensureScanRpcInjected(tabId, platform));
       } catch (e) {
+        if (isCancelGraceTimeoutError(e)) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan script inject failed: ${msg}`, {
           error: msg,
@@ -798,9 +878,10 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       // ===== Load entire ledger into memory (no mutation) =====
       let ledgerByGroupId: Map<string, ConversationLedgerEntry>;
       try {
-        const all = await listConversationEntries();
+        const all = await cancelGrace.race(listConversationEntries());
         ledgerByGroupId = new Map(all.map((e) => [e.group_id, e]));
       } catch (e) {
+        if (isCancelGraceTimeoutError(e)) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         return toErrorResult(
           RR_ERROR_CODES.INTERNAL,
@@ -824,13 +905,15 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               aborted = true;
               break;
             }
-            const list = await callListConversations(tabId, platform, {
-              offset,
-              limit: listPageSize,
-            });
+            const list = await cancelGrace.race(
+              callListConversations(tabId, platform, {
+                offset,
+                limit: listPageSize,
+              }),
+            );
             if (list.items.length > 0) allConversations.push(...list.items);
             await emitProgress();
-            if (listThrottleMs > 0) await sleep(listThrottleMs);
+            if (listThrottleMs > 0) await cancelGrace.race(sleep(listThrottleMs));
             if (list.nextOffset === null) break;
             offset = list.nextOffset;
           }
@@ -858,6 +941,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           // No-op: scanTotal is implicitly `scanned.length`.
         }
       } catch (e) {
+        if (isCancelGraceTimeoutError(e)) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         return toErrorResult(
           RR_ERROR_CODES.SCRIPT_FAILED,
@@ -901,19 +985,21 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               continue;
             }
 
-            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+            if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
 
-            const conv = await callConversationMessages(tabId, platform, {
-              conversationId: c.conversationId,
-              conversationUrl: c.conversationUrl,
-            });
+            const conv = await cancelGrace.race(
+              callConversationMessages(tabId, platform, {
+                conversationId: c.conversationId,
+                conversationUrl: c.conversationUrl,
+              }),
+            );
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
               const rawIsEmpty =
                 Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
               if (rawIsEmpty) {
-                const digest = await emptyConversationDigest();
+                const digest = await cancelGrace.race(emptyConversationDigest());
                 const messageCount = 0;
 
                 // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
@@ -934,7 +1020,9 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               );
             }
 
-            const { digest, messageCount } = await computeConversationDigestFromMessages(messages);
+            const { digest, messageCount } = await cancelGrace.race(
+              computeConversationDigestFromMessages(messages),
+            );
 
             if (shouldStopScan(entry, digest)) {
               break;
@@ -960,14 +1048,16 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               break;
             }
 
-            let list = await callListConversations(tabId, platform, {
-              offset,
-              limit: listPageSize,
-            });
+            let list = await cancelGrace.race(
+              callListConversations(tabId, platform, {
+                offset,
+                limit: listPageSize,
+              }),
+            );
             let items = list.items;
 
             if (items.length === 0 && offset === 0) {
-              const dom0 = await collectDomDiagnostics(tabId);
+              const dom0 = await cancelGrace.race(collectDomDiagnostics(tabId));
               const shouldRetryForLoadingUi =
                 dom0 !== null &&
                 dom0.counts.anchors === 0 &&
@@ -983,11 +1073,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                     aborted = true;
                     break;
                   }
-                  await sleep(500);
-                  list = await callListConversations(tabId, platform, {
-                    offset,
-                    limit: listPageSize,
-                  });
+                  await cancelGrace.race(sleep(500));
+                  list = await cancelGrace.race(
+                    callListConversations(tabId, platform, {
+                      offset,
+                      limit: listPageSize,
+                    }),
+                  );
                   items = list.items;
                   if (items.length > 0) break;
                 }
@@ -996,8 +1088,8 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               if (aborted) break;
 
               if (items.length === 0) {
-                const probe = await probeScanApi(tabId);
-                const dom = dom0 ?? (await collectDomDiagnostics(tabId));
+                const probe = await cancelGrace.race(probeScanApi(tabId));
+                const dom = dom0 ?? (await cancelGrace.race(collectDomDiagnostics(tabId)));
                 const diag = { probe, dom };
                 throw new Error(
                   `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
@@ -1029,19 +1121,21 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 continue;
               }
 
-              if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+              if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
 
-              const conv = await callConversationMessages(tabId, platform, {
-                conversationId: c.conversationId,
-                conversationUrl: c.conversationUrl,
-              });
+              const conv = await cancelGrace.race(
+                callConversationMessages(tabId, platform, {
+                  conversationId: c.conversationId,
+                  conversationUrl: c.conversationUrl,
+                }),
+              );
 
               const messages = normalizeConversationMessages(conv.messages);
               if (messages.length === 0) {
                 const rawIsEmpty =
                   Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
                 if (rawIsEmpty) {
-                  const digest = await emptyConversationDigest();
+                  const digest = await cancelGrace.race(emptyConversationDigest());
                   const messageCount = 0;
 
                   // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
@@ -1057,8 +1151,8 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                   continue;
                 }
 
-                const probe = await probeScanApi(tabId);
-                const dom = await collectDomDiagnostics(tabId);
+                const probe = await cancelGrace.race(probeScanApi(tabId));
+                const dom = await cancelGrace.race(collectDomDiagnostics(tabId));
                 throw new Error(
                   `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
                     conv.conversationUrl || c.conversationUrl || '',
@@ -1066,8 +1160,9 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 );
               }
 
-              const { digest, messageCount } =
-                await computeConversationDigestFromMessages(messages);
+              const { digest, messageCount } = await cancelGrace.race(
+                computeConversationDigestFromMessages(messages),
+              );
 
               if (shouldStopScan(entry, digest)) {
                 stop = true;
@@ -1089,12 +1184,13 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             if (stop) break;
 
             await emitProgress();
-            if (listThrottleMs > 0) await sleep(listThrottleMs);
+            if (listThrottleMs > 0) await cancelGrace.race(sleep(listThrottleMs));
             if (list.nextOffset === null) break;
             offset = list.nextOffset;
           }
         }
       } catch (e) {
+        if (isCancelGraceTimeoutError(e)) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         // Scan failures must fail the entire workflow immediately (no ledger writes).
         return toErrorResult(RR_ERROR_CODES.SCRIPT_FAILED, `Scan failed: ${msg}`, {
@@ -1121,10 +1217,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
       ingestProcessed = 0;
       await emitProgress({ force: true });
 
-      let ingested = 0;
-      let skipped = 0;
-      let failed = 0;
-
       for (let i = scanned.length - 1; i >= 0; i--) {
         if (!(await cooperativeGate())) {
           aborted = true;
@@ -1137,23 +1229,25 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         try {
           // Only fetch + digest if not already cached in the scan phase.
           if (!item.snapshot) {
-            if (digestThrottleMs > 0) await sleep(digestThrottleMs);
+            if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
 
-            const conv = await callConversationMessages(tabId, platform, {
-              conversationId: item.conversationId,
-              conversationUrl: item.conversationUrl,
-            });
+            const conv = await cancelGrace.race(
+              callConversationMessages(tabId, platform, {
+                conversationId: item.conversationId,
+                conversationUrl: item.conversationUrl,
+              }),
+            );
 
             const messages = normalizeConversationMessages(conv.messages);
             if (messages.length === 0) {
               const rawIsEmpty =
                 Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
               if (rawIsEmpty) {
-                const digest = await emptyConversationDigest();
+                const digest = await cancelGrace.race(emptyConversationDigest());
                 item.snapshot = { messages: [], digest, messageCount: 0 };
               } else {
-                const probe = await probeScanApi(tabId);
-                const dom = await collectDomDiagnostics(tabId);
+                const probe = await cancelGrace.race(probeScanApi(tabId));
+                const dom = await cancelGrace.race(collectDomDiagnostics(tabId));
                 throw new Error(
                   `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
                     conv.conversationUrl || item.conversationUrl || '',
@@ -1163,7 +1257,9 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             }
 
             if (!item.snapshot) {
-              const computed = await computeConversationDigestFromMessages(messages);
+              const computed = await cancelGrace.race(
+                computeConversationDigestFromMessages(messages),
+              );
               item.snapshot = {
                 messages,
                 digest: computed.digest,
@@ -1184,20 +1280,22 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           } else if (!existing || !digestsMatch || needsSessionSaveRetry) {
             // Always ingest the full conversation to keep downstream session storage consistent.
             // (Suffix-only ingest can corrupt native-server session message indices.)
-            const ingestResp = await ruminerIngestConversation({
-              platform,
-              conversationId: item.conversationId,
-              runId: ctx.runId,
-              messageCount,
-              conversationTitle: item.conversationTitle,
-              conversationUrl: item.conversationUrl,
-              messages: messages.map((m) => ({
-                role: m.role,
-                content: m.content,
-                ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
-                ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
-              })),
-            });
+            const ingestResp = await cancelGrace.race(
+              ruminerIngestConversation({
+                platform,
+                conversationId: item.conversationId,
+                runId: ctx.runId,
+                messageCount,
+                conversationTitle: item.conversationTitle,
+                conversationUrl: item.conversationUrl,
+                messages: messages.map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                  ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
+                  ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
+                })),
+              }),
+            );
 
             if (!isRecord(ingestResp) || (ingestResp as any).ok !== true) {
               const err =
@@ -1214,7 +1312,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 conversationTitle: item.conversationTitle,
                 error: err,
               });
-              await upsertConversationEntry(nextFailed);
+              await cancelGrace.race(upsertConversationEntry(nextFailed));
               ledgerByGroupId.set(item.groupId, nextFailed);
               failed += 1;
               structuredLogger.emit({
@@ -1266,7 +1364,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               ...(sessionSaveOk !== null ? { sessionSaveOk } : {}),
               ...(sessionSaveError !== null ? { sessionSaveError } : {}),
             });
-            await upsertConversationEntry(nextOk);
+            await cancelGrace.race(upsertConversationEntry(nextOk));
             ledgerByGroupId.set(item.groupId, nextOk);
             continue;
           } else {
@@ -1284,9 +1382,10 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             digest,
             messageCount,
           });
-          await upsertConversationEntry(nextOk);
+          await cancelGrace.race(upsertConversationEntry(nextOk));
           ledgerByGroupId.set(item.groupId, nextOk);
         } catch (e) {
+          if (isCancelGraceTimeoutError(e)) throw e;
           const err = e instanceof Error ? e.message : String(e);
           const nowIso = new Date().toISOString();
           const nextFailed = buildFailedLedgerEntry({
@@ -1298,7 +1397,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             conversationTitle: item.conversationTitle,
             error: err,
           });
-          await upsertConversationEntry(nextFailed);
+          await cancelGrace.race(upsertConversationEntry(nextFailed));
           ledgerByGroupId.set(item.groupId, nextFailed);
           failed += 1;
           structuredLogger.emit({
@@ -1356,7 +1455,23 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
           failed,
         },
       };
+    } catch (e) {
+      if (isCancelGraceTimeoutError(e)) {
+        aborted = true;
+        return {
+          status: 'succeeded',
+          outputs: {
+            scanned: scanned.length,
+            ingested,
+            skipped,
+            failed,
+            aborted: true,
+          },
+        };
+      }
+      throw e;
     } finally {
+      cancelGrace.dispose();
       await unregisterAutomationTab(tabId).catch(() => undefined);
       await emitter.clear();
     }

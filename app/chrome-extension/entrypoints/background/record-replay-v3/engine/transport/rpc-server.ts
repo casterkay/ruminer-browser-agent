@@ -1239,6 +1239,7 @@ export class RpcServer {
     if (!runId) throw new Error('runId is required');
 
     const reason = (params?.reason as string) ?? 'Canceled by user';
+    const now = this.now();
     const queueItem = await this.storage.queue.get(runId);
 
     // If still queued (not yet claimed), cancel via queue
@@ -1253,8 +1254,39 @@ export class RpcServer {
 
     const runner = this.runners.get(runId);
     if (!runner) {
-      // Run may have already finished
-      throw new Error(`Runner for "${runId}" not found (run may have already finished)`);
+      // Best-effort idempotency: ensure the run is canceled even if the in-memory runner is gone
+      // (e.g. service worker restart, registry desync, or run finished concurrently).
+      try {
+        await this.storage.queue.markDone(runId, now);
+      } catch (e) {
+        console.warn('[RR-V3] cancelRun: markDone failed (ignored):', e);
+      }
+
+      try {
+        const run = await this.storage.runs.get(runId);
+        const tookMs =
+          typeof run?.startedAt === 'number' && Number.isFinite(run.startedAt)
+            ? Math.max(0, now - run.startedAt)
+            : undefined;
+
+        await this.storage.runs.patch(runId, {
+          status: 'canceled',
+          updatedAt: now,
+          finishedAt: now,
+          ...(tookMs !== undefined ? { tookMs } : {}),
+          error: undefined,
+        });
+      } catch (e) {
+        console.warn('[RR-V3] cancelRun: patch run failed (ignored):', e);
+      }
+
+      try {
+        await this.events.append({ runId, type: 'run.canceled', reason });
+      } catch (e) {
+        console.warn('[RR-V3] cancelRun: emit run.canceled failed (ignored):', e);
+      }
+
+      return { ok: true, runId };
     }
 
     // Allow long-running nodes to observe cancel quickly (cooperative cancel).

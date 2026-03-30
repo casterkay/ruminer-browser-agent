@@ -513,10 +513,8 @@ async function maybeAddConversationUrlArg(
 
 async function stopRun(payload: { runId: string; status: string }): Promise<void> {
   const reason = 'Stopped by user';
-  if (payload.status === 'queued') {
-    await workflows.cancelQueueItem(payload.runId, reason);
-    return;
-  }
+  // Always use cancelRun to avoid queued->running races.
+  // The server handler will delegate to cancelQueueItem when the run is still queued.
   await workflows.cancelRun(payload.runId, reason);
 }
 
