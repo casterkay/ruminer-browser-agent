@@ -799,7 +799,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
       structuredLogger.emit({
         platform,
-        mode: platform === 'chatgpt' ? 'api' : 'dom',
+        mode: 'platform_adapter',
         phase,
         scannedTotal: scanned.length,
         convProcessed: phase === 'scan' ? undefined : ingestProcessed,
@@ -893,66 +893,6 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         );
       }
 
-      // ===== Build conversation iteration order =====
-      const allConversations: ConversationListItem[] = [];
-
-      try {
-        if (platform === 'chatgpt') {
-          // API list: fetch full metadata list first; sort by updatedAtMs if present; else preserve returned order.
-          let offset = 0;
-          for (;;) {
-            if (!(await cooperativeGate())) {
-              aborted = true;
-              break;
-            }
-            const list = await cancelGrace.race(
-              callListConversations(tabId, platform, {
-                offset,
-                limit: listPageSize,
-              }),
-            );
-            if (list.items.length > 0) allConversations.push(...list.items);
-            await emitProgress();
-            if (listThrottleMs > 0) await cancelGrace.race(sleep(listThrottleMs));
-            if (list.nextOffset === null) break;
-            offset = list.nextOffset;
-          }
-
-          const hasUpdated = allConversations.some(
-            (c) => typeof c.updatedAtMs === 'number' && Number.isFinite(c.updatedAtMs),
-          );
-          if (hasUpdated) {
-            allConversations.sort((a, b) => {
-              const aT =
-                typeof a.updatedAtMs === 'number' && Number.isFinite(a.updatedAtMs)
-                  ? a.updatedAtMs
-                  : 0;
-              const bT =
-                typeof b.updatedAtMs === 'number' && Number.isFinite(b.updatedAtMs)
-                  ? b.updatedAtMs
-                  : 0;
-              return bT - aT;
-            });
-          }
-
-          await emitProgress({ force: true });
-        } else {
-          // DOM list: do not pre-scroll the entire list; fetch one-by-one by offset.
-          // No-op: scanTotal is implicitly `scanned.length`.
-        }
-      } catch (e) {
-        if (isCancelGraceTimeoutError(e)) throw e;
-        const msg = e instanceof Error ? e.message : String(e);
-        return toErrorResult(
-          RR_ERROR_CODES.SCRIPT_FAILED,
-          `Scan listConversations failed: ${msg}`,
-          {
-            error: msg,
-            platform,
-          },
-        );
-      }
-
       if (aborted) {
         return {
           status: 'succeeded',
@@ -962,232 +902,161 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
 
       // ===== Scan phase: build scanned list (new convos without snapshot; existing convos snapshot + stop check) =====
       try {
-        if (platform === 'chatgpt') {
-          for (const c of allConversations) {
-            if (!(await cooperativeGate())) {
-              aborted = true;
-              break;
-            }
+        const scanOneConversation = async (
+          c: ConversationListItem,
+        ): Promise<'continue' | 'stop'> => {
+          const groupId = toGroupId(platform, c.conversationId);
+          const entry = ledgerByGroupId.get(groupId);
 
-            const groupId = toGroupId(platform, c.conversationId);
-            const entry = ledgerByGroupId.get(groupId);
-
-            // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
-            if (!entry) {
-              scanned.push({
-                groupId,
-                conversationId: c.conversationId,
-                conversationUrl: c.conversationUrl,
-                conversationTitle: c.conversationTitle,
-              });
-              onStepCompleted();
-              await emitProgress();
-              continue;
-            }
-
-            if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
-
-            const conv = await cancelGrace.race(
-              callConversationMessages(tabId, platform, {
-                conversationId: c.conversationId,
-                conversationUrl: c.conversationUrl,
-              }),
-            );
-
-            const messages = normalizeConversationMessages(conv.messages);
-            if (messages.length === 0) {
-              const rawIsEmpty =
-                Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
-              if (rawIsEmpty) {
-                const digest = await cancelGrace.race(emptyConversationDigest());
-                const messageCount = 0;
-
-                // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
-                scanned.push({
-                  groupId,
-                  conversationId: c.conversationId,
-                  conversationUrl: c.conversationUrl,
-                  conversationTitle: c.conversationTitle,
-                  snapshot: { messages: [], digest, messageCount },
-                });
-                onStepCompleted();
-                await emitProgress();
-                continue;
-              }
-
-              throw new Error(
-                `Conversation has no extractable messages (conversationId=${conv.conversationId})`,
-              );
-            }
-
-            const { digest, messageCount } = await cancelGrace.race(
-              computeConversationDigestFromMessages(messages),
-            );
-
-            if (shouldStopScan(entry, digest)) {
-              break;
-            }
-
+          // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
+          if (!entry) {
             scanned.push({
               groupId,
               conversationId: c.conversationId,
               conversationUrl: c.conversationUrl,
               conversationTitle: c.conversationTitle,
-              snapshot: { messages, digest, messageCount },
             });
             onStepCompleted();
             await emitProgress();
+            return 'continue';
           }
-        } else {
-          let offset = 0;
-          let stop = false;
 
-          for (;;) {
-            if (!(await cooperativeGate())) {
-              aborted = true;
-              break;
-            }
+          if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
 
-            let list = await cancelGrace.race(
-              callListConversations(tabId, platform, {
-                offset,
-                limit: listPageSize,
-              }),
-            );
-            let items = list.items;
+          const conv = await cancelGrace.race(
+            callConversationMessages(tabId, platform, {
+              conversationId: c.conversationId,
+              conversationUrl: c.conversationUrl,
+            }),
+          );
 
-            if (items.length === 0 && offset === 0) {
-              const dom0 = await cancelGrace.race(collectDomDiagnostics(tabId));
-              const shouldRetryForLoadingUi =
-                dom0 !== null &&
-                dom0.counts.anchors === 0 &&
-                dom0.counts.buttons === 0 &&
-                dom0.counts.forms === 0;
+          const messages = normalizeConversationMessages(conv.messages);
+          if (messages.length === 0) {
+            const rawIsEmpty =
+              Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
+            if (rawIsEmpty) {
+              const digest = await cancelGrace.race(emptyConversationDigest());
+              const messageCount = 0;
 
-              // Some SPAs can render a mostly-empty DOM while the sidebar is still loading.
-              // Treat "no conversations at offset=0" as a transient state and retry briefly before failing.
-              if (shouldRetryForLoadingUi) {
-                const deadline = Date.now() + 10_000;
-                while (Date.now() < deadline) {
-                  if (!(await cooperativeGate())) {
-                    aborted = true;
-                    break;
-                  }
-                  await cancelGrace.race(sleep(500));
-                  list = await cancelGrace.race(
-                    callListConversations(tabId, platform, {
-                      offset,
-                      limit: listPageSize,
-                    }),
-                  );
-                  items = list.items;
-                  if (items.length > 0) break;
-                }
-              }
-
-              if (aborted) break;
-
-              if (items.length === 0) {
-                const probe = await cancelGrace.race(probeScanApi(tabId));
-                const dom = dom0 ?? (await cancelGrace.race(collectDomDiagnostics(tabId)));
-                const diag = { probe, dom };
-                throw new Error(
-                  `No conversations found at offset=0 (diagnostics=${JSON.stringify(diag)})`,
-                );
-              }
-            }
-
-            if (items.length === 0) break;
-
-            for (const c of items) {
-              if (!(await cooperativeGate())) {
-                aborted = true;
-                break;
-              }
-
-              const groupId = toGroupId(platform, c.conversationId);
-              const entry = ledgerByGroupId.get(groupId);
-
-              // New conversation: do not fetch messages/digest during scan; just enqueue for ingest phase.
-              if (!entry) {
-                scanned.push({
-                  groupId,
-                  conversationId: c.conversationId,
-                  conversationUrl: c.conversationUrl,
-                  conversationTitle: c.conversationTitle,
-                });
-                onStepCompleted();
-                await emitProgress();
-                continue;
-              }
-
-              if (digestThrottleMs > 0) await cancelGrace.race(sleep(digestThrottleMs));
-
-              const conv = await cancelGrace.race(
-                callConversationMessages(tabId, platform, {
-                  conversationId: c.conversationId,
-                  conversationUrl: c.conversationUrl,
-                }),
-              );
-
-              const messages = normalizeConversationMessages(conv.messages);
-              if (messages.length === 0) {
-                const rawIsEmpty =
-                  Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
-                if (rawIsEmpty) {
-                  const digest = await cancelGrace.race(emptyConversationDigest());
-                  const messageCount = 0;
-
-                  // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
-                  scanned.push({
-                    groupId,
-                    conversationId: c.conversationId,
-                    conversationUrl: c.conversationUrl,
-                    conversationTitle: c.conversationTitle,
-                    snapshot: { messages: [], digest, messageCount },
-                  });
-                  onStepCompleted();
-                  await emitProgress();
-                  continue;
-                }
-
-                const probe = await cancelGrace.race(probeScanApi(tabId));
-                const dom = await cancelGrace.race(collectDomDiagnostics(tabId));
-                throw new Error(
-                  `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
-                    conv.conversationUrl || c.conversationUrl || '',
-                  )}; diagnostics=${JSON.stringify({ probe, dom })})`,
-                );
-              }
-
-              const { digest, messageCount } = await cancelGrace.race(
-                computeConversationDigestFromMessages(messages),
-              );
-
-              if (shouldStopScan(entry, digest)) {
-                stop = true;
-                break;
-              }
-
+              // Never stop scan on empties; still include in scanned list so ingest phase can persist ledger digest.
               scanned.push({
                 groupId,
                 conversationId: c.conversationId,
                 conversationUrl: c.conversationUrl,
                 conversationTitle: c.conversationTitle,
-                snapshot: { messages, digest, messageCount },
+                snapshot: { messages: [], digest, messageCount },
               });
               onStepCompleted();
               await emitProgress();
+              return 'continue';
+            }
+
+            const probe = await cancelGrace.race(probeScanApi(tabId));
+            const dom = await cancelGrace.race(collectDomDiagnostics(tabId));
+            throw new Error(
+              `Conversation has no extractable messages (conversationId=${conv.conversationId}, url=${String(
+                conv.conversationUrl || c.conversationUrl || '',
+              )}; diagnostics=${JSON.stringify({ probe, dom })})`,
+            );
+          }
+
+          const { digest, messageCount } = await cancelGrace.race(
+            computeConversationDigestFromMessages(messages),
+          );
+
+          if (shouldStopScan(entry, digest)) {
+            return 'stop';
+          }
+
+          scanned.push({
+            groupId,
+            conversationId: c.conversationId,
+            conversationUrl: c.conversationUrl,
+            conversationTitle: c.conversationTitle,
+            snapshot: { messages, digest, messageCount },
+          });
+          onStepCompleted();
+          await emitProgress();
+          return 'continue';
+        };
+
+        let offset = 0;
+        let stop = false;
+
+        for (;;) {
+          if (!(await cooperativeGate())) {
+            aborted = true;
+            break;
+          }
+
+          let list = await cancelGrace.race(
+            callListConversations(tabId, platform, {
+              offset,
+              limit: listPageSize,
+            }),
+          );
+          let items = list.items;
+
+          if (items.length === 0 && offset === 0) {
+            const dom0 = await cancelGrace.race(collectDomDiagnostics(tabId));
+            const shouldRetryForLoadingUi =
+              dom0 !== null &&
+              dom0.counts.anchors === 0 &&
+              dom0.counts.buttons === 0 &&
+              dom0.counts.forms === 0;
+
+            // Some SPAs can render a mostly-empty DOM while the sidebar is still loading.
+            // Treat "no conversations at offset=0" as a transient state and retry briefly before deciding.
+            if (shouldRetryForLoadingUi) {
+              const deadline = Date.now() + 10_000;
+              while (Date.now() < deadline) {
+                if (!(await cooperativeGate())) {
+                  aborted = true;
+                  break;
+                }
+                await cancelGrace.race(sleep(500));
+                list = await cancelGrace.race(
+                  callListConversations(tabId, platform, {
+                    offset,
+                    limit: listPageSize,
+                  }),
+                );
+                items = list.items;
+                if (items.length > 0) break;
+              }
             }
 
             if (aborted) break;
-            if (stop) break;
 
-            await emitProgress();
-            if (listThrottleMs > 0) await cancelGrace.race(sleep(listThrottleMs));
-            if (list.nextOffset === null) break;
-            offset = list.nextOffset;
+            // Legitimately no conversations: treat as empty import rather than a hard failure.
+            if (items.length === 0) {
+              await emitProgress({ force: true });
+              break;
+            }
           }
+
+          if (items.length === 0) break;
+
+          for (const c of items) {
+            if (!(await cooperativeGate())) {
+              aborted = true;
+              break;
+            }
+
+            const r = await scanOneConversation(c);
+            if (r === 'stop') {
+              stop = true;
+              break;
+            }
+          }
+
+          if (aborted) break;
+          if (stop) break;
+
+          await emitProgress();
+          if (listThrottleMs > 0) await cancelGrace.race(sleep(listThrottleMs));
+          if (list.nextOffset === null) break;
+          offset = list.nextOffset;
         }
       } catch (e) {
         if (isCancelGraceTimeoutError(e)) throw e;
@@ -1317,7 +1186,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
               failed += 1;
               structuredLogger.emit({
                 platform,
-                mode: platform === 'chatgpt' ? 'api' : 'dom',
+                mode: 'platform_adapter',
                 phase,
                 scannedTotal: scanned.length,
                 convProcessed: ingestProcessed,

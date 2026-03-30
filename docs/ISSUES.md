@@ -12,14 +12,12 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ## Misc Issues
 
-- [ ] ChatGPT scan workflow progress is stuck at 0%.
+- [x] ChatGPT scan workflow progress is stuck at 0%.
 - [ ] Gemini user message needs to be expanded to get full content.
 - [ ] Use openclaw workspace as project dir for openclaw engine.
 - [ ] Attached images are not read by agent.
 - [ ] Add a new tool for agent to freely modify the DOM.
 - [ ] Design and implement the system for agent-driven workflow development.
-- [ ] Claude scan by DOM goes to a new page every time - optimize by utilizing client-side navigation (e.g. clicking the conversation links in sidebar)
-- [ ] ChatGPT scan workflow has long delay after page loading
 
 ---
 
