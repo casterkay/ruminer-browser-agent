@@ -437,8 +437,8 @@
     await engine.runScrollPages({
       direction: 'down',
       findScroller: findSidebarScroller,
-      intervalMs: 500,
-      pageFactor: 0.8,
+      intervalMs: 100,
+      pageFactor: 1.0,
       stableDeltaPx: 60,
       stableAttempts: 4,
       bottomEpsilonPx: 10,
@@ -507,9 +507,9 @@
       await engine.runScrollPages({
         direction: 'up',
         findScroller: findTranscriptScroller,
-        intervalMs: 500,
-        pageFactor: 0.8,
-        stableDeltaPx: 80,
+        intervalMs: 100,
+        pageFactor: 1.0,
+        stableDeltaPx: 60,
         stableAttempts: 4,
         topEpsilonPx: 40,
       });

@@ -10,7 +10,7 @@
 // - Dependency-free and safe to inject multiple times.
 
 (() => {
-  const VERSION = '2026-03-22.1';
+  const VERSION = '2026-03-30.1';
   const LOG = '[ruminer.scroll-engine]';
 
   if (window.__RUMINER_SCROLL_ENGINE__ && window.__RUMINER_SCROLL_ENGINE__.version === VERSION) {
@@ -27,6 +27,10 @@
 
   const isElementVisible = (el) => {
     if (!el || el.nodeType !== 1) return false;
+    try {
+      if (el.hasAttribute?.('hidden')) return false;
+      if (el.getAttribute?.('aria-hidden') === 'true') return false;
+    } catch {}
     let style = null;
     try {
       style = window.getComputedStyle(el);
@@ -48,24 +52,15 @@
     return oy === 'auto' || oy === 'scroll' || oy === 'overlay';
   };
 
-  const hasScrollableAncestor = (el, maxDepth = 8) => {
-    let cur = el && el.parentElement ? el.parentElement : null;
+  const findScrollableAncestor = (startEl, maxDepth = 12) => {
+    let cur = startEl && startEl.nodeType === 1 ? startEl : null;
     let depth = 0;
     while (cur && depth < maxDepth) {
-      if (isElementVisible(cur) && isVerticalScrollable(cur)) return true;
+      if (isVerticalScrollable(cur)) return cur;
       cur = cur.parentElement;
       depth++;
     }
-    return false;
-  };
-
-  const hasLocalHref = (el, prefix = '/') => {
-    if (!el || typeof el.querySelector !== 'function') return false;
-    try {
-      return Boolean(el.querySelector(`a[href^="${prefix}"]`));
-    } catch {
-      return false;
-    }
+    return null;
   };
 
   const findFirstScroller = (selectors) => {
@@ -80,8 +75,6 @@
       for (const el of nodes) {
         if (!isElementVisible(el)) continue;
         if (!isVerticalScrollable(el)) continue;
-        if (!hasLocalHref(el)) continue;
-        if (hasScrollableAncestor(el)) continue;
         return el;
       }
     }
@@ -146,25 +139,31 @@
    * - scroller: Element | null
    * - findScroller: () => Element | null
    * - direction: 'up' | 'down' (required)
-   * - intervalMs: number (default 250)
-   * - pageFactor: number (default 0.85)
-   * - maxPages: number (default 800)
+   * - intervalMs: number (default 100)
+   * - intervalMsAtBoundary: number (default 500)
+   * - pageFactor: number (default 1.0)
+   * - maxPages: number (default 1000)
    * - yieldInitial: boolean (default true)
    * - topEpsilonPx: number (default 20)
    * - bottomEpsilonPx: number (default 20)
-   * - stableDeltaPx: number (default 40)
-   * - stableAttempts: number (default 3)
+   * - stableDeltaPx: number (default 50)
+   * - stableAttempts: number (default 4)
    */
   async function* scrollPages(options = {}) {
     const direction = options.direction === 'down' ? 'down' : 'up';
     const intervalMs =
       typeof options.intervalMs === 'number' && Number.isFinite(options.intervalMs)
         ? clamp(Math.floor(options.intervalMs), 0, 30_000)
-        : 250;
+        : 100;
+    const intervalMsAtBoundary =
+      typeof options.intervalMsAtBoundary === 'number' &&
+      Number.isFinite(options.intervalMsAtBoundary)
+        ? clamp(Math.floor(options.intervalMsAtBoundary), 0, 30_000)
+        : 500;
     const pageFactor =
       typeof options.pageFactor === 'number' && Number.isFinite(options.pageFactor)
         ? clamp(options.pageFactor, 0.05, 1.0)
-        : 0.85;
+        : 1.0;
     const maxPages =
       typeof options.maxPages === 'number' && Number.isFinite(options.maxPages)
         ? clamp(Math.floor(options.maxPages), 1, 100_000)
@@ -182,11 +181,11 @@
     const stableDeltaPx =
       typeof options.stableDeltaPx === 'number' && Number.isFinite(options.stableDeltaPx)
         ? clamp(Math.floor(options.stableDeltaPx), 0, 10_000)
-        : 40;
+        : 50;
     const stableAttempts =
       typeof options.stableAttempts === 'number' && Number.isFinite(options.stableAttempts)
         ? clamp(Math.floor(options.stableAttempts), 1, 100)
-        : 3;
+        : 4;
 
     const findScroller = typeof options.findScroller === 'function' ? options.findScroller : null;
     const scroller = options.scroller || (findScroller ? findScroller() : null);
@@ -238,7 +237,11 @@
       const targetTop = direction === 'up' ? Math.max(0, beforeTop - step) : beforeTop + step;
       setScrollTop(targetTop);
 
-      await sleep(intervalMs);
+      if (stable > 0) {
+        await sleep(intervalMsAtBoundary);
+      } else {
+        await sleep(intervalMs);
+      }
 
       const afterTop = getScrollTop();
       const afterH = getScrollHeight();
@@ -323,6 +326,9 @@
 
   window.__RUMINER_SCROLL_ENGINE__ = {
     version: VERSION,
+    isElementVisible,
+    isVerticalScrollable,
+    findScrollableAncestor,
     scrollerGetters,
     findFirstScroller,
     scrollPages,

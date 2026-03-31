@@ -409,6 +409,8 @@ async function callScanRpc<T>(
       const retryable =
         isRetryableSendMessageError(e) ||
         msg.includes('navigation_started') ||
+        msg.includes('conversation_anchor_not_found') ||
+        msg.includes('conversation_anchor_click_failed') ||
         msg.includes('navigation_timeout') ||
         msg.includes('transcript_not_ready') ||
         msg.includes('__RUMINER_PLATFORM__ not found on window');
@@ -850,16 +852,41 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
         ),
       );
 
+      const homeUrl = platformHomeUrl(platform);
+      let shouldOpenHome = true;
       try {
-        await cancelGrace.race(chrome.tabs.update(tabId, { url: platformHomeUrl(platform) }));
-      } catch (e) {
-        if (isCancelGraceTimeoutError(e)) throw e;
-        const msg = e instanceof Error ? e.message : String(e);
-        return toErrorResult(RR_ERROR_CODES.NAVIGATION_FAILED, `Failed to open platform: ${msg}`, {
-          error: msg,
-          platform,
-          tabId,
-        });
+        const tab = await cancelGrace.race(chrome.tabs.get(tabId));
+        const currentUrl = typeof tab?.url === 'string' ? tab.url.trim() : '';
+        if (currentUrl) {
+          const current = new URL(currentUrl);
+          const home = new URL(homeUrl);
+          if (
+            current.origin === home.origin &&
+            (current.protocol === 'http:' || current.protocol === 'https:')
+          ) {
+            shouldOpenHome = false;
+          }
+        }
+      } catch {
+        shouldOpenHome = true;
+      }
+
+      if (shouldOpenHome) {
+        try {
+          await cancelGrace.race(chrome.tabs.update(tabId, { url: homeUrl }));
+        } catch (e) {
+          if (isCancelGraceTimeoutError(e)) throw e;
+          const msg = e instanceof Error ? e.message : String(e);
+          return toErrorResult(
+            RR_ERROR_CODES.NAVIGATION_FAILED,
+            `Failed to open platform: ${msg}`,
+            {
+              error: msg,
+              platform,
+              tabId,
+            },
+          );
+        }
       }
 
       await waitForTabComplete(tabId, 15_000).catch(() => undefined);

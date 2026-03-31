@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-17.4';
+  const VERSION = '2026-03-31.1';
   const LOG = '[ruminer.gemini]';
 
   const existing = window.__RUMINER_PLATFORM__;
@@ -173,6 +173,7 @@
 
   const READY_POLL_MS = 400;
   const READY_TIMEOUT_MS = 20_000;
+  const SIDEBAR_READY_TIMEOUT_MS = 10_000;
 
   const extractTextPreserveNewlines = (root) => {
     if (!root) return '';
@@ -346,6 +347,82 @@
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
+  const engine = window.__RUMINER_SCROLL_ENGINE__ || null;
+
+  const isVisible = (el) => {
+    if (engine && typeof engine.isElementVisible === 'function') return engine.isElementVisible(el);
+    if (!el || el.nodeType !== 1) return false;
+    return true;
+  };
+
+  const findScrollableAncestor = (startEl, maxDepth = 12) => {
+    if (engine && typeof engine.findScrollableAncestor === 'function')
+      return engine.findScrollableAncestor(startEl, maxDepth);
+    return null;
+  };
+
+  const findSidebarShell = () => {
+    const selectors = [
+      '[data-test-id*="history"]',
+      '[data-testid*="history"]',
+      'mat-sidenav-content',
+      '.chat-history',
+      'nav',
+      'aside',
+    ];
+
+    for (const sel of selectors) {
+      let el = null;
+      try {
+        el = document.querySelector(sel);
+      } catch {
+        el = null;
+      }
+      if (el && isVisible(el)) return el;
+    }
+
+    return null;
+  };
+
+  const findSidebarContainer = () => {
+    const shell = findSidebarShell();
+    if (!shell) return null;
+    try {
+      if (shell.querySelector('a[href*="/app/"]')) return shell;
+    } catch {}
+    return null;
+  };
+
+  const isGeminiShellReady = () => {
+    try {
+      if (document.readyState !== 'interactive' && document.readyState !== 'complete') return false;
+      return Boolean(
+        document.querySelector('[aria-label="Main menu"], [data-test-id="side-nav-menu-button"]'),
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const waitForGeminiShellReady = async (timeoutMs = SIDEBAR_READY_TIMEOUT_MS) => {
+    const deadline = Date.now() + Math.max(0, Math.floor(timeoutMs));
+    while (Date.now() < deadline) {
+      if (isGeminiShellReady()) return true;
+      await sleep(250);
+    }
+    return isGeminiShellReady();
+  };
+
+  const hasVisibleSidebarConversationItems = () => {
+    const root = findSidebarContainer() || document;
+    try {
+      const anchors = Array.from(root.querySelectorAll('a[href*="/app/"]'));
+      return anchors.some((a) => isVisible(a));
+    } catch {
+      return false;
+    }
+  };
+
   const nextSiblingOrAncestorSibling = (el, stopAt) => {
     let cur = el;
     while (cur && cur !== stopAt) {
@@ -381,39 +458,42 @@
       'aside',
     ];
 
-    const strict =
-      engine && typeof engine.findFirstScroller === 'function'
-        ? engine.findFirstScroller(selectors)
-        : null;
-    if (strict) return strict;
+    const container = findSidebarContainer();
+    const byAncestor = container ? findScrollableAncestor(container) : null;
+    if (byAncestor) return byAncestor;
 
-    const relaxed =
+    const byEngine =
       engine && typeof engine.findFirstScroller === 'function'
         ? engine.findFirstScroller(selectors)
         : null;
-    return relaxed || document.scrollingElement || document.documentElement;
+    if (byEngine) return byEngine;
+
+    return container || document.scrollingElement || document.documentElement;
   };
 
   const ensureSidebarVisible = async () => {
+    await waitForGeminiShellReady().catch(() => false);
+
     try {
-      const ready = findSidebarScroller();
-      if (ready) return true;
+      if (hasVisibleSidebarConversationItems()) return true;
+    } catch {}
+    try {
+      if (findSidebarShell()) return true;
     } catch {}
 
-    const toggles = [
-      '[aria-label="Main menu"]',
-      '[data-test-id="side-nav-menu-button"]',
-      '[class*="mdc-icon-button"]',
-    ];
+    const toggles = ['[aria-label="Main menu"]', '[data-test-id="side-nav-menu-button"]'];
 
-    clickFirstMatching(toggles);
+    let clicked = clickFirstMatching(toggles);
 
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
       try {
-        const ready = findSidebarScroller();
-        if (ready) return true;
+        if (hasVisibleSidebarConversationItems()) return true;
       } catch {}
+      try {
+        if (findSidebarShell()) return true;
+      } catch {}
+      if (!clicked && isGeminiShellReady()) clicked = clickFirstMatching(toggles);
       await sleep(250);
     }
     return false;
@@ -433,17 +513,25 @@
       '[data-test-id="chat-history-container"]',
     ];
 
-    const strict =
+    const byEngine =
       engine && typeof engine.findFirstScroller === 'function'
         ? engine.findFirstScroller(selectors)
         : null;
-    if (strict) return strict;
+    if (byEngine) return byEngine;
 
-    const relaxed =
-      engine && typeof engine.findFirstScroller === 'function'
-        ? engine.findFirstScroller(selectors)
-        : null;
-    return relaxed || document.scrollingElement || document.documentElement;
+    try {
+      const root = findTranscriptRoot();
+      const byAncestor = root ? findScrollableAncestor(root) : null;
+      if (byAncestor) return byAncestor;
+    } catch {}
+
+    try {
+      const firstTurn = document.querySelector(SELECTORS.turnContainers);
+      const byAncestor = firstTurn ? findScrollableAncestor(firstTurn) : null;
+      if (byAncestor) return byAncestor;
+    } catch {}
+
+    return document.scrollingElement || document.documentElement;
   };
 
   const findTranscriptRoot = () => {
@@ -477,34 +565,15 @@
     return rect.width > 0 && rect.height > 0;
   };
 
-  const extractConversationIncremental = (
-    collectedByContainer,
-    allocateFirstSeenSeq,
-    containers,
-    options = {},
-  ) => {
-    if (!collectedByContainer || typeof collectedByContainer.get !== 'function') return false;
-    if (!Array.isArray(containers) || containers.length === 0) return false;
+  const extractMessagesFromDomOnce = () => {
+    const containers = Array.from(document.querySelectorAll(SELECTORS.turnContainers));
+    const out = [];
 
-    const requireVisibleRect = options && options.requireVisibleRect === true;
-    let changed = false;
+    for (const container of containers) {
+      if (!isProbablyRenderable(container, true)) continue;
 
-    containers.forEach((container, idx) => {
-      if (!isProbablyRenderable(container, requireVisibleRect)) return;
-
-      let info = collectedByContainer.get(container);
-      if (!info) {
-        const firstSeenSeq =
-          typeof allocateFirstSeenSeq === 'function' ? allocateFirstSeenSeq() : idx;
-        info = createTurnInfo(firstSeenSeq);
-        collectedByContainer.set(container, info);
-        changed = true;
-      }
-
-      const hasUserText = typeof info.userText === 'string' && info.userText.trim();
-      const hasAssistantText = typeof info.assistantText === 'string' && info.assistantText.trim();
-
-      if (!hasUserText) {
+      let userText = '';
+      try {
         let userTexts = [];
         const lines = Array.from(
           container.querySelectorAll(`${SELECTORS.userContainer} ${SELECTORS.userLine}`),
@@ -529,127 +598,165 @@
             }
           }
         }
-
         userTexts = userTexts.filter(Boolean);
-        if (userTexts.length > 0) {
-          const combinedUserText = normalizeText(userTexts.join('\n'));
-          if (combinedUserText) {
-            info.userText = combinedUserText;
-            changed = true;
-          }
-        }
+        userText = userTexts.length > 0 ? normalizeText(userTexts.join('\n')) : '';
+      } catch {
+        userText = '';
       }
 
-      if (!hasAssistantText) {
+      let assistantText = '';
+      try {
         const modelRoot = container.querySelector(SELECTORS.modelContent);
         if (modelRoot) {
           const markdownNode = modelRoot.querySelector(SELECTORS.modelMarkdown);
-          const assistantText = markdownNode
+          assistantText = markdownNode
             ? normalizeText(getNodeText(markdownNode))
             : normalizeText(getNodeText(modelRoot));
-          if (assistantText) {
-            info.assistantText = assistantText;
-            changed = true;
-          }
         }
+      } catch {
+        assistantText = '';
       }
-    });
 
-    return changed;
+      if (userText) out.push({ role: 'user', content: userText });
+      if (assistantText) out.push({ role: 'assistant', content: assistantText });
+    }
+
+    // Remove consecutive exact duplicates (role + content) to reduce rare virtualization artifacts.
+    const deduped = [];
+    let last = null;
+    for (const m of out) {
+      if (
+        last &&
+        last.role === m.role &&
+        typeof last.content === 'string' &&
+        typeof m.content === 'string' &&
+        last.content === m.content
+      ) {
+        continue;
+      }
+      deduped.push(m);
+      last = m;
+    }
+    return deduped;
   };
 
-  const createIncrementalCollector = () => {
-    const collectedByContainer = new Map();
+  const fingerprintVisibleTranscript = () => {
+    try {
+      const msgs = extractMessagesFromDomOnce();
+      return msgs
+        .slice(0, 6)
+        .map((m) => `${m.role}:${String(m.content || '').slice(0, 160)}`)
+        .join('\n');
+    } catch {
+      return '';
+    }
+  };
 
-    let nextFirstSeenSeq = 0;
-    const allocateSeq = () => nextFirstSeenSeq++;
-    const extractOnce = () => {
-      const containers = Array.from(document.querySelectorAll(SELECTORS.turnContainers));
-      return extractConversationIncremental(collectedByContainer, allocateSeq, containers, {
-        requireVisibleRect: true,
-      });
-    };
-
-    const hasAnyNonEmptyTurn = () => {
-      for (const info of collectedByContainer.values()) {
-        const u = typeof info.userText === 'string' ? info.userText.trim() : '';
-        const a = typeof info.assistantText === 'string' ? info.assistantText.trim() : '';
-        if (u || a) return true;
+  const findConversationAnchorByPath = (targetPath) => {
+    const roots = [findSidebarContainer(), findSidebarShell(), document];
+    for (const root of roots) {
+      if (!root || typeof root.querySelectorAll !== 'function') continue;
+      let anchors = [];
+      try {
+        anchors = Array.from(root.querySelectorAll('a[href*="/app/"]'));
+      } catch {
+        anchors = [];
       }
-      return false;
-    };
-
-    const toSortedTurns = () =>
-      Array.from(collectedByContainer.values()).sort((a, b) => {
-        const sa =
-          typeof a.firstSeenSeq === 'number' && Number.isFinite(a.firstSeenSeq)
-            ? a.firstSeenSeq
-            : 0;
-        const sb =
-          typeof b.firstSeenSeq === 'number' && Number.isFinite(b.firstSeenSeq)
-            ? b.firstSeenSeq
-            : 0;
-        // We discover newest → oldest while scrolling up; emit oldest → newest.
-        return sb - sa;
-      });
-
-    const toMessages = () => {
-      const turns = toSortedTurns();
-      const out = [];
-      for (const t of turns) {
-        const userText = typeof t.userText === 'string' ? normalizeText(t.userText) : '';
-        const assistantText =
-          typeof t.assistantText === 'string' ? normalizeText(t.assistantText) : '';
-        if (userText) out.push({ role: 'user', content: userText });
-        if (assistantText) out.push({ role: 'assistant', content: assistantText });
-      }
-
-      // Remove consecutive exact duplicates (role + content) to reduce rare virtualization artifacts.
-      const deduped = [];
-      let last = null;
-      for (const m of out) {
-        if (
-          last &&
-          last.role === m.role &&
-          typeof last.content === 'string' &&
-          typeof m.content === 'string' &&
-          last.content === m.content
-        ) {
-          continue;
+      for (const anchor of anchors) {
+        if (!anchor || typeof anchor.getAttribute !== 'function') continue;
+        let u = null;
+        try {
+          u = new URL(String(anchor.getAttribute('href') || ''), location.origin);
+        } catch {
+          u = null;
         }
-        deduped.push(m);
-        last = m;
+        if (!u || u.pathname !== targetPath) continue;
+        if (!isVisible(anchor)) continue;
+        return anchor;
       }
-      return deduped;
-    };
-
-    return {
-      collectedByContainer,
-      extractOnce,
-      hasAnyNonEmptyTurn,
-      toMessages,
-    };
+    }
+    return null;
   };
 
   const openConversationInPlace = async (targetUrl) => {
     const targetPath = targetUrl.pathname;
     if (location.pathname === targetPath) return { ok: true, alreadyThere: true };
-    const anchors = Array.from(document.querySelectorAll('a[href]'));
-    const a = anchors.find((x) => {
-      try {
-        const u = new URL(String(x.getAttribute('href') || ''), location.origin);
-        return u.pathname === targetPath;
-      } catch {
-        return false;
+
+    let anchor = findConversationAnchorByPath(targetPath);
+    let sidebarReady = false;
+
+    if (!anchor) {
+      sidebarReady = await ensureSidebarVisible().catch(() => false);
+      if (sidebarReady && engine && typeof engine.runScrollPages === 'function') {
+        const tryFind = () => {
+          anchor = findConversationAnchorByPath(targetPath);
+          return Boolean(anchor);
+        };
+        if (!tryFind()) {
+          await engine.runScrollPages({
+            direction: 'down',
+            findScroller: findSidebarScroller,
+            intervalMs: 100,
+            pageFactor: 1.0,
+            stableDeltaPx: 60,
+            stableAttempts: 4,
+            bottomEpsilonPx: 10,
+            onPage: () => !tryFind(),
+          });
+        }
+        if (!tryFind()) {
+          await engine.runScrollPages({
+            direction: 'up',
+            findScroller: findSidebarScroller,
+            intervalMs: 100,
+            pageFactor: 1.0,
+            stableDeltaPx: 60,
+            stableAttempts: 4,
+            topEpsilonPx: 40,
+            onPage: () => !tryFind(),
+          });
+        }
       }
-    });
-    if (a) {
-      a.click();
-      return { ok: true, clicked: true };
     }
 
-    location.assign(targetUrl.toString());
-    return { ok: false, error: 'navigation_started' };
+    if (!anchor) {
+      return {
+        ok: false,
+        error: 'conversation_anchor_not_found',
+        diagnostics: {
+          targetPath,
+          currentPath: String(location.pathname || ''),
+          sidebarReady,
+        },
+      };
+    }
+
+    try {
+      anchor.click();
+    } catch {
+      return {
+        ok: false,
+        error: 'conversation_anchor_click_failed',
+        diagnostics: {
+          targetPath,
+          currentPath: String(location.pathname || ''),
+        },
+      };
+    }
+
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if (location.pathname === targetPath) return { ok: true, clicked: true };
+      await sleep(200);
+    }
+    return {
+      ok: false,
+      error: 'navigation_timeout',
+      diagnostics: {
+        targetPath,
+        currentPath: String(location.pathname || ''),
+      },
+    };
   };
 
   const sidebarCache = {
@@ -662,26 +769,27 @@
     if (sidebarCache.done) return;
 
     const engine = window.__RUMINER_SCROLL_ENGINE__;
-    if (!engine || typeof engine.runScrollPages !== 'function') {
-      sidebarCache.done = true;
-      return;
-    }
-
-    await ensureSidebarVisible().catch(() => false);
+    const sidebarReady = await ensureSidebarVisible().catch(() => false);
+    if (!sidebarReady) return;
 
     await engine.runScrollPages({
       direction: 'down',
       findScroller: findSidebarScroller,
-      intervalMs: 500,
-      pageFactor: 0.8,
-      stableDeltaPx: 40,
+      intervalMs: 100,
+      pageFactor: 1.0,
+      stableDeltaPx: 60,
       stableAttempts: 4,
       bottomEpsilonPx: 10,
     });
 
     const scroller = findSidebarScroller();
+    const container = findSidebarContainer() || findSidebarShell();
     const queryRoot =
-      scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+      container && typeof container.querySelectorAll === 'function'
+        ? container
+        : scroller && typeof scroller.querySelectorAll === 'function'
+          ? scroller
+          : document;
     const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
 
     sidebarCache.items.length = 0;
@@ -750,39 +858,62 @@
     }
 
     const targetPath = target.pathname;
+    const targetId = parseConversationId(url);
 
     // Phase A — Navigate (router-friendly <a>.click() when possible).
+    const fp0 = fingerprintVisibleTranscript();
     const nav = await openConversationInPlace(target);
     if (!nav.ok) return nav;
-
-    const collector = createIncrementalCollector();
 
     // Phase B — Hydration-ready poll (400ms retry).
     const readyDeadline = Date.now() + READY_TIMEOUT_MS;
     let lastContainerCount = 0;
+    let lastFingerprint = '';
+    let readyMessages = null;
     while (Date.now() < readyDeadline) {
       if (location.pathname !== targetPath) {
         await sleep(READY_POLL_MS);
         continue;
       }
 
-      collector.extractOnce();
+      if (targetId) {
+        const curId = parseConversationId(location.href || '');
+        if (curId && curId !== targetId) {
+          await sleep(READY_POLL_MS);
+          continue;
+        }
+      }
+
       try {
         lastContainerCount = document.querySelectorAll(SELECTORS.turnContainers).length;
       } catch {
         lastContainerCount = 0;
       }
 
-      if (collector.hasAnyNonEmptyTurn()) break;
+      const fp = fingerprintVisibleTranscript();
+      lastFingerprint = fp;
+      const msgs = extractMessagesFromDomOnce();
+      const hasAny = Array.isArray(msgs) && msgs.length > 0;
+      const swapped =
+        nav.alreadyThere === true ? true : fp0.trim() ? fp && fp !== fp0 : Boolean(fp && fp.trim());
+
+      if (hasAny && swapped) {
+        readyMessages = msgs;
+        break;
+      }
       await sleep(READY_POLL_MS);
     }
 
-    if (!collector.hasAnyNonEmptyTurn()) {
+    if (!readyMessages) {
       const root = findTranscriptRoot();
       const diagnostics = {
         href: String(location.href || ''),
         targetPath,
         currentPath: String(location.pathname || ''),
+        targetId,
+        currentId: parseConversationId(location.href || ''),
+        fingerprint0: fp0,
+        fingerprintLast: lastFingerprint,
         readyTimeoutMs: READY_TIMEOUT_MS,
         pollMs: READY_POLL_MS,
         hasTranscriptRoot: Boolean(root),
@@ -793,27 +924,25 @@
       return { ok: false, error, diagnostics };
     }
 
-    // Phase C — Full incremental capture (virtualization-safe).
+    // Phase C — Scroll to top, then extract once in DOM order.
     const engine = window.__RUMINER_SCROLL_ENGINE__;
     if (!engine || typeof engine.runScrollPages !== 'function') {
-      collector.extractOnce();
+      // no-op
     } else {
+      const scroller = findTranscriptScroller();
       await engine.runScrollPages({
         direction: 'up',
-        findScroller: findTranscriptScroller,
-        intervalMs: 500,
-        pageFactor: 0.8,
-        stableDeltaPx: 40,
+        scroller,
+        intervalMs: 100,
+        pageFactor: 1.0,
+        stableDeltaPx: 60,
         stableAttempts: 4,
         topEpsilonPx: 40,
       });
-
-      // Final extraction once after top stability.
-      collector.extractOnce();
     }
 
     // Phase D — Build output message list.
-    const msgs = collector.toMessages();
+    const msgs = extractMessagesFromDomOnce();
 
     return {
       conversationId: parseConversationId(url) || null,

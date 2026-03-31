@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'deepseek';
-  const VERSION = '2026-03-18.1';
+  const VERSION = '2026-03-30.1';
   const LOG = '[ruminer.deepseek]';
 
   const existing = window.__RUMINER_PLATFORM__;
@@ -181,27 +181,73 @@
     return false;
   };
 
+  const engine = window.__RUMINER_SCROLL_ENGINE__ || null;
+
+  const isVisible = (el) => {
+    if (engine && typeof engine.isElementVisible === 'function') return engine.isElementVisible(el);
+    if (!el || el.nodeType !== 1) return false;
+    return true;
+  };
+
+  const findScrollableAncestor = (startEl, maxDepth = 12) => {
+    if (engine && typeof engine.findScrollableAncestor === 'function')
+      return engine.findScrollableAncestor(startEl, maxDepth);
+    return null;
+  };
+
+  const isConversationHref = (href) => {
+    const h = String(href || '');
+    return h.startsWith('/a/chat/s/') || h.startsWith('/chat/') || h.includes('/chat/');
+  };
+
+  const findSidebarContainer = () => {
+    const selectors = ['nav', 'aside', '[class*="scroll-area"]', '[class*="sidebar"]'];
+    for (const sel of selectors) {
+      let el = null;
+      try {
+        el = document.querySelector(sel);
+      } catch {
+        el = null;
+      }
+      if (!el || !isVisible(el)) continue;
+      try {
+        const anchors = Array.from(el.querySelectorAll('a[href]'));
+        if (anchors.some((a) => isConversationHref(a.getAttribute('href')))) return el;
+      } catch {}
+    }
+    return null;
+  };
+
+  const hasVisibleSidebarConversationItems = () => {
+    const root = findSidebarContainer() || document;
+    try {
+      const anchors = Array.from(root.querySelectorAll('a[href]'));
+      return anchors.some((a) => isConversationHref(a.getAttribute('href')) && isVisible(a));
+    } catch {
+      return false;
+    }
+  };
+
   const findSidebarScroller = () => {
     const engine = window.__RUMINER_SCROLL_ENGINE__;
     const selectors = ['nav', 'aside', '[class*="scroll-area"]', '[class*="sidebar"]'];
 
-    const strict =
-      engine && typeof engine.findFirstScroller === 'function'
-        ? engine.findFirstScroller(selectors)
-        : null;
-    if (strict) return strict;
+    const container = findSidebarContainer();
+    const byAncestor = container ? findScrollableAncestor(container) : null;
+    if (byAncestor) return byAncestor;
 
-    const relaxed =
+    const byEngine =
       engine && typeof engine.findFirstScroller === 'function'
         ? engine.findFirstScroller(selectors)
         : null;
-    return relaxed || document.scrollingElement || document.documentElement;
+    if (byEngine) return byEngine;
+
+    return container || document.scrollingElement || document.documentElement;
   };
 
   const ensureSidebarVisible = async () => {
     try {
-      const ready = findSidebarScroller();
-      if (ready) return true;
+      if (hasVisibleSidebarConversationItems()) return true;
     } catch {}
 
     const toggles = ['[class*="ds-icon-button"]'];
@@ -210,8 +256,7 @@
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
       try {
-        const ready = findSidebarScroller();
-        if (ready) return true;
+        if (hasVisibleSidebarConversationItems()) return true;
       } catch {}
       await sleep(250);
     }
@@ -222,17 +267,25 @@
     const engine = window.__RUMINER_SCROLL_ENGINE__;
     const selectors = ['div[class*="ds-virtual-list"]', '[class*="ds-virtual-list"]'];
 
-    const strict =
+    const byEngine =
       engine && typeof engine.findFirstScroller === 'function'
         ? engine.findFirstScroller(selectors)
         : null;
-    if (strict) return strict;
+    if (byEngine) return byEngine;
 
-    const relaxed =
-      engine && typeof engine.findFirstScroller === 'function'
-        ? engine.findFirstScroller(selectors)
-        : null;
-    return relaxed || document.scrollingElement || document.documentElement;
+    // DeepSeek frequently virtualizes the message list inside nested divs; the real scroller might be an ancestor
+    // of the list root even if the list root itself isn't marked overflowY=scroll.
+    try {
+      const listRoot =
+        document.querySelector('div[class*="ds-virtual-list"]') ||
+        document.querySelector('[class*="ds-virtual-list"]') ||
+        document.querySelector('.ds-message') ||
+        null;
+      const byAncestor = listRoot ? findScrollableAncestor(listRoot) : null;
+      if (byAncestor) return byAncestor;
+    } catch {}
+
+    return document.scrollingElement || document.documentElement;
   };
 
   const sidebarCache = {
@@ -262,6 +315,18 @@
     }
 
     return out;
+  };
+
+  const fingerprintTranscript = () => {
+    try {
+      const msgs = extractMessagesFromDom();
+      return msgs
+        .slice(0, 6)
+        .map((m) => `${m.role}:${String(m.content || '').slice(0, 160)}`)
+        .join('\n');
+    } catch {
+      return '';
+    }
   };
 
   const openConversationInPlace = async (url) => {
@@ -313,16 +378,21 @@
     await engine.runScrollPages({
       direction: 'down',
       findScroller: findSidebarScroller,
-      intervalMs: 500,
-      pageFactor: 0.8,
-      stableDeltaPx: 40,
+      intervalMs: 100,
+      pageFactor: 1.0,
+      stableDeltaPx: 50,
       stableAttempts: 4,
       bottomEpsilonPx: 10,
     });
 
     const scroller = findSidebarScroller();
+    const container = findSidebarContainer();
     const queryRoot =
-      scroller && typeof scroller.querySelectorAll === 'function' ? scroller : document;
+      container && typeof container.querySelectorAll === 'function'
+        ? container
+        : scroller && typeof scroller.querySelectorAll === 'function'
+          ? scroller
+          : document;
     const anchors = Array.from(queryRoot.querySelectorAll('a[href]'));
 
     sidebarCache.items.length = 0;
@@ -371,19 +441,36 @@
   async function extractConversation({ conversationUrl }) {
     const url = String(conversationUrl || '').trim();
     if (!url) throw new Error('Missing conversationUrl');
+    const fp0 = fingerprintTranscript();
     const nav = await openConversationInPlace(url);
     if (!nav.ok) return nav;
-    await sleep(400);
+
+    // Wait for DOM to reflect the newly-selected conversation (SPA route updates can race DOM hydration).
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const fp = fingerprintTranscript();
+      const swapped =
+        nav.alreadyThere === true
+          ? Boolean(fp && fp.trim())
+          : fp0.trim()
+            ? fp && fp !== fp0
+            : Boolean(fp && fp.trim());
+      if (swapped) break;
+      await sleep(200);
+    }
+
+    await sleep(250);
 
     // Best-effort: scroll up to load older turns if the transcript is virtualized.
     const engine = window.__RUMINER_SCROLL_ENGINE__;
     if (engine && typeof engine.runScrollPages === 'function') {
+      const scroller = findTranscriptScroller();
       await engine.runScrollPages({
         direction: 'up',
-        findScroller: findTranscriptScroller,
-        intervalMs: 500,
-        pageFactor: 0.8,
-        stableDeltaPx: 40,
+        scroller,
+        intervalMs: 100,
+        pageFactor: 1.0,
+        stableDeltaPx: 50,
         stableAttempts: 4,
         topEpsilonPx: 40,
       });

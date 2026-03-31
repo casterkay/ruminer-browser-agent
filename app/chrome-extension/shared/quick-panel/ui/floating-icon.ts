@@ -715,8 +715,8 @@ const FLOATING_ICON_STYLES = /* css */ `
   }
 
   .floating-icon-tooltip[data-anim='closing'] {
-    /* Show while closing, but prevent accidental clicks on animating rows */
-    pointer-events: none;
+    /* Keep capturing pointer events while closing to avoid click-through onto the icon. */
+    pointer-events: auto;
   }
 
   /* Prevent a “flash” when we toggle data-open off after the row close stagger. */
@@ -1232,10 +1232,7 @@ const ICON_CHECK = createSvgIcon(['M20 6L9 17l-5-5']);
 const ENGINE_CHOICES: Array<{ engineName: string; label: string }> = [
   { engineName: 'claude', label: 'Claude Code' },
   { engineName: 'openclaw', label: 'OpenClaw' },
-  { engineName: 'codex', label: 'Codex' },
-  { engineName: 'cursor', label: 'Cursor' },
-  { engineName: 'qwen', label: 'Qwen' },
-  { engineName: 'glm', label: 'GLM' },
+  { engineName: 'codex', label: 'Codex CLI' },
 ];
 
 // ============================================================
@@ -1873,6 +1870,17 @@ export function createFloatingIcon(options: FloatingIconOptions = {}): FloatingI
   function handleClick(e: MouseEvent): void {
     // Ignore if it was a drag
     if (hasDragged) {
+      e.stopPropagation();
+      return;
+    }
+
+    const target = (e as any)?.target as Element | null;
+    if (
+      target &&
+      (target.closest('.floating-icon-tooltip') ||
+        target.closest('.floating-icon-dialog') ||
+        target.closest('.floating-icon-workflow-controls'))
+    ) {
       e.stopPropagation();
       return;
     }
