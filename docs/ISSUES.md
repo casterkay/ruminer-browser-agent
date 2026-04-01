@@ -13,15 +13,18 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 ## Misc Issues
 
 - [x] ChatGPT scan workflow progress is stuck at 0%.
+- [ ] Gemini scan workflow hangs for a long time (>1min) after it has scrolled to the top of the first conversation in the ingest phase.
 - [ ] Gemini ingested conversations have cross-session corruption (it appends messages from other conversations after messages in the current conversation).
 - [ ] Filenames like `README.md` are rendered as links to `http://{filename}` in the message cards.
 - [ ] Ingested DeepSeek conversations have duplicated messages.
 - [ ] Gemini scan workflow does not scroll the conversation list to its end - it stops at the first lazy loading.
 - [x] DeepSeek ingestion is not scrolling. (Test https://chat.deepseek.com/a/chat/s/32114b00-cb2e-4147-abd6-47b8f10c2b02)
+- [ ] The engine of the conversation imported from an AI chat platform does not match the selected agent engine in the tooltip menu.
 - [ ] Gemini user message needs to be expanded to get full content.
 - [ ] Use openclaw workspace as project dir for openclaw engine.
 - [ ] Attached images are not read by agent.
 - [ ] Add a new tool for agent to freely modify the DOM.
+- [ ] No saved or published flows are available to the agent.
 - [ ] Design and implement the system for agent-driven workflow development.
 
 ---

@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'deepseek';
-  const VERSION = '2026-03-30.1';
+  const VERSION = '2026-03-31.2';
   const LOG = '[ruminer.deepseek]';
 
   const existing = window.__RUMINER_PLATFORM__;
@@ -379,9 +379,10 @@
       direction: 'down',
       findScroller: findSidebarScroller,
       intervalMs: 100,
+      intervalMsAtBoundary: 300,
       pageFactor: 1.0,
       stableDeltaPx: 50,
-      stableAttempts: 4,
+      stableAttempts: 3,
       bottomEpsilonPx: 10,
     });
 
@@ -469,18 +470,21 @@
         direction: 'up',
         scroller,
         intervalMs: 100,
+        intervalMsAtBoundary: 300,
         pageFactor: 1.0,
         stableDeltaPx: 50,
-        stableAttempts: 4,
+        stableAttempts: 3,
         topEpsilonPx: 40,
       });
     }
 
     const msgs = extractMessagesFromDom();
+    const titleRaw = typeof document?.title === 'string' ? document.title.trim() : '';
+    const title = titleRaw ? titleRaw : null;
     return {
       conversationId: parseConversationId(url) || null,
       conversationUrl: url,
-      conversationTitle: null,
+      conversationTitle: title,
       messages: msgs,
     };
   }

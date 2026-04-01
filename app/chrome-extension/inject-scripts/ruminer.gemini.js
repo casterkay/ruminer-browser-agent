@@ -4,7 +4,7 @@
 
 (() => {
   const PLATFORM = 'gemini';
-  const VERSION = '2026-03-31.1';
+  const VERSION = '2026-03-31.3';
   const LOG = '[ruminer.gemini]';
 
   const existing = window.__RUMINER_PLATFORM__;
@@ -943,11 +943,21 @@
 
     // Phase D — Build output message list.
     const msgs = extractMessagesFromDomOnce();
+    let title = null;
+    try {
+      const titleEl =
+        document.querySelector('[data-test-id="conversation-title"]') ||
+        document.querySelector('[class*="conversation-title"]');
+      const raw = titleEl ? String(titleEl.textContent || '').trim() : '';
+      title = raw || null;
+    } catch {
+      title = null;
+    }
 
     return {
       conversationId: parseConversationId(url) || null,
       conversationUrl: url,
-      conversationTitle: null,
+      conversationTitle: title,
       messages: msgs,
     };
   }
