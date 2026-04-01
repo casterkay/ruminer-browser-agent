@@ -167,6 +167,17 @@ h3 {
   letter-spacing: 0.04em;
 }
 
+.presented-row {
+  margin: 0;
+  font-family: 'Open Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  position: relative;
+  top: -30px;
+}
+
 .evermind-logo {
   height: 24px;
   width: auto;
