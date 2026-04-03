@@ -57,7 +57,6 @@ export default defineConfig({
       'bookmarks',
       'offscreen',
       'storage',
-      'declarativeNetRequest',
       'alarms',
       // Allow programmatic control of Chrome Side Panel
       'sidePanel',
