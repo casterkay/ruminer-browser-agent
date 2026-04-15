@@ -1,4 +1,3 @@
-import { TOOL_NAMES } from 'chrome-mcp-shared';
 import {
   TOOL_GROUP_DEFINITIONS,
   getIndividualToolState,
@@ -7,6 +6,7 @@ import {
   type ToolGroupId,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 
 export interface EffectiveToolSelection {
   groupState: ToolGroupState;
@@ -16,6 +16,8 @@ export interface EffectiveToolSelection {
 
 const TOOL_NAME_ALIASES: Record<string, string> = {
   chrome_file_upload: TOOL_NAMES.BROWSER.FILE_UPLOAD,
+  emos_get_memories: TOOL_NAMES.MEMORY.GET_MEMORIES,
+  emos_search_memories: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
   record_replay_flow_run: TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
   record_replay_flow_list: TOOL_NAMES.RECORD_REPLAY.FLOW_LIST,
   record_replay_flow_save: TOOL_NAMES.RECORD_REPLAY.FLOW_SAVE,

@@ -177,21 +177,22 @@
             </div>
           </div>
 
-          <!-- EverMemOS -->
+          <!-- Memory -->
           <div class="space-y-2">
             <label
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
             >
-              EverMemOS
+              Memory
             </label>
             <div class="flex items-start justify-between gap-3 px-2">
               <div class="min-w-0 mt-2">
                 <div class="text-xs font-semibold" :style="{ color: 'var(--ac-text, #1a1a1a)' }">
-                  Save Conversation to EverMemOS
+                  Save Conversation to Memory
                 </div>
                 <div class="text-[10px] mt-0.5" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">
-                  When enabled, chat messages in this session are automatically saved to EverMemOS.
+                  When enabled, chat messages in this session are automatically saved to the
+                  configured memory backend.
                 </div>
               </div>
 
@@ -727,7 +728,9 @@ watch(
       localPermissionMode.value = session.permissionMode || '';
       // Runtime default: enabled when unset; only disabled when explicitly false.
       localSaveConversationToEverMemOS.value =
-        session.optionsConfig?.saveConversationToEverMemOS !== false;
+        typeof session.optionsConfig?.saveConversationToMemory === 'boolean'
+          ? session.optionsConfig.saveConversationToMemory
+          : session.optionsConfig?.saveConversationToEverMemOS !== false;
 
       const selectedAgent = (props.selectedOpenclawAgentId || '').trim();
       localOpenClawAgentId.value = selectedAgent || localOpenClawAgentId.value || 'main';
@@ -834,6 +837,7 @@ function handleSave(): void {
 
   const optionsConfig: AgentSessionOptionsConfig = {
     ...existingOptions,
+    saveConversationToMemory: localSaveConversationToEverMemOS.value,
     saveConversationToEverMemOS: localSaveConversationToEverMemOS.value,
     ...(isCodexEngine.value
       ? {

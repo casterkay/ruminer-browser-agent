@@ -53,3 +53,43 @@ export interface MessageRow {
   requestId: string | null;
   createdAt: string;
 }
+
+export interface MemoryDocumentRow {
+  id: string;
+  backend: string;
+  documentType: string;
+  groupId: string | null;
+  groupName: string | null;
+  sourcePlatform: string | null;
+  conversationId: string | null;
+  title: string | null;
+  sourceUrl: string | null;
+  filePath: string;
+  relativePath: string;
+  contentHash: string;
+  metadata: string | null;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface MemoryMessageRow {
+  id: string;
+  documentId: string;
+  groupId: string | null;
+  sender: string | null;
+  senderName: string | null;
+  role: string | null;
+  content: string;
+  createTime: string;
+  sourceUrl: string | null;
+  sourcePlatform: string | null;
+  conversationId: string | null;
+  referList: string | null;
+  metadata: string | null;
+  messageIndex: number | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

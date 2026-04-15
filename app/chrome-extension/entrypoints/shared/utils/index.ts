@@ -34,6 +34,12 @@ export {
   type EmosConnectionSettings,
 } from './emos-settings';
 export {
+  getDefaultMemorySettings,
+  getMemorySettings,
+  setMemorySettings,
+  type MemoryConnectionSettings,
+} from './memory-settings';
+export {
   clearIndividualToolOverrides,
   getDefaultToolGroupState,
   getEffectiveEnabledToolIds,

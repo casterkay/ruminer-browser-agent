@@ -8,13 +8,13 @@ import {
   StorageBackedEventsBus,
   type EventsBus,
 } from '@/entrypoints/background/record-replay-v3/engine/transport/events-bus';
-import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 
 import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 import { getConversationStates } from '../conversation-ledger';
 import {
-  createEmosRequestContext,
   emosUpsertMemory,
+  getEmosRequestContext,
+  getMemoryStatus,
   type EmosRequestContext,
   type EmosSingleMessage,
 } from '../emos-client';
@@ -493,12 +493,6 @@ async function handleIngestConversation(
     // ignore
   }
 
-  const settings = await getEmosSettings();
-  if (!settings.baseUrl.trim() || !settings.apiKey.trim()) {
-    return { ok: false, error: 'EMOS settings incomplete (missing baseUrl/apiKey)' };
-  }
-  const emosCtx = createEmosRequestContext({ baseUrl: settings.baseUrl, apiKey: settings.apiKey });
-
   const groupId = toGroupId(platform, conversationId);
   const groupName = trimOrNull(req.conversationTitle);
   const sourceUrl = trimOrNull(req.conversationUrl);
@@ -507,18 +501,115 @@ async function handleIngestConversation(
     typeof baseIndexRaw === 'number' && Number.isFinite(baseIndexRaw) && baseIndexRaw > 0
       ? Math.floor(baseIndexRaw)
       : 0;
-  if (baseIndex > 0) {
-    return {
-      ok: false,
-      error:
-        'Suffix-only ingestion via baseIndex is disabled. Pass the full conversation messages with baseIndex=0.',
-    };
-  }
   const fullMessageCountRaw = req.messageCount;
   const fullMessageCount =
     typeof fullMessageCountRaw === 'number' && Number.isFinite(fullMessageCountRaw)
       ? Math.max(0, Math.floor(fullMessageCountRaw))
       : null;
+
+  async function failIngest(
+    error: string,
+    options: {
+      upserted?: number;
+      skipped?: number;
+      failed?: number;
+      total?: number;
+      startIndex?: number;
+      errors?: string[];
+      includeResult?: boolean;
+      extra?: Record<string, unknown>;
+    } = {},
+  ): Promise<unknown> {
+    const resultPayload = {
+      upserted: options.upserted ?? 0,
+      skipped: options.skipped ?? baseIndex,
+      failed: options.failed ?? 0,
+      total: options.total ?? fullMessageCount ?? baseIndex,
+      startIndex: options.startIndex ?? baseIndex,
+      errors: options.errors ?? [error],
+    };
+
+    if (runId) {
+      await appendRunLog(runId, 'error', 'ruminer.ingest.result', {
+        platform,
+        conversationId,
+        conversationTitle: groupName,
+        conversationUrl: sourceUrl,
+        sessionId: groupId,
+        ...(inferredRunId ? { inferredRunId: true } : {}),
+        emos: resultPayload,
+        sessionSaveOk: false,
+        sessionSaveError: error,
+        ...(options.extra ?? {}),
+      });
+    }
+
+    if (options.includeResult === false) {
+      return { ok: false, error };
+    }
+
+    return {
+      ok: false,
+      error,
+      result: resultPayload,
+    };
+  }
+
+  let memoryStatus;
+  try {
+    memoryStatus = await getMemoryStatus();
+  } catch (error) {
+    const message = `Memory backend status check failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    return failIngest(message, {
+      includeResult: false,
+      extra: {
+        memory: {
+          configured: false,
+        },
+      },
+    });
+  }
+
+  if (!memoryStatus.configured) {
+    return failIngest('Memory backend is not configured', {
+      includeResult: false,
+      extra: {
+        memory: {
+          backend: memoryStatus.backend,
+          configured: false,
+        },
+      },
+    });
+  }
+
+  let emosCtx: EmosRequestContext;
+  try {
+    emosCtx = await getEmosRequestContext();
+  } catch (error) {
+    const message = `Memory backend context initialization failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    return failIngest(message, {
+      includeResult: false,
+      extra: {
+        memory: {
+          backend: memoryStatus.backend,
+          configured: true,
+        },
+      },
+    });
+  }
+
+  if (baseIndex > 0) {
+    return failIngest(
+      'Suffix-only ingestion via baseIndex is disabled. Pass the full conversation messages with baseIndex=0.',
+      {
+        includeResult: false,
+      },
+    );
+  }
 
   const messages = Array.isArray(req.messages) ? req.messages : [];
   const normalizedMessages: Array<{
@@ -536,27 +627,12 @@ async function handleIngestConversation(
     .filter((m) => Boolean(m.content));
 
   if (normalizedMessages.length === 0) {
-    if (runId) {
-      await appendRunLog(runId, 'error', 'ruminer.ingest.result', {
-        platform,
-        conversationId,
-        conversationTitle: groupName,
-        conversationUrl: sourceUrl,
-        sessionId: groupId,
-        ...(inferredRunId ? { inferredRunId: true } : {}),
-        emos: {
-          upserted: 0,
-          skipped: 0,
-          failed: 0,
-          total: 0,
-          startIndex: 0,
-          errors: ['No messages to ingest'],
-        },
-        sessionSaveOk: false,
-        sessionSaveError: 'No messages to ingest',
-      });
-    }
-    return { ok: false, error: 'No messages to ingest' };
+    return failIngest('No messages to ingest', {
+      skipped: 0,
+      total: 0,
+      startIndex: 0,
+      includeResult: false,
+    });
   }
 
   const nowIso = new Date().toISOString();

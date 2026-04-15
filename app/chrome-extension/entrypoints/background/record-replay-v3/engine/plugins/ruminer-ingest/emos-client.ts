@@ -1,4 +1,4 @@
-import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
+import { getNativeServerPort, readJson } from '@/entrypoints/shared/utils/settings-internals';
 
 export interface EmosSingleMessage {
   message_id: string;
@@ -11,11 +11,13 @@ export interface EmosSingleMessage {
   sender_name?: string;
   role?: string | null;
   refer_list?: string[];
+  source_platform?: string;
+  conversation_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export type EmosRequestContext = {
-  baseUrl: string;
-  headers: Record<string, string>;
+  kind: 'native_memory';
 };
 
 export interface EmosSearchRequest {
@@ -33,6 +35,18 @@ export interface EmosSearchResponse {
   [key: string]: unknown;
 }
 
+export interface MemoryStatus {
+  backend: 'local_markdown_qmd' | 'evermemos';
+  configured: boolean;
+  localRootPath: string;
+  qmdIndexPath: string;
+  qmdAvailable: boolean;
+  qmdEnabled: boolean;
+  totalDocuments: number;
+  totalMessages: number;
+  updatedAt: string;
+}
+
 export interface EmosGetMemoriesRequest {
   user_id?: string;
   group_id?: string;
@@ -45,93 +59,63 @@ export interface EmosGetMemoriesRequest {
   [key: string]: unknown;
 }
 
-function ensureBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, '');
+async function getNativeServerBaseUrl(): Promise<string> {
+  const port = await getNativeServerPort();
+  return `http://127.0.0.1:${port}`;
 }
 
-export function createEmosRequestContext(settings: {
+async function requestNativeMemoryApi<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
+  const baseUrl = await getNativeServerBaseUrl();
+  const response = await fetch(`${baseUrl}${endpoint}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  });
+
+  const payload = await readJson<any>(response).catch(async () => {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `HTTP ${response.status}`);
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      typeof payload === 'string'
+        ? payload
+        : JSON.stringify(payload?.error ? payload.error : payload),
+    );
+  }
+
+  return payload as T;
+}
+
+export function createEmosRequestContext(_settings: {
   baseUrl: string;
   apiKey: string;
 }): EmosRequestContext {
-  const baseUrl = ensureBaseUrl(String(settings.baseUrl || '').trim());
-  const apiKey = String(settings.apiKey || '').trim();
-  if (!baseUrl) throw new Error('EMOS base URL is not configured');
-  if (!apiKey) throw new Error('EMOS API key is not configured');
-  return {
-    baseUrl,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-  };
+  return { kind: 'native_memory' };
 }
 
 export async function getEmosRequestContext(): Promise<EmosRequestContext> {
-  const settings = await getEmosSettings();
-  return createEmosRequestContext({ baseUrl: settings.baseUrl, apiKey: settings.apiKey });
-}
-
-async function parseJsonResponse(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
+  return { kind: 'native_memory' };
 }
 
 export async function emosUpsertMemory(
   message: EmosSingleMessage,
-  ctx?: EmosRequestContext,
+  _ctx?: EmosRequestContext,
 ): Promise<unknown> {
-  const request = ctx ?? (await getEmosRequestContext());
-
-  const response = await fetch(`${request.baseUrl}/api/v0/memories`, {
+  return requestNativeMemoryApi('/agent/memory/upsert', {
     method: 'POST',
-    headers: request.headers,
-    body: JSON.stringify(message),
+    body: JSON.stringify({ message }),
   });
-
-  const payload = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(`EMOS upsert failed (${response.status}) ${JSON.stringify(payload)}`);
-  }
-
-  return payload;
 }
 
 export async function emosSearchMemories(body: EmosSearchRequest): Promise<EmosSearchResponse> {
-  const request = await getEmosRequestContext();
-
-  // Build query string from body params
-  const params = new URLSearchParams();
-  if (body.query) params.append('query', body.query);
-  if (body.group_id) params.append('group_id', body.group_id);
-  if (body.limit) params.append('limit', String(body.limit));
-  if (body.retrieve_method) params.append('retrieve_method', body.retrieve_method);
-  const requestedUserId =
-    typeof body.user_id === 'string' && body.user_id.trim() ? body.user_id.trim() : '';
-  if (requestedUserId) params.append('user_id', requestedUserId);
-  // Add any additional params from body
-  Object.entries(body).forEach(([key, value]) => {
-    if (
-      !['query', 'group_id', 'limit', 'retrieve_method', 'user_id'].includes(key) &&
-      value !== undefined
-    ) {
-      params.append(key, String(value));
-    }
+  return requestNativeMemoryApi<EmosSearchResponse>('/agent/memory/search', {
+    method: 'POST',
+    body: JSON.stringify(body),
   });
-
-  const response = await fetch(`${request.baseUrl}/api/v0/memories/search?${params.toString()}`, {
-    method: 'GET',
-    headers: request.headers,
-  });
-
-  const payload = (await parseJsonResponse(response)) as EmosSearchResponse;
-  if (!response.ok) {
-    throw new Error(`EMOS search failed (${response.status}) ${JSON.stringify(payload)}`);
-  }
-
-  return payload || {};
 }
 
 export interface EmosDeleteFilters {
@@ -141,77 +125,49 @@ export interface EmosDeleteFilters {
 }
 
 export async function emosDeleteMemory(filters: EmosDeleteFilters): Promise<unknown> {
-  const request = await getEmosRequestContext();
-
-  const body: Record<string, string> = { event_id: filters.event_id };
-  if (filters.user_id) body.user_id = filters.user_id;
-  if (filters.group_id) body.group_id = filters.group_id;
-
-  const response = await fetch(`${request.baseUrl}/api/v0/memories`, {
-    method: 'DELETE',
-    headers: request.headers,
-    body: JSON.stringify(body),
+  return requestNativeMemoryApi('/agent/memory/delete', {
+    method: 'POST',
+    body: JSON.stringify(filters),
   });
-
-  const payload = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(`EMOS delete failed (${response.status}) ${JSON.stringify(payload)}`);
-  }
-
-  return payload;
 }
 
 export async function emosGetMemories(paramsInput: EmosGetMemoriesRequest = {}): Promise<unknown> {
-  const request = await getEmosRequestContext();
-
-  const params = new URLSearchParams();
-  if (paramsInput.group_id) params.append('group_id', paramsInput.group_id);
-  if (paramsInput.memory_type) params.append('memory_type', paramsInput.memory_type);
-  if (typeof paramsInput.limit === 'number') params.append('limit', String(paramsInput.limit));
-  if (typeof paramsInput.offset === 'number') params.append('offset', String(paramsInput.offset));
-  if (paramsInput.start_time) params.append('start_time', paramsInput.start_time);
-  if (paramsInput.end_time) params.append('end_time', paramsInput.end_time);
-  if (paramsInput.version_range) params.append('version_range', paramsInput.version_range);
-
-  const requestedUserId =
-    typeof paramsInput.user_id === 'string' && paramsInput.user_id.trim()
-      ? paramsInput.user_id.trim()
-      : '';
-  if (requestedUserId) params.append('user_id', requestedUserId);
-
-  Object.entries(paramsInput).forEach(([key, value]) => {
-    if (
-      ![
-        'user_id',
-        'group_id',
-        'memory_type',
-        'limit',
-        'offset',
-        'start_time',
-        'end_time',
-        'version_range',
-      ].includes(key) &&
-      value !== undefined
-    ) {
-      params.append(key, String(value));
-    }
+  return requestNativeMemoryApi('/agent/memory/read', {
+    method: 'POST',
+    body: JSON.stringify(paramsInput),
   });
+}
 
-  const response = await fetch(`${request.baseUrl}/api/v0/memories?${params.toString()}`, {
+export async function getMemoryStatus(): Promise<MemoryStatus> {
+  const response = await requestNativeMemoryApi<{ status?: MemoryStatus }>('/agent/memory/status', {
     method: 'GET',
-    headers: request.headers,
   });
-
-  const payload = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(`EMOS get memories failed (${response.status}) ${JSON.stringify(payload)}`);
-  }
-
-  return payload;
+  const status = response?.status;
+  return {
+    backend: status?.backend === 'evermemos' ? 'evermemos' : 'local_markdown_qmd',
+    configured: Boolean(status?.configured),
+    localRootPath: typeof status?.localRootPath === 'string' ? status.localRootPath : '',
+    qmdIndexPath: typeof status?.qmdIndexPath === 'string' ? status.qmdIndexPath : '',
+    qmdAvailable: Boolean(status?.qmdAvailable),
+    qmdEnabled: Boolean(status?.qmdEnabled),
+    totalDocuments:
+      typeof status?.totalDocuments === 'number' && Number.isFinite(status.totalDocuments)
+        ? status.totalDocuments
+        : 0,
+    totalMessages:
+      typeof status?.totalMessages === 'number' && Number.isFinite(status.totalMessages)
+        ? status.totalMessages
+        : 0,
+    updatedAt: typeof status?.updatedAt === 'string' ? status.updatedAt : new Date(0).toISOString(),
+  };
 }
 
 export async function emosTestConnection(): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const status = await getMemoryStatus();
+    if (!status.configured) {
+      return { ok: false, error: 'Memory backend is not configured' };
+    }
     await emosSearchMemories({ query: 'ping', limit: 1 });
     return { ok: true };
   } catch (error) {

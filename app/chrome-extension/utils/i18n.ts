@@ -232,7 +232,7 @@ const fallbackMessages: Record<string, string> = {
 
   // System settings notifications
   settingsGatewaySavedNotification: 'Gateway settings saved',
-  settingsEmosSavedNotification: 'EverMemOS settings saved',
+  settingsEmosSavedNotification: 'Memory settings saved',
   settingsQuickPanelSavedNotification: 'Quick Panel settings saved',
   refreshStatusButtonAria: 'Refresh status',
   testConnectionButtonAria: 'Test connection',

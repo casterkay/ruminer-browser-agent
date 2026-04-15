@@ -1,5 +1,6 @@
-import { describe, expect, test, afterAll, beforeAll } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
 import supertest from 'supertest';
+import { getDefaultMemoryStoreRoot, getMemoryQmdIndexPath } from '../agent/storage';
 import Server from './index';
 
 describe('服务器测试', () => {
@@ -30,6 +31,22 @@ describe('服务器测试', () => {
 
     expect(response.body).toEqual({
       error: 'GET /mcp requires an MCP session. Initialize via POST /mcp first.',
+    });
+  });
+
+  test('GET /agent/memory/settings should return default generic memory settings', async () => {
+    const response = await supertest(Server.getInstance().server)
+      .get('/agent/memory/settings')
+      .expect(200)
+      .expect('Content-Type', /json/);
+
+    expect(response.body).toEqual({
+      settings: {
+        backend: 'local_markdown_qmd',
+        localRootPath: getDefaultMemoryStoreRoot(),
+        qmdIndexPath: getMemoryQmdIndexPath(getDefaultMemoryStoreRoot()),
+        updatedAt: new Date(0).toISOString(),
+      },
     });
   });
 });

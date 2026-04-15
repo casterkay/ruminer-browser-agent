@@ -460,12 +460,15 @@ const isSearchMode = computed(
 );
 
 // ============================================================
-// EverMemOS autosave (per-session)
+// Memory autosave (per-session)
 // ============================================================
 
 const isEmosAutosaveEnabled = computed(() => {
   const session = sessions.selectedSession.value;
   if (!session) return false;
+  if (typeof session.optionsConfig?.saveConversationToMemory === 'boolean') {
+    return session.optionsConfig.saveConversationToMemory;
+  }
   return session.optionsConfig?.saveConversationToEverMemOS !== false;
 });
 
@@ -550,9 +553,9 @@ function queueEmosUpsert(item: EmosSingleMessage, emosId: string): void {
       pendingEmosMessageIds.delete(emosId);
     })
     .catch((error) => {
-      console.warn('[EverMemOS autosave] Upsert failed:', error);
+      console.warn('[Memory autosave] Upsert failed:', error);
       pendingEmosMessageIds.delete(emosId);
-      // Throttle toast to avoid spamming when EMOS is misconfigured/offline.
+      // Throttle toast to avoid spamming when memory storage is misconfigured/offline.
       const now = Date.now();
       if (now - lastEmosAutosaveToastAt > 5000) {
         lastEmosAutosaveToastAt = now;
@@ -561,7 +564,7 @@ function queueEmosUpsert(item: EmosSingleMessage, emosId: string): void {
             ? error.message
             : typeof error === 'string'
               ? error
-              : 'EverMemOS autosave failed.';
+              : 'Memory autosave failed.';
         showToast(message);
       }
     });
@@ -1662,7 +1665,7 @@ function injectToolRestrictions(
 function injectRuminateRagGuidance(instruction: string): string {
   const guidance = [
     'Ruminate mode (RAG):',
-    "- Before replying to user's requests, take all opportunities to call the **emos_search_memories** tool to search the user's own past messages. Consider using both **English** and **Chinese 中文** in queries.",
+    "- Before replying to user's requests, take all opportunities to call the **memory_search** tool to search the user's own past messages. Consider using both **English** and **Chinese 中文** in queries.",
     '- Always set `user_id: "me"`.',
     '- Use the retrieved memories to ground your response when relevant.',
     '',

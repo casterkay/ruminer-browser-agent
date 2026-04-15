@@ -1,13 +1,14 @@
 import {
   emosDeleteMemory,
+  emosGetMemories,
   emosSearchMemories,
+  getMemoryStatus,
 } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/emos-client';
-import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
 import { computed, ref, type Ref } from 'vue';
 
 export interface MemoryItem {
   message_id: string;
-  /** Raw EverMemOS event/memory id, for delete operations. */
+  /** Backend event/message id, used for delete operations. */
   event_id?: string;
   content: string;
   sender?: string;
@@ -53,7 +54,7 @@ type CachedSearchResult = {
 const EMOS_SEARCH_CACHE_TTL_MS = 30_000;
 const EMOS_SEARCH_CACHE_MAX_ENTRIES = 50;
 const emosSearchCache = new Map<string, CachedSearchResult | Promise<CachedSearchResult>>();
-let lastEmosSettingsSignature = '';
+let lastMemoryStatusSignature = '';
 
 function getSpeakerIdsForRequest(speakers?: string[]): string[] {
   return Array.from(
@@ -221,7 +222,7 @@ function normalizeItem(raw: any): MemoryItem {
 
   const messageId =
     explicitMessageId ||
-    (rawEventId && userId && digitsTs ? `emos:${userId}:${digitsTs}` : '') ||
+    (rawEventId && userId && digitsTs ? `memory:${userId}:${digitsTs}` : '') ||
     (raw?.group_id && (raw?.timestamp || raw?.create_time)
       ? `${raw.group_id}:${raw.timestamp || raw.create_time}`
       : '') ||
@@ -277,12 +278,19 @@ async function fetchSearchResult(body: Record<string, unknown>, speakers?: strin
     return { result: { memories: [] } };
   }
 
+  const query = toTrimmedString(body.query);
+
   const requests = userIds.map(async (userId) => {
-    const response = await emosSearchMemories({
-      ...body,
-      query: String(body.query || ''),
-      user_id: userId,
-    });
+    const response = query
+      ? await emosSearchMemories({
+          ...body,
+          query,
+          user_id: userId,
+        })
+      : await emosGetMemories({
+          ...body,
+          user_id: userId,
+        });
     return { userId, response };
   });
 
@@ -297,7 +305,7 @@ async function fetchSearchResult(body: Record<string, unknown>, speakers?: strin
     );
     throw firstError?.reason instanceof Error
       ? firstError.reason
-      : new Error(String(firstError?.reason ?? 'EMOS search failed'));
+      : new Error(String(firstError?.reason ?? 'Memory search failed'));
   }
 
   const merged = fulfilled
@@ -427,8 +435,8 @@ export function useEmosSearch(): UseEmosSearch {
     error.value = null;
 
     try {
-      const settings = await getEmosSettings();
-      isConfigured.value = !!settings.baseUrl.trim() && !!settings.apiKey.trim();
+      const status = await getMemoryStatus();
+      isConfigured.value = status.configured;
 
       if (!isConfigured.value) {
         clearEmosSearchCache();
@@ -436,11 +444,16 @@ export function useEmosSearch(): UseEmosSearch {
         return;
       }
 
-      const nextSignature = `${settings.baseUrl.trim()}\n${settings.apiKey.trim()}`;
-      if (lastEmosSettingsSignature && lastEmosSettingsSignature !== nextSignature) {
+      const nextSignature = [
+        status.backend,
+        status.localRootPath,
+        status.qmdIndexPath,
+        status.updatedAt,
+      ].join('\n');
+      if (lastMemoryStatusSignature && lastMemoryStatusSignature !== nextSignature) {
         clearEmosSearchCache();
       }
-      lastEmosSettingsSignature = nextSignature;
+      lastMemoryStatusSignature = nextSignature;
 
       const body: Record<string, unknown> = {
         query: filters.query || '',

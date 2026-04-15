@@ -111,6 +111,64 @@ CREATE TABLE IF NOT EXISTS emos_settings (
   updated_at TEXT NOT NULL
 );
 
+-- Generic memory backend settings (native-server owned)
+CREATE TABLE IF NOT EXISTS memory_settings (
+  id TEXT PRIMARY KEY,
+  backend TEXT NOT NULL,
+  local_root_path TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_documents (
+  id TEXT PRIMARY KEY,
+  backend TEXT NOT NULL,
+  document_type TEXT NOT NULL,
+  group_id TEXT,
+  group_name TEXT,
+  source_platform TEXT,
+  conversation_id TEXT,
+  title TEXT,
+  source_url TEXT,
+  file_path TEXT NOT NULL,
+  relative_path TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  metadata TEXT,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS memory_documents_file_path_idx ON memory_documents(file_path);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_documents_relative_path_idx ON memory_documents(relative_path);
+CREATE INDEX IF NOT EXISTS memory_documents_group_id_idx ON memory_documents(group_id);
+CREATE INDEX IF NOT EXISTS memory_documents_updated_at_idx ON memory_documents(updated_at);
+
+CREATE TABLE IF NOT EXISTS memory_messages (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES memory_documents(id) ON DELETE CASCADE,
+  group_id TEXT,
+  sender TEXT,
+  sender_name TEXT,
+  role TEXT,
+  content TEXT NOT NULL,
+  create_time TEXT NOT NULL,
+  source_url TEXT,
+  source_platform TEXT,
+  conversation_id TEXT,
+  refer_list TEXT,
+  metadata TEXT,
+  message_index INTEGER,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_messages_document_id_idx ON memory_messages(document_id);
+CREATE INDEX IF NOT EXISTS memory_messages_group_id_idx ON memory_messages(group_id);
+CREATE INDEX IF NOT EXISTS memory_messages_sender_idx ON memory_messages(sender);
+CREATE INDEX IF NOT EXISTS memory_messages_create_time_idx ON memory_messages(create_time);
+
 -- Anthropic settings for Claude Code (native-server owned)
 -- Used to set env vars when spawning the claude CLI.
 CREATE TABLE IF NOT EXISTS anthropic_settings (
@@ -165,6 +223,20 @@ function runMigrations(sqlite: DatabaseSync): void {
     sqlite.exec(
       "ALTER TABLE emos_settings ADD COLUMN base_url TEXT NOT NULL DEFAULT 'https://api.evermind.ai'",
     );
+  }
+
+  if (!columnExists(sqlite, 'memory_settings', 'backend')) {
+    sqlite.exec(
+      "ALTER TABLE memory_settings ADD COLUMN backend TEXT NOT NULL DEFAULT 'local_markdown_qmd'",
+    );
+  }
+
+  if (!columnExists(sqlite, 'memory_settings', 'local_root_path')) {
+    sqlite.exec("ALTER TABLE memory_settings ADD COLUMN local_root_path TEXT NOT NULL DEFAULT ''");
+  }
+
+  if (!columnExists(sqlite, 'memory_documents', 'relative_path')) {
+    sqlite.exec("ALTER TABLE memory_documents ADD COLUMN relative_path TEXT NOT NULL DEFAULT ''");
   }
 }
 

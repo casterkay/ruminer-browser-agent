@@ -26,7 +26,7 @@ describe('ingest workflow rpc telemetry', () => {
     vi.clearAllMocks();
     (chrome.runtime.onMessage.addListener as any).mockClear?.();
 
-    // Provide valid EMOS settings so ingest handler proceeds far enough to log.
+    // Force the memory status probe to fail so we still verify telemetry on preflight errors.
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
       if (
         keys === STORAGE_KEYS.EMOS_SETTINGS ||

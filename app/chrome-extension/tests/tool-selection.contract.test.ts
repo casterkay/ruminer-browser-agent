@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_NAMES, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 
 import {
+  computeEnabledToolIds,
+  isToolAllowedBySelection,
+} from '@/entrypoints/background/tool-selection/resolve';
+import {
   TOOL_GROUP_DEFINITIONS,
   type IndividualToolState,
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
-import {
-  computeEnabledToolIds,
-  isToolAllowedBySelection,
-} from '@/entrypoints/background/tool-selection/resolve';
 
 function makeGroupState(patch: Partial<Omit<ToolGroupState, 'updatedAt'>>): ToolGroupState {
   return {
@@ -87,6 +87,19 @@ describe('tool selection (contract)', () => {
     };
 
     expect(isToolAllowedBySelection('chrome_file_upload', selection)).toBe(true);
+  });
+
+  it('generic memory aliases are normalized for policy checks', () => {
+    const groupState = makeGroupState({ memory: true });
+    const individualState = makeIndividualState();
+    const selection = {
+      groupState,
+      individualState,
+      enabledToolIds: computeEnabledToolIds(groupState, individualState),
+    };
+
+    expect(isToolAllowedBySelection('memory_read', selection)).toBe(true);
+    expect(isToolAllowedBySelection('memory_search', selection)).toBe(true);
   });
 
   it('dynamic flow.* tools are gated by flow_run', () => {

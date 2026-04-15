@@ -456,8 +456,8 @@
     "description": "閘道設定儲存時的提示"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS 設定已儲存",
-    "description": "EverMemOS 設定儲存時的提示"
+    "message": "記憶設定已儲存",
+    "description": "記憶設定儲存時的提示"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "快捷面板設定已儲存",

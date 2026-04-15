@@ -10,7 +10,7 @@ import { emitMcpToolResult, emitMcpToolUse } from '../agent/mcp-tool-telemetry';
 import nativeMessagingHostInstance from '../native-messaging-host-instance';
 
 // ---------------------------------------------------------------------------
-// In-process cache for emos_search_memories results
+// In-process cache for memory_search results
 // The OpenClaw gateway strips data.result from tool events by default
 // (verbose="off"). We cache the result here so the OpenClaw engine can inject
 // it as the tool_result message content when the WS event arrives.
@@ -18,8 +18,18 @@ import nativeMessagingHostInstance from '../native-messaging-host-instance';
 let _lastEmosSearchResultText: string | null = null;
 let _lastEmosSearchResultTs = 0;
 
+function resolveToolAlias(name: string): string {
+  if (name === TOOL_NAMES.MEMORY.LEGACY_GET_MEMORIES) {
+    return TOOL_NAMES.MEMORY.GET_MEMORIES;
+  }
+  if (name === TOOL_NAMES.MEMORY.LEGACY_SEARCH_MEMORIES) {
+    return TOOL_NAMES.MEMORY.SEARCH_MEMORIES;
+  }
+  return name;
+}
+
 /**
- * Consume and return the most-recently cached emos_search_memories result if
+ * Consume and return the most-recently cached memory_search result if
  * it was stored within `maxAgeMs` milliseconds ago. Clears the cache on read.
  */
 export function consumeLastEmosSearchResult(maxAgeMs = 30_000): string | null {
@@ -105,9 +115,10 @@ export const setupTools = (server: Server) => {
 const handleToolCall = async (name: string, args: any): Promise<CallToolResult> => {
   try {
     emitMcpToolUse(name, args);
+    const resolvedName = resolveToolAlias(name);
 
     // If calling a dynamic flow tool (name starts with flow.), proxy to common flow-run tool
-    if (name && name.startsWith('flow.')) {
+    if (resolvedName && resolvedName.startsWith('flow.')) {
       // We need to resolve flow by slug to ID
       try {
         const resp = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
@@ -153,17 +164,17 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
     // 发送请求到Chrome扩展并等待响应
     const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
       {
-        name,
+        name: resolvedName,
         args,
       },
       NativeMessageType.CALL_TOOL,
       120000, // 延长到 120 秒，避免性能分析等长任务超时
     );
     if (response.status === 'success') {
-      // Cache emos_search_memories results for the OpenClaw citation system.
+      // Cache memory_search results for the OpenClaw citation system.
       // Tool events from the gateway arrive with result stripped (verbose="off"),
       // so we bridge the gap via this in-process store.
-      if (name === TOOL_NAMES.MEMORY.SEARCH_MEMORIES) {
+      if (resolvedName === TOOL_NAMES.MEMORY.SEARCH_MEMORIES) {
         const data = response.data as CallToolResult;
         const firstText = Array.isArray(data?.content)
           ? ((

@@ -8,6 +8,7 @@
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { setGatewaySettings } from '@/entrypoints/shared/utils/gateway-settings';
 import { getNativeServerPort, readJson } from '@/entrypoints/shared/utils/settings-internals';
+import type { MemoryBackendType } from 'chrome-mcp-shared';
 
 export const STORAGE_KEY_FLOATING_ICON = 'floatingIconEnabled';
 export const STORAGE_KEY_FLOATING_ICON_SIZE = 'floatingIconSize';
@@ -24,6 +25,21 @@ export interface ServerStatus {
 export interface TestResult {
   ok: boolean;
   message: string;
+}
+
+interface MemoryStatusPayload {
+  status?: {
+    backend?: MemoryBackendType;
+    configured?: boolean;
+    localRootPath?: string;
+    qmdAvailable?: boolean;
+    qmdEnabled?: boolean;
+  };
+  error?: string;
+}
+
+function formatMemoryBackendLabel(backend: MemoryBackendType): string {
+  return backend === 'evermemos' ? 'EverMemOS' : 'Local Markdown + QMD';
 }
 
 export async function refreshServerStatus(): Promise<ServerStatus> {
@@ -157,6 +173,90 @@ export async function testGateway(
     const ok = data?.ok === true;
     const message = typeof data?.message === 'string' ? data.message : ok ? 'OK' : 'Failed';
     return { ok, message };
+  } catch (reason) {
+    return {
+      ok: false,
+      message: reason instanceof Error ? reason.message : String(reason),
+    };
+  }
+}
+
+export async function testMemoryBackend(expectedBackend: MemoryBackendType): Promise<TestResult> {
+  const status = await refreshServerStatus();
+  if (!status.isRunning || !status.port) {
+    return {
+      ok: false,
+      message: 'Native server is not running. Start it first to test the memory backend.',
+    };
+  }
+
+  try {
+    const memoryStatusResponse = await fetch(
+      `http://127.0.0.1:${status.port}/agent/memory/status`,
+      {
+        method: 'GET',
+      },
+    );
+    const memoryStatusPayload = await readJson<MemoryStatusPayload>(memoryStatusResponse);
+
+    if (!memoryStatusResponse.ok) {
+      throw new Error(
+        typeof memoryStatusPayload?.error === 'string'
+          ? memoryStatusPayload.error
+          : `Memory status request failed (${memoryStatusResponse.status})`,
+      );
+    }
+
+    const memoryStatus = memoryStatusPayload?.status;
+    if (!memoryStatus) {
+      throw new Error('Memory status response was missing a status payload.');
+    }
+
+    if (memoryStatus.backend && memoryStatus.backend !== expectedBackend) {
+      return {
+        ok: false,
+        message: `Native server is using ${formatMemoryBackendLabel(memoryStatus.backend)} instead of ${formatMemoryBackendLabel(expectedBackend)}. Save settings and try again.`,
+      };
+    }
+
+    if (!memoryStatus.configured) {
+      return {
+        ok: false,
+        message:
+          expectedBackend === 'evermemos'
+            ? 'EverMemOS backend is not configured. Fill in the Base URL and API key first.'
+            : 'Local markdown memory is not configured. Set a storage root and try again.',
+      };
+    }
+
+    if (expectedBackend === 'evermemos') {
+      const searchResponse = await fetch(`http://127.0.0.1:${status.port}/agent/memory/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'ping', limit: 1 }),
+      });
+      const searchText = await searchResponse.text().catch(() => '');
+      if (!searchResponse.ok) {
+        throw new Error(searchText || `EverMemOS backend test failed (${searchResponse.status}).`);
+      }
+      return {
+        ok: true,
+        message: 'EverMemOS backend connection test passed.',
+      };
+    }
+
+    const rootPath =
+      typeof memoryStatus.localRootPath === 'string' ? memoryStatus.localRootPath : '';
+    const qmdMessage = memoryStatus.qmdAvailable
+      ? 'QMD retrieval is available.'
+      : 'QMD is not installed; SQL search fallback is active.';
+
+    return {
+      ok: true,
+      message: rootPath
+        ? `Local markdown memory is ready at ${rootPath}. ${qmdMessage}`
+        : `Local markdown memory is ready. ${qmdMessage}`,
+    };
   } catch (reason) {
     return {
       ok: false,

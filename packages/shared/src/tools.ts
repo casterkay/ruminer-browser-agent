@@ -41,8 +41,12 @@ export const TOOL_NAMES = {
     GIF_RECORDER: 'chrome_gif_recorder',
   },
   MEMORY: {
-    GET_MEMORIES: 'emos_get_memories',
-    SEARCH_MEMORIES: 'emos_search_memories',
+    READ: 'memory_read',
+    SEARCH: 'memory_search',
+    GET_MEMORIES: 'memory_read',
+    SEARCH_MEMORIES: 'memory_search',
+    LEGACY_GET_MEMORIES: 'emos_get_memories',
+    LEGACY_SEARCH_MEMORIES: 'emos_search_memories',
   },
   RECORD_REPLAY: {
     RECORD_START: 'flow_record_start',
@@ -66,7 +70,7 @@ export const TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.MEMORY.GET_MEMORIES,
     description:
-      'Read memories from EverMemOS (list/query by user_id/group_id/time range/etc). Uses your configured EMOS base URL + API key.',
+      'Read memories from the configured Ruminer memory backend (local markdown + QMD or EverMemOS). Supports filtering by speaker, group, and time range.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -110,7 +114,7 @@ export const TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
     description:
-      'Search memories in EverMemOS using a text query. Uses your configured EMOS base URL + API key.',
+      'Search memories in the configured Ruminer memory backend using a text query. Supports lexical and semantic retrieval when available.',
     inputSchema: {
       type: 'object',
       properties: {

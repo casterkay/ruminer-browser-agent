@@ -514,8 +514,8 @@
     "description": "Toast when Gateway settings are saved"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS settings saved",
-    "description": "Toast when EverMemOS settings are saved"
+    "message": "Memory settings saved",
+    "description": "Toast when memory settings are saved"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "Quick Panel settings saved",

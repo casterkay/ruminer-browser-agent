@@ -34,6 +34,8 @@ export interface IndividualToolState {
 
 const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   chrome_file_upload: TOOL_NAMES.BROWSER.FILE_UPLOAD,
+  emos_get_memories: TOOL_NAMES.MEMORY.GET_MEMORIES,
+  emos_search_memories: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
 };
 
 function toolSchemaDescription(toolName: string): string | null {
@@ -280,21 +282,22 @@ export const TOOL_GROUP_DEFINITIONS: ToolGroupDefinition[] = [
   {
     id: 'memory',
     label: 'Memory',
-    description: 'EverMemOS memory read/search tools',
+    description: 'Memory read/search tools backed by the configured store',
     defaultEnabled: true,
     tools: [
       {
         id: TOOL_NAMES.MEMORY.GET_MEMORIES,
         name: 'Read Memories',
         description:
-          toolSchemaDescription(TOOL_NAMES.MEMORY.GET_MEMORIES) ?? 'Read memories from EverMemOS',
+          toolSchemaDescription(TOOL_NAMES.MEMORY.GET_MEMORIES) ??
+          'Read memories from the configured memory backend',
       },
       {
         id: TOOL_NAMES.MEMORY.SEARCH_MEMORIES,
         name: 'Search Memories',
         description:
           toolSchemaDescription(TOOL_NAMES.MEMORY.SEARCH_MEMORIES) ??
-          'Search memories in EverMemOS',
+          'Search memories in the configured memory backend',
       },
     ],
   },

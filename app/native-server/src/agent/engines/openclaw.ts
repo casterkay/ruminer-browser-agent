@@ -248,10 +248,14 @@ export class OpenClawEngine implements AgentEngine {
       }
 
       // OpenClaw strips data.result from tool events when verbose!="full".
-      // For emos_search_memories we bridge this via the in-process MCP result cache
-      // populated in register-tools.ts when the MCP call completes.
+      // For memory_search and its legacy alias we bridge this via the in-process
+      // MCP result cache populated in register-tools.ts when the MCP call completes.
       let content = parsed.content;
-      if (parsed.phase === 'result' && parsed.metadata.toolName === 'emos_search_memories') {
+      if (
+        parsed.phase === 'result' &&
+        (parsed.metadata.toolName === 'emos_search_memories' ||
+          parsed.metadata.toolName === 'memory_search')
+      ) {
         const cached = consumeLastEmosSearchResult();
         if (cached) content = cached;
       }

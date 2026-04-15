@@ -9,14 +9,17 @@
  * - Engine listing
  */
 import type {
+  AgentSessionsStreamEvent,
   AttachmentCleanupRequest,
   AttachmentCleanupResponse,
   AttachmentStatsResponse,
   GetAnthropicSettingsResponse,
   GetEmosSettingsResponse,
+  GetMemorySettingsResponse,
   GetOpenClawGatewaySettingsResponse,
   GetUiSettingsResponse,
   ListOpenClawAgentsResponse,
+  MemoryBackendType,
   OpenClawAgentDto,
   OpenProjectRequest,
   OpenProjectTarget,
@@ -25,6 +28,8 @@ import type {
   UpdateAnthropicSettingsResponse,
   UpdateEmosSettingsRequest,
   UpdateEmosSettingsResponse,
+  UpdateMemorySettingsRequest,
+  UpdateMemorySettingsResponse,
   UpdateOpenClawGatewaySettingsRequest,
   UpdateOpenClawGatewaySettingsResponse,
   UpdateUiSettingsRequest,
@@ -45,6 +50,15 @@ import {
   getEphemeralSessionState,
 } from '../../agent/ephemeral-session-store';
 import { getEmosSettings, updateEmosSettings } from '../../agent/evermemos/settings-service';
+import {
+  deleteMemory,
+  getMemoryStatus,
+  readMemories,
+  reindexMemories,
+  searchMemories,
+  upsertMemory,
+} from '../../agent/memory/service';
+import { getMemorySettings, updateMemorySettings } from '../../agent/memory/settings-service';
 import {
   createMessage as createStoredMessage,
   deleteMessagesByProjectId,
@@ -84,15 +98,18 @@ import {
   type CreateSessionOptions,
   type UpdateSessionInput,
 } from '../../agent/session-service';
-import type { AgentSessionsStreamEvent } from 'chrome-mcp-shared';
 import {
   publishSessionCreated,
   publishSessionDeleted,
   publishSessionUpdated,
 } from '../../agent/sessions-stream-events';
-import { getDefaultProjectRoot, getDefaultWorkspaceDir } from '../../agent/storage';
-import { AgentStreamManager } from '../../agent/stream-manager';
 import { AgentSessionsStreamManager } from '../../agent/sessions-stream-manager';
+import {
+  getDefaultProjectRoot,
+  getDefaultWorkspaceDir,
+  getMemoryQmdIndexPath,
+} from '../../agent/storage';
+import { AgentStreamManager } from '../../agent/stream-manager';
 import type {
   AgentActRequest,
   AgentActResponse,
@@ -230,6 +247,156 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       };
       reply.status(HTTP_STATUS.OK).send(body);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  // ============================================================
+  // Memory Settings (native-server owned)
+  // ============================================================
+
+  fastify.get('/agent/memory/settings', async (_request, reply) => {
+    try {
+      const settings = await getMemorySettings();
+      const body: GetMemorySettingsResponse = {
+        settings: {
+          backend: settings.backend,
+          localRootPath: settings.localRootPath,
+          qmdIndexPath: getMemoryQmdIndexPath(settings.localRootPath),
+          updatedAt: settings.updatedAt,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/memory/settings',
+    async (request: FastifyRequest<{ Body: UpdateMemorySettingsRequest }>, reply: FastifyReply) => {
+      try {
+        const body = request.body || {};
+
+        const patch: {
+          backend?: MemoryBackendType;
+          localRootPath?: string;
+        } = {};
+        if (body.backend === 'local_markdown_qmd' || body.backend === 'evermemos') {
+          patch.backend = body.backend;
+        }
+        if (typeof body.localRootPath === 'string') {
+          patch.localRootPath = body.localRootPath;
+        }
+
+        const settings = await updateMemorySettings(patch);
+        const resBody: UpdateMemorySettingsResponse = {
+          settings: {
+            backend: settings.backend,
+            localRootPath: settings.localRootPath,
+            qmdIndexPath: getMemoryQmdIndexPath(settings.localRootPath),
+            updatedAt: settings.updatedAt,
+          },
+        };
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update memory settings');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.get('/agent/memory/status', async (_request, reply) => {
+    try {
+      const status = await getMemoryStatus();
+      reply.status(HTTP_STATUS.OK).send({ status });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Failed to get memory status');
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/memory/read',
+    async (request: FastifyRequest<{ Body: Record<string, unknown> }>, reply: FastifyReply) => {
+      try {
+        const result = await readMemories(request.body || {});
+        reply.status(HTTP_STATUS.OK).send({ result });
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to read memories');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post(
+    '/agent/memory/search',
+    async (request: FastifyRequest<{ Body: Record<string, unknown> }>, reply: FastifyReply) => {
+      try {
+        const body = request.body || {};
+        const query = typeof body.query === 'string' ? body.query.trim() : '';
+        if (!query) {
+          reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'query is required' });
+          return;
+        }
+
+        const result = await searchMemories({ ...body, query });
+        reply.status(HTTP_STATUS.OK).send({ result });
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to search memories');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post(
+    '/agent/memory/upsert',
+    async (
+      request: FastifyRequest<{ Body: { message?: Record<string, unknown> } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const message = request.body?.message;
+        if (!message || typeof message !== 'object' || Array.isArray(message)) {
+          reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'message is required' });
+          return;
+        }
+        const result = await upsertMemory(message as any);
+        reply.status(HTTP_STATUS.OK).send({ result });
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to upsert memory');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post(
+    '/agent/memory/delete',
+    async (request: FastifyRequest<{ Body: Record<string, unknown> }>, reply: FastifyReply) => {
+      try {
+        const result = await deleteMemory(request.body || {});
+        reply.status(HTTP_STATUS.OK).send({ result });
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to delete memory');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post('/agent/memory/reindex', async (_request, reply) => {
+    try {
+      const result = await reindexMemories();
+      reply.status(HTTP_STATUS.OK).send({ result });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Failed to reindex memories');
       const message = error instanceof Error ? error.message : String(error);
       reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
     }

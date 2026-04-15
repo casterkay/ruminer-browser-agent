@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
-import { getEmosSettings } from '@/entrypoints/shared/utils/emos-settings';
-
 import { RR_ERROR_CODES } from '../../../domain/errors';
 import type { JsonObject } from '../../../domain/json';
 import type { NodeDefinition } from '../types';
-import { emosSearchMemories } from './emos-client';
+import { emosSearchMemories, getMemoryStatus } from './emos-client';
 import { toErrorResult } from './utils';
 
 const authCheckConfigSchema = z.object({
@@ -31,21 +29,14 @@ export const authCheckNodeDefinition: NodeDefinition<'ruminer.auth_check', AuthC
   kind: 'ruminer.auth_check',
   schema: authCheckConfigSchema,
   async execute(ctx, node) {
-    const settings = await getEmosSettings();
-    const missing: string[] = [];
-    if (!settings.baseUrl.trim()) {
-      missing.push('baseUrl');
-    }
-    if (!settings.apiKey.trim()) {
-      missing.push('apiKey');
-    }
+    const status = await getMemoryStatus();
 
-    if (missing.length > 0) {
-      const message = `EMOS settings incomplete: missing ${missing.join(', ')}`;
+    if (!status.configured) {
+      const message = 'Memory backend is not configured';
       await notifyAuthFailure(node.config.notifyTitle, message);
       ctx.log('error', message);
       return toErrorResult(RR_ERROR_CODES.PERMISSION_DENIED, message, {
-        missing,
+        backend: status.backend,
       } as JsonObject);
     }
 
@@ -53,7 +44,7 @@ export const authCheckNodeDefinition: NodeDefinition<'ruminer.auth_check', AuthC
       try {
         await emosSearchMemories({ query: 'ping', limit: 1 });
       } catch (error) {
-        const message = `EMOS auth check failed: ${
+        const message = `Memory backend auth check failed: ${
           error instanceof Error ? error.message : String(error)
         }`;
         await notifyAuthFailure(node.config.notifyTitle, message);

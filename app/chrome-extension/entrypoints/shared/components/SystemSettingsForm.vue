@@ -107,42 +107,77 @@
       </div>
     </section>
 
-    <!-- EverMemOS card -->
+    <!-- Memory card -->
     <section class="settings-card">
       <div class="settings-card-header">
-        <h2 class="settings-card-title">EverMemOS</h2>
+        <h2 class="settings-card-title">Memory</h2>
         <button
           type="button"
           class="btn-icon"
-          :disabled="testingEmos"
+          :disabled="testingMemory"
           :aria-label="t('testConnectionButtonAria')"
-          @click="testEmos"
+          @click="testMemory"
         >
           <ILucidePlug class="w-4 h-4" />
         </button>
       </div>
       <label class="settings-field">
-        <span class="settings-field-label">Base URL</span>
-        <input
-          v-model="baseUrl"
-          class="settings-field-input"
-          type="text"
-          placeholder="https://api.evermind.ai"
-          @blur="saveEmos"
-        />
+        <span class="settings-field-label">Backend</span>
+        <select v-model="memoryBackend" class="settings-field-input" @change="saveMemory">
+          <option value="local_markdown_qmd">Local Markdown + QMD</option>
+          <option value="evermemos">EverMemOS (legacy)</option>
+        </select>
       </label>
-      <label class="settings-field">
-        <span class="settings-field-label">API Key</span>
-        <input
-          v-model="apiKey"
-          class="settings-field-input"
-          type="password"
-          placeholder="your EverMemOS API key"
-          @blur="saveEmos"
-        />
-      </label>
-      <div v-if="emosMessage" class="settings-status" :class="emosOk ? 'ok' : 'error'">
-        {{ emosMessage }}
+
+      <template v-if="memoryBackend === 'local_markdown_qmd'">
+        <label class="settings-field">
+          <span class="settings-field-label">Storage Root</span>
+          <input
+            v-model="memoryLocalRootPath"
+            class="settings-field-input"
+            type="text"
+            placeholder="User-global app data directory"
+            @blur="saveMemory"
+          />
+        </label>
+        <label class="settings-field">
+          <span class="settings-field-label">QMD Index</span>
+          <input :value="memoryQmdIndexPath" class="settings-field-input" type="text" readonly />
+        </label>
+        <div class="settings-value settings-muted">
+          Local markdown files are the source of truth. Search falls back to SQLite when QMD is
+          unavailable.
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="settings-value settings-muted">
+          Legacy remote backend. Ruminer still routes memory operations through the native server.
+        </div>
+        <label class="settings-field">
+          <span class="settings-field-label">Base URL</span>
+          <input
+            v-model="baseUrl"
+            class="settings-field-input"
+            type="text"
+            placeholder="https://api.evermind.ai"
+            @blur="saveEmosCredentials"
+          />
+        </label>
+        <label class="settings-field">
+          <span class="settings-field-label">API Key</span>
+          <input
+            v-model="apiKey"
+            class="settings-field-input"
+            type="password"
+            placeholder="legacy EverMemOS API key"
+            @blur="saveEmosCredentials"
+          />
+        </label>
+      </template>
+
+      <div v-if="memoryMessage" class="settings-status" :class="memoryOk ? 'ok' : 'error'">
+        {{ memoryMessage }}
       </div>
     </section>
 
@@ -182,21 +217,24 @@ import {
 import {
   getEmosSettings,
   getGatewaySettings,
+  getMemorySettings,
   setEmosSettings,
   setGatewaySettings,
+  setMemorySettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
   loadFloatingIconSize as doLoadFloatingIconSize,
   refreshServerStatus as doRefreshServerStatus,
   saveFloatingIcon as doSaveFloatingIcon,
   saveFloatingIconSize as doSaveFloatingIconSize,
-  testEmos as doTestEmos,
   testGateway as doTestGateway,
+  testMemoryBackend as doTestMemoryBackend,
   FLOATING_ICON_SIZE_MAX,
   FLOATING_ICON_SIZE_MIN,
   loadFloatingIcon,
 } from '@/entrypoints/shared/utils/system-settings';
 import { getMessage } from '@/utils/i18n';
+import type { MemoryBackendType } from 'chrome-mcp-shared';
 import { onMounted, ref } from 'vue';
 import ILucidePlug from '~icons/lucide/plug';
 import ILucideRefreshCw from '~icons/lucide/refresh-cw';
@@ -229,12 +267,15 @@ const testingGateway = ref(false);
 const gatewayOk = ref(true);
 const gatewayMessage = ref('');
 
-// EverMemOS state
+// Memory state
+const memoryBackend = ref<MemoryBackendType>('local_markdown_qmd');
+const memoryLocalRootPath = ref('');
+const memoryQmdIndexPath = ref('');
 const baseUrl = ref('https://api.evermind.ai');
 const apiKey = ref('');
-const testingEmos = ref(false);
-const emosOk = ref(true);
-const emosMessage = ref('');
+const testingMemory = ref(false);
+const memoryOk = ref(true);
+const memoryMessage = ref('');
 
 // Anthropic state
 const anthropicBaseUrl = ref('https://api.anthropic.com');
@@ -246,6 +287,10 @@ const floatingIconSize = ref(96);
 
 // Last saved values (to avoid toast when nothing changed)
 const lastSavedGateway = ref({ wsUrl: '', authToken: '' });
+const lastSavedMemory = ref<{ backend: MemoryBackendType; localRootPath: string }>({
+  backend: 'local_markdown_qmd',
+  localRootPath: '',
+});
 const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
 const lastSavedFloatingIconSize = ref(96);
@@ -263,20 +308,28 @@ async function refreshServerStatus(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  const [gw, em, fi, an] = await Promise.all([
+  const [gw, memory, em, fi, an] = await Promise.all([
     getGatewaySettings(),
+    getMemorySettings(),
     getEmosSettings(),
     loadFloatingIcon(),
     getAnthropicSettings(),
   ]);
   gatewayWsUrl.value = gw.gatewayWsUrl;
   gatewayAuthToken.value = gw.gatewayAuthToken;
+  memoryBackend.value = memory.backend;
+  memoryLocalRootPath.value = memory.localRootPath;
+  memoryQmdIndexPath.value = memory.qmdIndexPath;
   baseUrl.value = em.baseUrl;
   apiKey.value = em.apiKey;
   floatingIconEnabled.value = fi;
   anthropicBaseUrl.value = an.baseUrl;
   anthropicAuthToken.value = an.authToken;
   lastSavedGateway.value = { wsUrl: gw.gatewayWsUrl.trim(), authToken: gw.gatewayAuthToken.trim() };
+  lastSavedMemory.value = {
+    backend: memory.backend,
+    localRootPath: memory.localRootPath.trim(),
+  };
   lastSavedEmos.value = {
     baseUrl: em.baseUrl.trim(),
     apiKey: em.apiKey.trim(),
@@ -305,7 +358,32 @@ async function saveGateway(): Promise<void> {
   showToast(t('settingsGatewaySavedNotification'));
 }
 
-async function saveEmos(): Promise<void> {
+async function saveMemory(showNotification = true): Promise<void> {
+  const backend = memoryBackend.value;
+  const localRootPath = memoryLocalRootPath.value.trim();
+  if (
+    backend === lastSavedMemory.value.backend &&
+    localRootPath === lastSavedMemory.value.localRootPath
+  ) {
+    return;
+  }
+
+  const next = await setMemorySettings({ backend, localRootPath });
+  memoryBackend.value = next.backend;
+  memoryLocalRootPath.value = next.localRootPath;
+  memoryQmdIndexPath.value = next.qmdIndexPath;
+  lastSavedMemory.value = {
+    backend: next.backend,
+    localRootPath: next.localRootPath.trim(),
+  };
+  memoryOk.value = true;
+  memoryMessage.value = '';
+  if (showNotification) {
+    showToast(t('settingsEmosSavedNotification'));
+  }
+}
+
+async function saveEmosCredentials(showNotification = true): Promise<void> {
   const base = baseUrl.value.trim();
   const key = apiKey.value.trim();
   if (base === lastSavedEmos.value.baseUrl && key === lastSavedEmos.value.apiKey) {
@@ -313,9 +391,11 @@ async function saveEmos(): Promise<void> {
   }
   await setEmosSettings({ baseUrl: base, apiKey: key });
   lastSavedEmos.value = { baseUrl: base, apiKey: key };
-  emosOk.value = true;
-  emosMessage.value = '';
-  showToast(t('settingsEmosSavedNotification'));
+  memoryOk.value = true;
+  memoryMessage.value = '';
+  if (showNotification) {
+    showToast(t('settingsEmosSavedNotification'));
+  }
 }
 
 async function saveFloatingIcon(): Promise<void> {
@@ -357,15 +437,19 @@ async function testGateway(): Promise<void> {
   }
 }
 
-async function testEmos(): Promise<void> {
-  testingEmos.value = true;
-  emosMessage.value = '';
+async function testMemory(): Promise<void> {
+  testingMemory.value = true;
+  memoryMessage.value = '';
   try {
-    const result = await doTestEmos(baseUrl.value, apiKey.value);
-    emosOk.value = result.ok;
-    emosMessage.value = result.message;
+    await saveMemory(false);
+    if (memoryBackend.value === 'evermemos') {
+      await saveEmosCredentials(false);
+    }
+    const result = await doTestMemoryBackend(memoryBackend.value);
+    memoryOk.value = result.ok;
+    memoryMessage.value = result.message;
   } finally {
-    testingEmos.value = false;
+    testingMemory.value = false;
   }
 }
 

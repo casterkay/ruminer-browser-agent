@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { LINKS } from '@/common/constants';
+import type { MemoryBackendType } from 'chrome-mcp-shared';
 import { computed, onMounted, ref } from 'vue';
 
 import {
   getEmosSettings,
   getGatewaySettings,
+  getMemorySettings,
   setEmosSettings,
   setGatewaySettings,
+  setMemorySettings,
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
-  testEmos as doTestEmos,
   testGateway as doTestGateway,
+  testMemoryBackend as doTestMemoryBackend,
 } from '@/entrypoints/shared/utils/system-settings';
 import ILucideCopy from '~icons/lucide/copy';
 import ILucideExternalLink from '~icons/lucide/external-link';
@@ -60,16 +63,22 @@ const gatewayTesting = ref(false);
 const gatewayOk = ref<boolean | null>(null);
 const gatewayMessage = ref('');
 
+const memoryBackend = ref<MemoryBackendType>('local_markdown_qmd');
+const memoryLocalRootPath = ref('');
 const emosBaseUrl = ref('https://api.evermind.ai');
 const emosApiKey = ref('');
-const emosTesting = ref(false);
-const emosOk = ref<boolean | null>(null);
-const emosMessage = ref('');
+const memoryTesting = ref(false);
+const memoryOk = ref<boolean | null>(null);
+const memoryMessage = ref('');
 
 async function loadSettings(): Promise<void> {
   const gateway = await getGatewaySettings();
   gatewayWsUrl.value = gateway.gatewayWsUrl;
   gatewayAuthToken.value = gateway.gatewayAuthToken;
+
+  const memory = await getMemorySettings();
+  memoryBackend.value = memory.backend;
+  memoryLocalRootPath.value = memory.localRootPath;
 
   const emos = await getEmosSettings();
   emosBaseUrl.value = emos.baseUrl;
@@ -83,7 +92,16 @@ async function saveGateway(): Promise<void> {
   });
 }
 
-async function saveEmos(): Promise<void> {
+async function saveMemory(): Promise<void> {
+  const next = await setMemorySettings({
+    backend: memoryBackend.value,
+    localRootPath: memoryLocalRootPath.value.trim(),
+  });
+  memoryBackend.value = next.backend;
+  memoryLocalRootPath.value = next.localRootPath;
+}
+
+async function saveEmosCredentials(): Promise<void> {
   await setEmosSettings({
     baseUrl: emosBaseUrl.value,
     apiKey: emosApiKey.value,
@@ -104,17 +122,20 @@ async function testGateway(): Promise<void> {
   }
 }
 
-async function testEmos(): Promise<void> {
-  emosTesting.value = true;
-  emosMessage.value = '';
-  emosOk.value = null;
+async function testMemory(): Promise<void> {
+  memoryTesting.value = true;
+  memoryMessage.value = '';
+  memoryOk.value = null;
   try {
-    await saveEmos();
-    const result = await doTestEmos(emosBaseUrl.value, emosApiKey.value);
-    emosOk.value = result.ok;
-    emosMessage.value = result.message;
+    await saveMemory();
+    if (memoryBackend.value === 'evermemos') {
+      await saveEmosCredentials();
+    }
+    const result = await doTestMemoryBackend(memoryBackend.value);
+    memoryOk.value = result.ok;
+    memoryMessage.value = result.message;
   } finally {
-    emosTesting.value = false;
+    memoryTesting.value = false;
   }
 }
 
@@ -127,7 +148,7 @@ onMounted(() => {
   <div class="agent-theme welcome-root" data-agent-theme="warm-editorial">
     <div class="welcome-container ac-scroll">
       <header class="welcome-header">
-        <div class="welcome-badge">Chrome MCP • EverMemOS • OpenClaw • Claude Code • Codex</div>
+        <div class="welcome-badge">Chrome MCP • Memory • OpenClaw • Claude Code • Codex</div>
         <h1 class="welcome-title">Ruminer Browser Agent</h1>
         <p class="welcome-subtitle">
           One browser, one memory, many agents. This page helps you wire up Chrome MCP server with
@@ -193,32 +214,72 @@ onMounted(() => {
           <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">3) Configure EverMemOS</div>
-                <div class="welcome-card-subtitle">Used as centralized personal memory store.</div>
+                <div class="welcome-card-title">3) Configure Memory</div>
+                <div class="welcome-card-subtitle">
+                  Local markdown + QMD is the default. Switch to EverMemOS only if you need the
+                  legacy remote backend.
+                </div>
               </div>
-              <button class="btn" :disabled="emosTesting" @click="testEmos">
+              <button class="btn" :disabled="memoryTesting" @click="testMemory">
                 <ILucidePlug class="icon" />
-                {{ emosTesting ? 'Testing…' : 'Test' }}
+                {{ memoryTesting ? 'Testing…' : 'Test' }}
               </button>
             </div>
 
             <label class="field">
-              <span class="label">Base URL</span>
-              <input v-model="emosBaseUrl" class="input" type="text" @blur="saveEmos" />
-            </label>
-            <label class="field">
-              <span class="label">API key</span>
-              <input
-                v-model="emosApiKey"
-                class="input"
-                type="password"
-                autocomplete="off"
-                @blur="saveEmos"
-              />
+              <span class="label">Backend</span>
+              <select v-model="memoryBackend" class="input" @change="saveMemory">
+                <option value="local_markdown_qmd">Local Markdown + QMD</option>
+                <option value="evermemos">EverMemOS (legacy)</option>
+              </select>
             </label>
 
-            <div v-if="emosMessage" class="status" :class="emosOk ? 'ok' : 'error'">
-              {{ emosMessage }}
+            <template v-if="memoryBackend === 'local_markdown_qmd'">
+              <label class="field">
+                <span class="label">Storage Root</span>
+                <input
+                  v-model="memoryLocalRootPath"
+                  class="input"
+                  type="text"
+                  placeholder="~/Documents/RuminerStore"
+                  @blur="saveMemory"
+                />
+              </label>
+              <div class="welcome-card-subtitle">
+                Local markdown files are the source of truth. Search falls back to SQLite when QMD
+                is unavailable.
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="welcome-card-subtitle">
+                Legacy remote backend. Ruminer still routes memory reads and writes through the
+                native server.
+              </div>
+              <label class="field">
+                <span class="label">Base URL</span>
+                <input
+                  v-model="emosBaseUrl"
+                  class="input"
+                  type="text"
+                  autocomplete="off"
+                  @blur="saveEmosCredentials"
+                />
+              </label>
+              <label class="field">
+                <span class="label">API key</span>
+                <input
+                  v-model="emosApiKey"
+                  class="input"
+                  type="password"
+                  autocomplete="off"
+                  @blur="saveEmosCredentials"
+                />
+              </label>
+            </template>
+
+            <div v-if="memoryMessage" class="status" :class="memoryOk ? 'ok' : 'error'">
+              {{ memoryMessage }}
             </div>
           </div>
         </section>

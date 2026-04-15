@@ -52,8 +52,23 @@ describe('ingest workflow rpc', () => {
       'fetch',
       vi.fn(async (url: any) => {
         const u = String(url || '');
-        if (u.includes('/agent/evermemos/settings')) {
-          return new Response(null, { status: 404 });
+        if (u.includes('/agent/memory/status')) {
+          return new Response(
+            JSON.stringify({
+              status: {
+                backend: 'local_markdown_qmd',
+                configured: false,
+                localRootPath: '/tmp/memory-store',
+                qmdIndexPath: '/tmp/memory-store/index.sqlite',
+                qmdAvailable: false,
+                qmdEnabled: false,
+                totalDocuments: 0,
+                totalMessages: 0,
+                updatedAt: new Date(0).toISOString(),
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
         }
         if (u.includes('/agent/session/ingest')) {
           return new Response(
@@ -66,7 +81,7 @@ describe('ingest workflow rpc', () => {
             { status: 200, headers: { 'content-type': 'application/json' } },
           );
         }
-        if (u.startsWith('https://emos.test/api/v0/memories')) {
+        if (u.includes('/agent/memory/upsert')) {
           return new Response(JSON.stringify({ ok: true }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
@@ -96,7 +111,7 @@ describe('ingest workflow rpc', () => {
     expect(sendResponse).not.toHaveBeenCalled();
   });
 
-  it('fails fast when EMOS settings are incomplete', async () => {
+  it('fails fast when the memory backend is not configured', async () => {
     initIngestWorkflowRpc();
     const listener = getLastOnMessageListener();
 
@@ -111,7 +126,7 @@ describe('ingest workflow rpc', () => {
 
     expect(resp).toEqual({
       ok: false,
-      error: 'EMOS settings incomplete (missing baseUrl/apiKey)',
+      error: 'Memory backend is not configured',
     });
   });
 
@@ -136,6 +151,47 @@ describe('ingest workflow rpc', () => {
 
     initIngestWorkflowRpc();
     const listener = getLastOnMessageListener();
+
+    const fetchSpy = globalThis.fetch as any;
+    fetchSpy.mockImplementation(async (url: any) => {
+      const u = String(url || '');
+      if (u.includes('/agent/memory/status')) {
+        return new Response(
+          JSON.stringify({
+            status: {
+              backend: 'local_markdown_qmd',
+              configured: true,
+              localRootPath: '/tmp/memory-store',
+              qmdIndexPath: '/tmp/memory-store/index.sqlite',
+              qmdAvailable: false,
+              qmdEnabled: false,
+              totalDocuments: 0,
+              totalMessages: 0,
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (u.includes('/agent/memory/upsert')) {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (u.includes('/agent/session/ingest')) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            projectId: 'ruminer.imported_conversations',
+            sessionId: 'chatgpt:unknown',
+            messageCount: 0,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
 
     const resp = (await callOnMessage(listener, {
       type: 'ruminer.ingest.ingestConversation',
@@ -175,6 +231,30 @@ describe('ingest workflow rpc', () => {
 
     initIngestWorkflowRpc();
     const listener = getLastOnMessageListener();
+
+    const fetchSpy = globalThis.fetch as any;
+    fetchSpy.mockImplementation(async (url: any) => {
+      const u = String(url || '');
+      if (u.includes('/agent/memory/status')) {
+        return new Response(
+          JSON.stringify({
+            status: {
+              backend: 'local_markdown_qmd',
+              configured: true,
+              localRootPath: '/tmp/memory-store',
+              qmdIndexPath: '/tmp/memory-store/index.sqlite',
+              qmdAvailable: false,
+              qmdEnabled: false,
+              totalDocuments: 0,
+              totalMessages: 0,
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
 
     const r2 = (await callOnMessage(listener, {
       type: 'ruminer.ingest.ingestConversation',
@@ -217,13 +297,27 @@ describe('ingest workflow rpc', () => {
     const fetchSpy = globalThis.fetch as any;
     fetchSpy.mockImplementation(async (url: any, init?: any) => {
       const u = String(url || '');
-      if (u.includes('/agent/evermemos/settings')) {
-        return new Response(null, { status: 404 });
+      if (u.includes('/agent/memory/status')) {
+        return new Response(
+          JSON.stringify({
+            status: {
+              backend: 'local_markdown_qmd',
+              configured: true,
+              localRootPath: '/tmp/memory-store',
+              qmdIndexPath: '/tmp/memory-store/index.sqlite',
+              qmdAvailable: false,
+              qmdEnabled: false,
+              totalDocuments: 0,
+              totalMessages: 0,
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
       }
-      if (u.startsWith('https://emos.test/api/v0/memories')) {
-        const body = init && init.body ? JSON.parse(String(init.body)) : {};
-        const mid = String(body?.message_id || '');
-        // Fail the new tail message (index 2) for this conversation.
+      if (u.includes('/agent/memory/upsert')) {
+        const payload = init?.body ? JSON.parse(String(init.body)) : {};
+        const mid = String(payload?.message?.message_id || '');
         if (mid === `chatgpt:${conversationId}:2`) {
           return new Response(JSON.stringify({ ok: false, error: 'boom' }), {
             status: 500,
@@ -257,8 +351,23 @@ describe('ingest workflow rpc', () => {
     // Next run retries the full conversation.
     fetchSpy.mockImplementation(async (url: any) => {
       const u = String(url || '');
-      if (u.includes('/agent/evermemos/settings')) {
-        return new Response(null, { status: 404 });
+      if (u.includes('/agent/memory/status')) {
+        return new Response(
+          JSON.stringify({
+            status: {
+              backend: 'local_markdown_qmd',
+              configured: true,
+              localRootPath: '/tmp/memory-store',
+              qmdIndexPath: '/tmp/memory-store/index.sqlite',
+              qmdAvailable: false,
+              qmdEnabled: false,
+              totalDocuments: 0,
+              totalMessages: 0,
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
       }
       if (u.includes('/agent/session/ingest')) {
         return new Response(
@@ -271,7 +380,7 @@ describe('ingest workflow rpc', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (u.startsWith('https://emos.test/api/v0/memories')) {
+      if (u.includes('/agent/memory/upsert')) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { 'content-type': 'application/json' },

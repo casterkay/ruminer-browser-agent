@@ -7,16 +7,16 @@
  * - Cleaning up attachments by project or all
  *
  * Storage structure:
- *   ~/.chrome-mcp-agent/attachments/{projectId}/{messageId}-{index}-{uuid}.{ext}
+ *   ~/ruminer/attachments/{projectId}/{messageId}-{index}-{uuid}.{ext}
  */
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import type {
   AgentAttachment,
   AttachmentMetadata,
   AttachmentProjectStats,
 } from 'chrome-mcp-shared';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { getAgentDataDir } from './storage';
 
 // ============================================================

@@ -456,8 +456,8 @@
     "description": "게이트웨이 설정 저장 시 토스트"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS 설정이 저장되었습니다",
-    "description": "EverMemOS 설정 저장 시 토스트"
+    "message": "메모리 설정이 저장되었습니다",
+    "description": "메모리 설정 저장 시 토스트"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "퀵 패널 설정이 저장되었습니다",

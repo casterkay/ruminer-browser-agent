@@ -348,8 +348,8 @@
     "description": "ゲートウェイ設定保存時のトースト"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS設定を保存しました",
-    "description": "EverMemOS設定保存時のトースト"
+    "message": "メモリ設定を保存しました",
+    "description": "メモリ設定保存時のトースト"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "クイックパネル設定を保存しました",

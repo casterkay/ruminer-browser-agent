@@ -192,6 +192,8 @@ const citationMemoriesById = computed(() => {
     // Match by metadata toolName or by resolved tool kind
     const toolName = getToolName(item.tool.raw.metadata);
     const isEmosSearch =
+      toolName === 'memory_search' ||
+      toolName.endsWith('__memory_search') ||
       toolName === 'emos_search_memories' ||
       toolName.endsWith('__emos_search_memories') ||
       item.tool.kind === 'recall';

@@ -76,7 +76,12 @@ function mapToolKind(
   if (normalized.includes('read') || normalized.includes('cat')) {
     return 'read';
   }
-  if (normalized.startsWith('emos_') || /(?:^|__)emos_/.test(normalized)) {
+  if (
+    normalized.startsWith('emos_') ||
+    /(?:^|__)emos_/.test(normalized) ||
+    normalized === 'memory_search' ||
+    normalized === 'memory_read'
+  ) {
     return 'recall';
   }
   if (normalized.includes('grep') || normalized.includes('search') || normalized.includes('glob')) {
@@ -119,8 +124,10 @@ function extractToolTitle(
     return commandDescription || command || titleCase(toolName || 'Command');
   }
   if (kind === 'recall') {
-    const shortName = (toolName || 'recall').replace(/^.*?emos_/, 'emos_');
-    return pattern || titleCase(shortName.replace(/^emos_/, '').replace(/_/g, ' '));
+    const shortName = (toolName || 'recall')
+      .replace(/^.*?emos_/, 'emos_')
+      .replace(/^memory_/, 'memory_');
+    return pattern || titleCase(shortName.replace(/^(?:emos_|memory_)/, '').replace(/_/g, ' '));
   }
   if (kind === 'grep') {
     return pattern || titleCase(toolName || 'Search');

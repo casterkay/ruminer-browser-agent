@@ -456,8 +456,8 @@
     "description": "Toast wenn Gateway-Einstellungen gespeichert"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS-Einstellungen gespeichert",
-    "description": "Toast wenn EverMemOS-Einstellungen gespeichert"
+    "message": "Memory-Einstellungen gespeichert",
+    "description": "Toast, wenn Memory-Einstellungen gespeichert wurden"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "Quick-Panel-Einstellungen gespeichert",

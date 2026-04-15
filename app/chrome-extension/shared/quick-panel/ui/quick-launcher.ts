@@ -110,6 +110,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    width: 100%;
   }
 
   /* Keep the icon + input on one visual axis. The icon's hover translateY causes a vertical misalignment/jump
@@ -426,6 +427,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     transform: translate3d(18px, 0, 0) scale(0.98);
     overflow: hidden;
     pointer-events: none;
+    min-width: 0;
     transition:
       max-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
       max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -434,7 +436,8 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   }
 
   .qp-quick-launcher[data-expanded='true'] .qp-quick-launcher-input {
-    width: ${LAUNCHER_WIDTH - ICON_WIDTH}px;
+    width: calc(100% - ${ICON_WIDTH}px);
+    max-width: ${LAUNCHER_WIDTH - ICON_WIDTH}px;
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
     pointer-events: auto;
@@ -809,9 +812,10 @@ export function createQuickPanelLauncher(
     if (!launcherEl || !messagesWrapEl || !messagesScrollEl || !inputWrapEl) return;
 
     const hasMessages = messagesScrollEl.childElementCount > 0;
+    const launcherWidthPx = Math.ceil(launcherEl.getBoundingClientRect().width || LAUNCHER_WIDTH);
 
     // Use fixed pixel width during expand to avoid jumping when parent width changes during collapse.
-    messagesWrapEl.style.maxWidth = expanded && hasMessages ? `${LAUNCHER_WIDTH}px` : '0px';
+    messagesWrapEl.style.maxWidth = expanded && hasMessages ? `${launcherWidthPx}px` : '0px';
     messagesWrapEl.style.maxHeight = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
     messagesScrollEl.style.height = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
 

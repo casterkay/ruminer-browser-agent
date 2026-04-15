@@ -502,8 +502,8 @@
     "description": "网关设置保存时的提示"
   },
   "settingsEmosSavedNotification": {
-    "message": "EverMemOS 设置已保存",
-    "description": "EverMemOS 设置保存时的提示"
+    "message": "记忆设置已保存",
+    "description": "记忆设置保存时的提示"
   },
   "settingsQuickPanelSavedNotification": {
     "message": "快捷面板设置已保存",

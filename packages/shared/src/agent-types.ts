@@ -182,6 +182,32 @@ export interface TestOpenClawGatewayResponse {
 }
 
 // ============================================================
+// Memory Backend Settings API (native-server owned)
+// ============================================================
+
+export type MemoryBackendType = 'local_markdown_qmd' | 'evermemos';
+
+export interface MemorySettingsDto {
+  backend: MemoryBackendType;
+  localRootPath: string;
+  qmdIndexPath: string;
+  updatedAt: string;
+}
+
+export interface GetMemorySettingsResponse {
+  settings: MemorySettingsDto;
+}
+
+export interface UpdateMemorySettingsRequest {
+  backend?: MemoryBackendType;
+  localRootPath?: string;
+}
+
+export interface UpdateMemorySettingsResponse {
+  settings: MemorySettingsDto;
+}
+
+// ============================================================
 // EverMemOS (EMOS) Settings API (native-server owned)
 // ============================================================
 
@@ -316,11 +342,16 @@ export interface AgentSessionOptionsConfig {
   settingSources?: string[];
   /**
    * When true (default when unset), automatically save user+assistant chat messages
-   * from this session into EverMemOS.
+   * from this session into the configured memory backend.
+   */
+  saveConversationToMemory?: boolean;
+  /**
+   * Legacy alias kept for backward compatibility with previously stored sessions.
    */
   saveConversationToEverMemOS?: boolean;
   /**
-   * When true, instructs the agent to use EverMemOS as retrieval-augmented context.
+   * When true, instructs the agent to use the configured memory backend as
+   * retrieval-augmented context.
    * Stored per-session; UI label: "Ruminate".
    *
    * Default: false when unset.
