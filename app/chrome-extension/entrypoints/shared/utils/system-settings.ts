@@ -39,7 +39,7 @@ interface MemoryStatusPayload {
 }
 
 function formatMemoryBackendLabel(backend: MemoryBackendType): string {
-  return backend === 'evermemos' ? 'EverMemOS' : 'Local Markdown + QMD';
+  return backend === 'evermemos' ? 'EverMemOS' : 'Local File System';
 }
 
 export async function refreshServerStatus(): Promise<ServerStatus> {

@@ -704,22 +704,19 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       <label class="qp-settings-field">
         <span class="qp-settings-field-label">Backend</span>
         <select data-id="memoryBackend" class="qp-settings-field-input">
-          <option value="local_markdown_qmd">Local Markdown + QMD</option>
+          <option value="local_markdown_qmd">Local File System</option>
           <option value="evermemos">EverMemOS (legacy)</option>
         </select>
       </label>
       <div data-id="memoryLocalFields" class="qp-settings-stack">
         <label class="qp-settings-field">
-          <span class="qp-settings-field-label">Storage Root</span>
+          <span class="qp-settings-field-label">Directory Path</span>
           <input data-id="memoryLocalRootPath" class="qp-settings-field-input" type="text" placeholder="User-global app data directory"/>
         </label>
         <label class="qp-settings-field">
           <span class="qp-settings-field-label">QMD Index</span>
           <input data-id="memoryQmdIndexPath" class="qp-settings-field-input" type="text" readonly/>
         </label>
-        <div class="qp-settings-value">
-          Local markdown files are the source of truth. Search falls back to SQLite when QMD is unavailable.
-        </div>
       </div>
       <div data-id="evermemosFields" class="qp-settings-stack" hidden>
         <div class="qp-settings-value">

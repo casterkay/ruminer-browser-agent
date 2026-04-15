@@ -214,10 +214,9 @@ onMounted(() => {
           <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">3) Configure Memory</div>
+                <div class="welcome-card-title">3) Configure Memory Store</div>
                 <div class="welcome-card-subtitle">
-                  Local markdown + QMD is the default. Switch to EverMemOS only if you need the
-                  legacy remote backend.
+                  Storage of your conversations and agent memories.
                 </div>
               </div>
               <button class="btn" :disabled="memoryTesting" @click="testMemory">
@@ -229,26 +228,22 @@ onMounted(() => {
             <label class="field">
               <span class="label">Backend</span>
               <select v-model="memoryBackend" class="input" @change="saveMemory">
-                <option value="local_markdown_qmd">Local Markdown + QMD</option>
-                <option value="evermemos">EverMemOS (legacy)</option>
+                <option value="local_markdown_qmd">Local File System</option>
+                <option value="evermemos">EverMemOS</option>
               </select>
             </label>
 
             <template v-if="memoryBackend === 'local_markdown_qmd'">
               <label class="field">
-                <span class="label">Storage Root</span>
+                <span class="label">Directory Path</span>
                 <input
                   v-model="memoryLocalRootPath"
                   class="input"
                   type="text"
-                  placeholder="~/Documents/RuminerStore"
+                  placeholder="~/ruminer/memory"
                   @blur="saveMemory"
                 />
               </label>
-              <div class="welcome-card-subtitle">
-                Local markdown files are the source of truth. Search falls back to SQLite when QMD
-                is unavailable.
-              </div>
             </template>
 
             <template v-else>

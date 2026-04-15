@@ -12,7 +12,7 @@
 import type { AgentMessage, RealtimeEvent } from 'chrome-mcp-shared';
 
 import type { QuickPanelAgentBridge } from '../core/agent-bridge';
-import type { FloatingIconManager } from './floating-icon';
+import { DEFAULT_FLOATING_ICON_SIZE, type FloatingIconManager } from './floating-icon';
 import { createMarkdownRenderer } from './markdown-renderer';
 import { QUICK_PANEL_STYLES } from './styles';
 
@@ -86,7 +86,7 @@ function createQuickSessionId(): string {
 
 const LAUNCHER_WIDTH = 394;
 const LAUNCHER_HEIGHT = 640;
-const ICON_WIDTH = 64;
+const ICON_WIDTH = DEFAULT_FLOATING_ICON_SIZE;
 
 const QUICK_LAUNCHER_STYLES = /* css */ `
   ${QUICK_PANEL_STYLES}
@@ -96,9 +96,13 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    width: ${ICON_WIDTH}px;
     gap: 0px;
     user-select: none;
     -webkit-user-select: none;
+    transition:
+      width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      gap 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .qp-quick-launcher[data-expanded='true'] {
@@ -429,6 +433,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     pointer-events: none;
     min-width: 0;
     transition:
+      width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
       max-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
       max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
       opacity 160ms ease,
@@ -632,6 +637,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .qp-quick-launcher,
     .qp-quick-launcher-messages,
     .qp-quick-launcher-input,
     .qp-quick-launcher-btn,

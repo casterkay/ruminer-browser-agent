@@ -140,6 +140,7 @@ app/
 │   │   │       ├── emos-settings.ts
 │   │   │       ├── gateway-settings.ts
 │   │   │       ├── index.ts
+│   │   │       ├── memory-settings.ts
 │   │   │       ├── openclaw-settings.ts
 │   │   │       ├── rr-flow-convert.ts
 │   │   │       ├── settings-internals.ts
@@ -379,6 +380,11 @@ app/
 │   │   │   ├── evermemos
 │   │   │   │   └── settings-service.ts
 │   │   │   ├── mcp-tool-telemetry.ts
+│   │   │   ├── memory
+│   │   │   │   ├── markchat.test.ts
+│   │   │   │   ├── markchat.ts
+│   │   │   │   ├── service.ts
+│   │   │   │   └── settings-service.ts
 │   │   │   ├── message-service.ts
 │   │   │   ├── open-project.ts
 │   │   │   ├── openclaw
@@ -439,13 +445,6 @@ app/
 │   │       └── logger.ts
 │   └── tsconfig.json
 └── openclaw-extensions
-    ├── evermemos
-    │   ├── index.ts
-    │   ├── openclaw.plugin.json
-    │   ├── package.json
-    │   ├── queue.ts
-    │   ├── tsconfig.json
-    │   └── types.ts
     └── mcp-client
         ├── index.ts
         ├── LICENSE
@@ -457,4 +456,4 @@ app/
         │   └── check-versions.js
         └── tsconfig.json
 
-99 directories, 334 files
+99 directories, 333 files

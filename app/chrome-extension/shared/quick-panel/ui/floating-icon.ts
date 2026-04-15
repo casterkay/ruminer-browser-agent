@@ -117,7 +117,8 @@ export interface FloatingIconManager {
 // Constants
 // ============================================================
 
-const ICON_SIZE = 96;
+export const DEFAULT_FLOATING_ICON_SIZE = 96;
+const ICON_SIZE = DEFAULT_FLOATING_ICON_SIZE;
 const DRAG_THRESHOLD = 5;
 const SPRITE_SHEET_PUBLIC_PATH = 'icon/logo-spritesheet.png';
 const SPRITE_SHEET_COLS = 6;
@@ -146,6 +147,7 @@ const FLOATING_ICON_STYLES = /* css */ `
   .floating-icon {
     width: ${ICON_SIZE}px;
     height: ${ICON_SIZE}px;
+    flex-shrink: 0;
     position: relative;
     border-radius: 50%;
     /* Rich charcoal background to make the golden logo pop like the reference image */

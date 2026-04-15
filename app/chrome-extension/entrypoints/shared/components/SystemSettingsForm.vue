@@ -124,14 +124,14 @@
       <label class="settings-field">
         <span class="settings-field-label">Backend</span>
         <select v-model="memoryBackend" class="settings-field-input" @change="saveMemory">
-          <option value="local_markdown_qmd">Local Markdown + QMD</option>
-          <option value="evermemos">EverMemOS (legacy)</option>
+          <option value="local_markdown_qmd">Local File System</option>
+          <option value="evermemos">EverMemOS</option>
         </select>
       </label>
 
       <template v-if="memoryBackend === 'local_markdown_qmd'">
         <label class="settings-field">
-          <span class="settings-field-label">Storage Root</span>
+          <span class="settings-field-label">Directory Path</span>
           <input
             v-model="memoryLocalRootPath"
             class="settings-field-input"
@@ -140,14 +140,6 @@
             @blur="saveMemory"
           />
         </label>
-        <label class="settings-field">
-          <span class="settings-field-label">QMD Index</span>
-          <input :value="memoryQmdIndexPath" class="settings-field-input" type="text" readonly />
-        </label>
-        <div class="settings-value settings-muted">
-          Local markdown files are the source of truth. Search falls back to SQLite when QMD is
-          unavailable.
-        </div>
       </template>
 
       <template v-else>
