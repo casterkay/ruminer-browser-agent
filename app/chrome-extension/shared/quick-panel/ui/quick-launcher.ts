@@ -92,6 +92,12 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   ${QUICK_PANEL_STYLES}
 
   .qp-quick-launcher {
+    /* Close motion is slightly slower than open so collapse reads as intentional rather than abrupt. */
+    --qp-motion-width-ms: 300ms;
+    --qp-motion-height-ms: 320ms;
+    --qp-motion-fade-ms: 200ms;
+    --qp-motion-ease: cubic-bezier(0.18, 0.72, 0.24, 1);
+
     pointer-events: auto;
     display: flex;
     flex-direction: column;
@@ -101,11 +107,15 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     user-select: none;
     -webkit-user-select: none;
     transition:
-      width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      gap 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      width var(--qp-motion-width-ms) var(--qp-motion-ease),
+      gap var(--qp-motion-width-ms) var(--qp-motion-ease);
   }
 
   .qp-quick-launcher[data-expanded='true'] {
+    --qp-motion-width-ms: 240ms;
+    --qp-motion-height-ms: 280ms;
+    --qp-motion-fade-ms: 180ms;
+    --qp-motion-ease: cubic-bezier(0.2, 0.84, 0.22, 1);
     width: min(${LAUNCHER_WIDTH}px, 100vw - 80px);
     gap: 10px;
   }
@@ -163,9 +173,10 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     overflow: hidden;
     pointer-events: none;
     transition:
-      max-height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      opacity 280ms ease,
-      transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      max-width var(--qp-motion-width-ms) var(--qp-motion-ease),
+      max-height var(--qp-motion-height-ms) var(--qp-motion-ease),
+      opacity var(--qp-motion-fade-ms) ease,
+      transform var(--qp-motion-width-ms) var(--qp-motion-ease);
   }
 
   .qp-quick-launcher[data-expanded='true'] .qp-quick-launcher-messages {
@@ -182,6 +193,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     height: 100%;
     padding: 6px;
     scrollbar-width: none;
+    transition: height var(--qp-motion-height-ms) var(--qp-motion-ease);
 
     /* Mask is applied dynamically via JS (updateScrollMask) based on scroll position. */
     mask-repeat: no-repeat;
@@ -433,11 +445,11 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
     pointer-events: none;
     min-width: 0;
     transition:
-      width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      max-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      opacity 160ms ease,
-      transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      width var(--qp-motion-width-ms) var(--qp-motion-ease),
+      max-width var(--qp-motion-width-ms) var(--qp-motion-ease),
+      max-height var(--qp-motion-height-ms) var(--qp-motion-ease),
+      opacity var(--qp-motion-fade-ms) ease,
+      transform var(--qp-motion-width-ms) var(--qp-motion-ease);
   }
 
   .qp-quick-launcher[data-expanded='true'] .qp-quick-launcher-input {
@@ -639,6 +651,7 @@ const QUICK_LAUNCHER_STYLES = /* css */ `
   @media (prefers-reduced-motion: reduce) {
     .qp-quick-launcher,
     .qp-quick-launcher-messages,
+    .qp-quick-launcher-messages-scroll,
     .qp-quick-launcher-input,
     .qp-quick-launcher-btn,
     .qp-quick-launcher-status-dot,
@@ -818,10 +831,12 @@ export function createQuickPanelLauncher(
     if (!launcherEl || !messagesWrapEl || !messagesScrollEl || !inputWrapEl) return;
 
     const hasMessages = messagesScrollEl.childElementCount > 0;
-    const launcherWidthPx = Math.ceil(launcherEl.getBoundingClientRect().width || LAUNCHER_WIDTH);
+    const expandedLauncherWidthPx = Math.ceil(
+      Math.min(LAUNCHER_WIDTH, Math.max(0, window.innerWidth - 80)),
+    );
 
-    // Use fixed pixel width during expand to avoid jumping when parent width changes during collapse.
-    messagesWrapEl.style.maxWidth = expanded && hasMessages ? `${launcherWidthPx}px` : '0px';
+    messagesWrapEl.style.maxWidth =
+      expanded && hasMessages ? `${expandedLauncherWidthPx}px` : '0px';
     messagesWrapEl.style.maxHeight = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
     messagesScrollEl.style.height = expanded && hasMessages ? `${LAUNCHER_HEIGHT}px` : '0px';
 
