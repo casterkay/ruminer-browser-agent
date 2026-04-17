@@ -10,7 +10,7 @@
     <!-- MCP Server card -->
     <section class="settings-card">
       <div class="settings-card-header">
-        <h2 class="settings-card-title">MCP Server</h2>
+        <h2 class="settings-card-title">{{ t('settingsCardMcpServerTitle') }}</h2>
         <button
           type="button"
           class="btn-icon"
@@ -22,30 +22,30 @@
         </button>
       </div>
       <div class="settings-row">
-        <span class="settings-label">Status</span>
+        <span class="settings-label">{{ t('statusLabel') }}</span>
         <span class="settings-value" :class="mcpServerRunning ? 'ok' : 'warn'">
-          {{ mcpServerRunning ? 'Running' : 'Stopped' }}
+          {{ mcpServerRunning ? t('settingsStatusRunning') : t('settingsStatusStopped') }}
         </span>
       </div>
       <div v-if="mcpServerPort != null" class="settings-row">
-        <span class="settings-label">Port</span>
+        <span class="settings-label">{{ t('settingsPortLabel') }}</span>
         <span class="settings-value">{{ mcpServerPort }}</span>
       </div>
       <div v-else class="settings-row">
-        <span class="settings-label">Port</span>
+        <span class="settings-label">{{ t('settingsPortLabel') }}</span>
         <span class="settings-value settings-muted">{{ defaultPort }}</span>
       </div>
     </section>
 
     <!-- Quick Panel card -->
     <section class="settings-card">
-      <h2 class="settings-card-title">Quick Chat</h2>
+      <h2 class="settings-card-title">{{ t('settingsCardQuickChatTitle') }}</h2>
       <label class="settings-checkbox">
         <input v-model="floatingIconEnabled" type="checkbox" @change="saveFloatingIcon" />
-        <span>Show in-page button</span>
+        <span>{{ t('settingsQuickChatShowInPageButtonLabel') }}</span>
       </label>
       <div class="settings-field">
-        <span class="settings-field-label">Floating icon size</span>
+        <span class="settings-field-label">{{ t('settingsQuickChatFloatingIconSizeLabel') }}</span>
         <div style="display: flex; gap: 8px; align-items: center">
           <input
             type="range"
@@ -71,7 +71,7 @@
     <!-- OpenClaw Gateway card -->
     <section class="settings-card">
       <div class="settings-card-header">
-        <h2 class="settings-card-title">OpenClaw Gateway</h2>
+        <h2 class="settings-card-title">{{ t('settingsCardGatewayTitle') }}</h2>
         <button
           type="button"
           class="btn-icon"
@@ -83,22 +83,22 @@
         </button>
       </div>
       <label class="settings-field">
-        <span class="settings-field-label">Gateway WS URL</span>
+        <span class="settings-field-label">{{ t('settingsFieldGatewayWsUrlLabel') }}</span>
         <input
           v-model="gatewayWsUrl"
           class="settings-field-input"
           type="text"
-          placeholder="ws://127.0.0.1:18789"
+          :placeholder="t('settingsPlaceholderGatewayWsUrl')"
           @blur="saveGateway"
         />
       </label>
       <label class="settings-field">
-        <span class="settings-field-label">Auth Token</span>
+        <span class="settings-field-label">{{ t('settingsFieldAuthTokenLabel') }}</span>
         <input
           v-model="gatewayAuthToken"
           class="settings-field-input"
           type="password"
-          placeholder="gateway token"
+          :placeholder="t('settingsPlaceholderGatewayAuthToken')"
           @blur="saveGateway"
         />
       </label>
@@ -110,7 +110,7 @@
     <!-- Memory card -->
     <section class="settings-card">
       <div class="settings-card-header">
-        <h2 class="settings-card-title">Memory</h2>
+        <h2 class="settings-card-title">{{ t('settingsCardMemoryTitle') }}</h2>
         <button
           type="button"
           class="btn-icon"
@@ -122,48 +122,50 @@
         </button>
       </div>
       <label class="settings-field">
-        <span class="settings-field-label">Backend</span>
-        <select v-model="memoryBackend" class="settings-field-input" @change="saveMemory">
-          <option value="local_markdown_qmd">Local File System</option>
-          <option value="evermemos">EverMemOS</option>
+        <span class="settings-field-label">{{ t('settingsFieldBackendLabel') }}</span>
+        <select v-model="memoryBackend" class="settings-field-input" @change="() => saveMemory()">
+          <option value="local_markdown_qmd">{{
+            t('settingsBackendLocalFileSystemOption')
+          }}</option>
+          <option value="evermemos">{{ t('settingsBackendEvermemosOption') }}</option>
         </select>
       </label>
 
       <template v-if="memoryBackend === 'local_markdown_qmd'">
         <label class="settings-field">
-          <span class="settings-field-label">Directory Path</span>
+          <span class="settings-field-label">{{ t('settingsFieldDirectoryPathLabel') }}</span>
           <input
             v-model="memoryLocalRootPath"
             class="settings-field-input"
             type="text"
-            placeholder="User-global app data directory"
-            @blur="saveMemory"
+            :placeholder="t('settingsPlaceholderMemoryLocalRootPath')"
+            @blur="() => saveMemory()"
           />
         </label>
       </template>
 
       <template v-else>
         <div class="settings-value settings-muted">
-          Legacy remote backend. Ruminer still routes memory operations through the native server.
+          {{ t('settingsMemoryLegacyNotice') }}
         </div>
         <label class="settings-field">
-          <span class="settings-field-label">Base URL</span>
+          <span class="settings-field-label">{{ t('settingsFieldBaseUrlLabel') }}</span>
           <input
             v-model="baseUrl"
             class="settings-field-input"
             type="text"
-            placeholder="https://api.evermind.ai"
-            @blur="saveEmosCredentials"
+            :placeholder="t('settingsPlaceholderEvermemosBaseUrl')"
+            @blur="() => saveEmosCredentials()"
           />
         </label>
         <label class="settings-field">
-          <span class="settings-field-label">API Key</span>
+          <span class="settings-field-label">{{ t('settingsFieldApiKeyLabel') }}</span>
           <input
             v-model="apiKey"
             class="settings-field-input"
             type="password"
-            placeholder="legacy EverMemOS API key"
-            @blur="saveEmosCredentials"
+            :placeholder="t('settingsPlaceholderEvermemosApiKey')"
+            @blur="() => saveEmosCredentials()"
           />
         </label>
       </template>
@@ -173,26 +175,46 @@
       </div>
     </section>
 
+    <!-- Language card -->
+    <section class="settings-card">
+      <h2 class="settings-card-title">{{ t('settingsCardLanguageTitle') }}</h2>
+      <label class="settings-field">
+        <span class="settings-field-label">{{ t('languageSelectorLabel') }}</span>
+        <select v-model="uiLanguage" class="settings-field-input" @change="saveUiLanguage">
+          <option value="auto">{{ t('settingsLanguageOptionAuto') }}</option>
+          <option value="en">{{ t('settingsLanguageOptionEnglish') }}</option>
+          <option value="de">{{ t('settingsLanguageOptionGerman') }}</option>
+          <option value="ja">{{ t('settingsLanguageOptionJapanese') }}</option>
+          <option value="ko">{{ t('settingsLanguageOptionKorean') }}</option>
+          <option value="zh_CN">{{ t('settingsLanguageOptionSimplifiedChinese') }}</option>
+          <option value="zh_TW">{{ t('settingsLanguageOptionTraditionalChinese') }}</option>
+        </select>
+      </label>
+      <div class="settings-value settings-muted">
+        {{ t('settingsLanguageHint') }}
+      </div>
+    </section>
+
     <!-- Claude Code card -->
     <section class="settings-card">
-      <h2 class="settings-card-title">Claude Code</h2>
+      <h2 class="settings-card-title">{{ t('settingsCardClaudeCodeTitle') }}</h2>
       <label class="settings-field">
-        <span class="settings-field-label">Base URL</span>
+        <span class="settings-field-label">{{ t('settingsFieldBaseUrlLabel') }}</span>
         <input
           v-model="anthropicBaseUrl"
           class="settings-field-input"
           type="text"
-          placeholder="https://api.anthropic.com"
+          :placeholder="t('settingsPlaceholderAnthropicBaseUrl')"
           @blur="saveAnthropic"
         />
       </label>
       <label class="settings-field">
-        <span class="settings-field-label">API Key</span>
+        <span class="settings-field-label">{{ t('settingsFieldApiKeyLabel') }}</span>
         <input
           v-model="anthropicAuthToken"
           class="settings-field-input"
           type="password"
-          placeholder="your Anthropic API key"
+          :placeholder="t('settingsPlaceholderAnthropicApiKey')"
           @blur="saveAnthropic"
         />
       </label>
@@ -206,6 +228,11 @@ import {
   getAnthropicSettings,
   setAnthropicSettings,
 } from '@/entrypoints/shared/utils/anthropic-settings';
+import {
+  getUiLanguage,
+  setUiLanguage,
+  type UiLanguage,
+} from '@/entrypoints/shared/utils/language-settings';
 import {
   getEmosSettings,
   getGatewaySettings,
@@ -232,7 +259,7 @@ import ILucidePlug from '~icons/lucide/plug';
 import ILucideRefreshCw from '~icons/lucide/refresh-cw';
 
 const defaultPort = NATIVE_HOST.DEFAULT_PORT;
-const t = (key: string) => getMessage(key);
+const t = (key: string, substitutions?: string[]) => getMessage(key, substitutions);
 
 // Toast state
 const toastMessage = ref('');
@@ -273,6 +300,9 @@ const memoryMessage = ref('');
 const anthropicBaseUrl = ref('https://api.anthropic.com');
 const anthropicAuthToken = ref('');
 
+// Language state
+const uiLanguage = ref<UiLanguage>('auto');
+
 // Quick Panel state
 const floatingIconEnabled = ref(true);
 const floatingIconSize = ref(96);
@@ -287,6 +317,7 @@ const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
 const lastSavedFloatingIconSize = ref(96);
 const lastSavedAnthropic = ref({ baseUrl: '', authToken: '' });
+const lastSavedUiLanguage = ref<UiLanguage>('auto');
 
 async function refreshServerStatus(): Promise<void> {
   refreshing.value = true;
@@ -300,12 +331,13 @@ async function refreshServerStatus(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  const [gw, memory, em, fi, an] = await Promise.all([
+  const [gw, memory, em, fi, an, language] = await Promise.all([
     getGatewaySettings(),
     getMemorySettings(),
     getEmosSettings(),
     loadFloatingIcon(),
     getAnthropicSettings(),
+    getUiLanguage(),
   ]);
   gatewayWsUrl.value = gw.gatewayWsUrl;
   gatewayAuthToken.value = gw.gatewayAuthToken;
@@ -317,6 +349,7 @@ async function loadSettings(): Promise<void> {
   floatingIconEnabled.value = fi;
   anthropicBaseUrl.value = an.baseUrl;
   anthropicAuthToken.value = an.authToken;
+  uiLanguage.value = language;
   lastSavedGateway.value = { wsUrl: gw.gatewayWsUrl.trim(), authToken: gw.gatewayAuthToken.trim() };
   lastSavedMemory.value = {
     backend: memory.backend,
@@ -328,6 +361,7 @@ async function loadSettings(): Promise<void> {
   };
   lastSavedFloatingIcon.value = fi;
   lastSavedAnthropic.value = { baseUrl: an.baseUrl.trim(), authToken: an.authToken.trim() };
+  lastSavedUiLanguage.value = language;
   try {
     const size = await doLoadFloatingIconSize();
     floatingIconSize.value = size;
@@ -403,7 +437,15 @@ async function saveFloatingIconSize(): Promise<void> {
   if (size === lastSavedFloatingIconSize.value) return;
   await doSaveFloatingIconSize(size);
   lastSavedFloatingIconSize.value = size;
-  showToast(`Floating icon size saved: ${size}px`);
+  showToast(t('settingsFloatingIconSizeSavedNotification', [String(size)]));
+}
+
+async function saveUiLanguage(): Promise<void> {
+  if (uiLanguage.value === lastSavedUiLanguage.value) return;
+  const next = await setUiLanguage(uiLanguage.value);
+  uiLanguage.value = next;
+  lastSavedUiLanguage.value = next;
+  showToast(t('settingsLanguageSavedNotification'));
 }
 
 async function saveAnthropic(): Promise<void> {

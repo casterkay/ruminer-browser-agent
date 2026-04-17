@@ -520,5 +520,259 @@
   "testConnectionButtonAria": {
     "message": "测试连接",
     "description": "测试连接按钮无障碍标签"
+  },
+  "settingsCardMcpServerTitle": {
+    "message": "MCP 服务",
+    "description": "MCP 服务设置卡片标题"
+  },
+  "settingsCardQuickChatTitle": {
+    "message": "快捷聊天",
+    "description": "快捷聊天设置卡片标题"
+  },
+  "settingsCardGatewayTitle": {
+    "message": "OpenClaw 网关",
+    "description": "OpenClaw 网关设置卡片标题"
+  },
+  "settingsCardMemoryTitle": {
+    "message": "记忆",
+    "description": "记忆设置卡片标题"
+  },
+  "settingsCardLanguageTitle": {
+    "message": "语言",
+    "description": "语言设置卡片标题"
+  },
+  "settingsCardClaudeCodeTitle": {
+    "message": "Claude Code",
+    "description": "Claude Code 设置卡片标题"
+  },
+  "settingsStatusRunning": {
+    "message": "运行中",
+    "description": "服务运行中状态"
+  },
+  "settingsStatusStopped": {
+    "message": "已停止",
+    "description": "服务停止状态"
+  },
+  "settingsPortLabel": {
+    "message": "端口",
+    "description": "端口标签"
+  },
+  "settingsPortDefaultValuePrefix": {
+    "message": "默认:",
+    "description": "默认端口前缀"
+  },
+  "settingsQuickChatShowInPageButtonLabel": {
+    "message": "显示页面内按钮",
+    "description": "快捷聊天页面按钮开关标签"
+  },
+  "settingsQuickChatFloatingIconSizeLabel": {
+    "message": "悬浮图标大小",
+    "description": "悬浮图标大小标签"
+  },
+  "settingsFieldGatewayWsUrlLabel": {
+    "message": "网关 WS 地址",
+    "description": "网关 websocket 地址标签"
+  },
+  "settingsFieldAuthTokenLabel": {
+    "message": "认证令牌",
+    "description": "认证令牌标签"
+  },
+  "settingsFieldBackendLabel": {
+    "message": "后端",
+    "description": "后端标签"
+  },
+  "settingsFieldDirectoryPathLabel": {
+    "message": "目录路径",
+    "description": "目录路径标签"
+  },
+  "settingsFieldQmdIndexLabel": {
+    "message": "QMD 索引",
+    "description": "QMD 索引路径标签"
+  },
+  "settingsFieldBaseUrlLabel": {
+    "message": "基础 URL",
+    "description": "基础 URL 标签"
+  },
+  "settingsFieldApiKeyLabel": {
+    "message": "API Key",
+    "description": "API key 标签"
+  },
+  "settingsBackendLocalFileSystemOption": {
+    "message": "本地文件系统",
+    "description": "记忆后端本地文件系统选项"
+  },
+  "settingsBackendEvermemosOption": {
+    "message": "EverMemOS",
+    "description": "记忆后端 EverMemOS 选项"
+  },
+  "settingsMemoryLegacyNotice": {
+    "message": "这是旧版远程后端。Ruminer 仍会通过 native server 路由记忆读写。",
+    "description": "旧版记忆后端提示"
+  },
+  "settingsPlaceholderGatewayWsUrl": {
+    "message": "ws://127.0.0.1:18789",
+    "description": "网关地址占位符"
+  },
+  "settingsPlaceholderGatewayAuthToken": {
+    "message": "网关令牌",
+    "description": "网关令牌占位符"
+  },
+  "settingsPlaceholderMemoryLocalRootPath": {
+    "message": "用户全局应用数据目录",
+    "description": "本地记忆路径占位符"
+  },
+  "settingsPlaceholderEvermemosBaseUrl": {
+    "message": "https://api.evermind.ai",
+    "description": "旧版 EverMemOS 基础 URL 占位符"
+  },
+  "settingsPlaceholderEvermemosApiKey": {
+    "message": "旧版 EverMemOS API Key",
+    "description": "旧版 EverMemOS API key 占位符"
+  },
+  "settingsPlaceholderAnthropicBaseUrl": {
+    "message": "https://api.anthropic.com",
+    "description": "Anthropic 基础 URL 占位符"
+  },
+  "settingsPlaceholderAnthropicApiKey": {
+    "message": "你的 Anthropic API Key",
+    "description": "Anthropic API key 占位符"
+  },
+  "settingsLanguageOptionAuto": {
+    "message": "跟随浏览器语言",
+    "description": "自动语言选项"
+  },
+  "settingsLanguageOptionEnglish": {
+    "message": "English",
+    "description": "英语选项"
+  },
+  "settingsLanguageOptionGerman": {
+    "message": "Deutsch",
+    "description": "德语选项"
+  },
+  "settingsLanguageOptionJapanese": {
+    "message": "日本語",
+    "description": "日语选项"
+  },
+  "settingsLanguageOptionKorean": {
+    "message": "한국어",
+    "description": "韩语选项"
+  },
+  "settingsLanguageOptionSimplifiedChinese": {
+    "message": "简体中文",
+    "description": "简体中文选项"
+  },
+  "settingsLanguageOptionTraditionalChinese": {
+    "message": "繁體中文",
+    "description": "繁体中文选项"
+  },
+  "settingsLanguageHint": {
+    "message": "语言偏好会保存在本地。重新打开扩展页面后生效。",
+    "description": "语言选择下方提示"
+  },
+  "settingsLanguageSavedNotification": {
+    "message": "语言偏好已保存",
+    "description": "保存语言偏好时的提示"
+  },
+  "settingsFloatingIconSizeSavedNotification": {
+    "message": "悬浮图标大小已保存: $SIZE$px",
+    "description": "保存悬浮图标大小时的提示",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "96"
+      }
+    }
+  },
+  "welcomeBadgeText": {
+    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex",
+    "description": "欢迎页徽标文本"
+  },
+  "welcomeTitle": {
+    "message": "Ruminer Browser Agent",
+    "description": "欢迎页标题"
+  },
+  "welcomeSubtitle": {
+    "message": "一个浏览器，一个记忆，多种智能体。本页将帮助你把 Chrome MCP 服务接入你的 CLI 智能体完成浏览器自动化。",
+    "description": "欢迎页副标题"
+  },
+  "welcomeStepInstallTitle": {
+    "message": "1) 运行安装命令",
+    "description": "欢迎页安装步骤标题"
+  },
+  "welcomeStepInstallSubtitle": {
+    "message": "该命令会在 Claude Code 与 Codex 中注册本地 MCP 服务，并安装 OpenClaw 的 MCP 客户端插件。",
+    "description": "欢迎页安装步骤副标题"
+  },
+  "welcomeInstallTipPrefix": {
+    "message": "提示：你可以先在浏览器中审阅脚本。",
+    "description": "安装提示前半句"
+  },
+  "welcomeInstallTipSuffix": {
+    "message": "很强大，请谨慎使用。",
+    "description": "安装提示后半句"
+  },
+  "welcomeStepLanguageTitle": {
+    "message": "2) 选择界面语言",
+    "description": "欢迎页语言步骤标题"
+  },
+  "welcomeStepLanguageSubtitle": {
+    "message": "为 Ruminer 扩展界面设置偏好语言。",
+    "description": "欢迎页语言步骤副标题"
+  },
+  "welcomeStepGatewayTitle": {
+    "message": "3) 配置 OpenClaw 网关",
+    "description": "欢迎页网关步骤标题"
+  },
+  "welcomeStepGatewaySubtitle": {
+    "message": "当你将其用作 AI 代理后端时使用。",
+    "description": "欢迎页网关步骤副标题"
+  },
+  "welcomeStepMemoryTitle": {
+    "message": "4) 配置记忆存储",
+    "description": "欢迎页记忆步骤标题"
+  },
+  "welcomeStepMemorySubtitle": {
+    "message": "用于保存你的对话和智能体记忆。",
+    "description": "欢迎页记忆步骤副标题"
+  },
+  "welcomeTestingButtonLabel": {
+    "message": "测试中...",
+    "description": "测试进行中的按钮文本"
+  },
+  "welcomeTestButtonLabel": {
+    "message": "测试",
+    "description": "测试按钮文本"
+  },
+  "welcomeChecklistTitle": {
+    "message": "检查清单",
+    "description": "欢迎页清单标题"
+  },
+  "welcomeTroubleshootingButtonLabel": {
+    "message": "故障排查",
+    "description": "故障排查按钮文本"
+  },
+  "welcomeChecklistItemInstall": {
+    "message": "运行一行安装命令。",
+    "description": "清单项：运行安装命令"
+  },
+  "welcomeChecklistItemVerifyConnectionPrefix": {
+    "message": "启动 Claude Code / Codex CLI，并确认你看到与 MCP 服务的成功连接",
+    "description": "清单项：验证连接前半句"
+  },
+  "welcomeChecklistItemRunTools": {
+    "message": "让你的智能体调用一些浏览器工具，例如“我当前浏览器有哪些标签页？”",
+    "description": "清单项：调用工具"
+  },
+  "welcomeChecklistItemQuickChat": {
+    "message": "点击右下角悬浮按钮切换 Ruminer 侧边栏，或悬停打开快捷聊天界面！",
+    "description": "清单项：快捷聊天"
+  },
+  "welcomeCopyButtonLabel": {
+    "message": "复制",
+    "description": "复制按钮文本"
+  },
+  "welcomeCopiedButtonLabel": {
+    "message": "已复制",
+    "description": "复制成功按钮文本"
   }
 }

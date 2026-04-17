@@ -474,5 +474,431 @@
   "testConnectionButtonAria": {
     "message": "연결 테스트",
     "description": "연결 테스트 버튼 aria-label"
+  },
+  "userscriptsManagerTitle": {
+    "message": "Userscripts Manager",
+    "description": "Options page title"
+  },
+  "emergencySwitchLabel": {
+    "message": "Emergency Switch",
+    "description": "Global disable switch"
+  },
+  "createRunSectionTitle": {
+    "message": "Create / Run",
+    "description": "Create & run section title"
+  },
+  "nameLabel": {
+    "message": "Name",
+    "description": "Name input label"
+  },
+  "runAtLabel": {
+    "message": "Run At",
+    "description": "runAt select label"
+  },
+  "runAtAuto": {
+    "message": "auto",
+    "description": "runAt auto"
+  },
+  "runAtDocumentStart": {
+    "message": "document_start",
+    "description": "runAt document_start"
+  },
+  "runAtDocumentEnd": {
+    "message": "document_end",
+    "description": "runAt document_end"
+  },
+  "runAtDocumentIdle": {
+    "message": "document_idle",
+    "description": "runAt document_idle"
+  },
+  "worldLabel": {
+    "message": "World",
+    "description": "world select label"
+  },
+  "worldAuto": {
+    "message": "auto",
+    "description": "world auto"
+  },
+  "worldIsolated": {
+    "message": "ISOLATED",
+    "description": "ISOLATED world"
+  },
+  "worldMain": {
+    "message": "MAIN",
+    "description": "MAIN world"
+  },
+  "modeLabel": {
+    "message": "Mode",
+    "description": "mode select label"
+  },
+  "modeAuto": {
+    "message": "auto",
+    "description": "mode auto"
+  },
+  "modePersistent": {
+    "message": "persistent",
+    "description": "mode persistent"
+  },
+  "modeCss": {
+    "message": "css",
+    "description": "mode css"
+  },
+  "modeOnce": {
+    "message": "once",
+    "description": "mode once"
+  },
+  "allFramesLabel": {
+    "message": "All Frames",
+    "description": "allFrames checkbox"
+  },
+  "persistLabel": {
+    "message": "Persist",
+    "description": "persist checkbox"
+  },
+  "dnrFallbackLabel": {
+    "message": "DNR Fallback",
+    "description": "dnr fallback checkbox"
+  },
+  "matchesInputLabel": {
+    "message": "Matches (comma-separated)",
+    "description": "matches input"
+  },
+  "excludesInputLabel": {
+    "message": "Excludes (comma-separated)",
+    "description": "excludes input"
+  },
+  "tagsInputLabel": {
+    "message": "Tags (comma-separated)",
+    "description": "tags input"
+  },
+  "scriptLabel": {
+    "message": "Script",
+    "description": "script textarea label"
+  },
+  "applyButton": {
+    "message": "Apply",
+    "description": "apply button"
+  },
+  "runOnceButton": {
+    "message": "Run Once (CDP)",
+    "description": "run once button"
+  },
+  "listSectionTitle": {
+    "message": "List",
+    "description": "list section title"
+  },
+  "queryLabel": {
+    "message": "Query",
+    "description": "query input label"
+  },
+  "statusAll": {
+    "message": "all",
+    "description": "status all"
+  },
+  "statusEnabled": {
+    "message": "enabled",
+    "description": "status enabled"
+  },
+  "statusDisabled": {
+    "message": "disabled",
+    "description": "status disabled"
+  },
+  "domainLabel": {
+    "message": "Domain",
+    "description": "domain filter label"
+  },
+  "exportAllButton": {
+    "message": "Export All",
+    "description": "export button"
+  },
+  "tableHeaderName": {
+    "message": "Name",
+    "description": "table header name"
+  },
+  "tableHeaderWorld": {
+    "message": "World",
+    "description": "table header world"
+  },
+  "tableHeaderRunAt": {
+    "message": "Run At",
+    "description": "table header runAt"
+  },
+  "tableHeaderUpdated": {
+    "message": "Updated",
+    "description": "table header updated"
+  },
+  "deleteButton": {
+    "message": "Delete",
+    "description": "delete button"
+  },
+  "placeholderOptional": {
+    "message": "optional",
+    "description": "generic optional placeholder"
+  },
+  "placeholderMatchesExample": {
+    "message": "e.g. https://*.example.com/*",
+    "description": "matches example placeholder"
+  },
+  "placeholderScriptHint": {
+    "message": "Paste JS/CSS/TM here",
+    "description": "script textarea placeholder"
+  },
+  "placeholderDomainHint": {
+    "message": "example.com",
+    "description": "domain filter placeholder"
+  },
+  "settingsCardMcpServerTitle": {
+    "message": "MCP Server",
+    "description": "Settings card title for MCP server"
+  },
+  "settingsCardQuickChatTitle": {
+    "message": "Quick Chat",
+    "description": "Settings card title for quick chat"
+  },
+  "settingsCardGatewayTitle": {
+    "message": "OpenClaw Gateway",
+    "description": "Settings card title for OpenClaw gateway"
+  },
+  "settingsCardMemoryTitle": {
+    "message": "Memory",
+    "description": "Settings card title for memory"
+  },
+  "settingsCardLanguageTitle": {
+    "message": "Language",
+    "description": "Settings card title for language"
+  },
+  "settingsCardClaudeCodeTitle": {
+    "message": "Claude Code",
+    "description": "Settings card title for Claude Code"
+  },
+  "settingsStatusRunning": {
+    "message": "Running",
+    "description": "Server status running"
+  },
+  "settingsStatusStopped": {
+    "message": "Stopped",
+    "description": "Server status stopped"
+  },
+  "settingsPortLabel": {
+    "message": "Port",
+    "description": "Port field label"
+  },
+  "settingsPortDefaultValuePrefix": {
+    "message": "Default:",
+    "description": "Prefix for default port value"
+  },
+  "settingsQuickChatShowInPageButtonLabel": {
+    "message": "Show in-page button",
+    "description": "Quick chat floating button toggle label"
+  },
+  "settingsQuickChatFloatingIconSizeLabel": {
+    "message": "Floating icon size",
+    "description": "Quick chat floating icon size label"
+  },
+  "settingsFieldGatewayWsUrlLabel": {
+    "message": "Gateway WS URL",
+    "description": "Gateway websocket url field label"
+  },
+  "settingsFieldAuthTokenLabel": {
+    "message": "Auth Token",
+    "description": "Auth token field label"
+  },
+  "settingsFieldBackendLabel": {
+    "message": "Backend",
+    "description": "Backend field label"
+  },
+  "settingsFieldDirectoryPathLabel": {
+    "message": "Directory Path",
+    "description": "Directory path field label"
+  },
+  "settingsFieldQmdIndexLabel": {
+    "message": "QMD Index",
+    "description": "QMD index path field label"
+  },
+  "settingsFieldBaseUrlLabel": {
+    "message": "Base URL",
+    "description": "Base URL field label"
+  },
+  "settingsFieldApiKeyLabel": {
+    "message": "API Key",
+    "description": "API key field label"
+  },
+  "settingsBackendLocalFileSystemOption": {
+    "message": "Local File System",
+    "description": "Memory backend local file system option"
+  },
+  "settingsBackendEvermemosOption": {
+    "message": "EverMemOS",
+    "description": "Memory backend EverMemOS option"
+  },
+  "settingsMemoryLegacyNotice": {
+    "message": "Legacy remote backend. Ruminer still routes memory operations through the native server.",
+    "description": "Notice shown for legacy memory backend"
+  },
+  "settingsPlaceholderGatewayWsUrl": {
+    "message": "ws://127.0.0.1:18789",
+    "description": "Gateway websocket url placeholder"
+  },
+  "settingsPlaceholderGatewayAuthToken": {
+    "message": "gateway token",
+    "description": "Gateway auth token placeholder"
+  },
+  "settingsPlaceholderMemoryLocalRootPath": {
+    "message": "User-global app data directory",
+    "description": "Local memory root path placeholder"
+  },
+  "settingsPlaceholderEvermemosBaseUrl": {
+    "message": "https://api.evermind.ai",
+    "description": "Legacy EverMemOS base URL placeholder"
+  },
+  "settingsPlaceholderEvermemosApiKey": {
+    "message": "legacy EverMemOS API key",
+    "description": "Legacy EverMemOS api key placeholder"
+  },
+  "settingsPlaceholderAnthropicBaseUrl": {
+    "message": "https://api.anthropic.com",
+    "description": "Anthropic base URL placeholder"
+  },
+  "settingsPlaceholderAnthropicApiKey": {
+    "message": "your Anthropic API key",
+    "description": "Anthropic api key placeholder"
+  },
+  "settingsLanguageOptionAuto": {
+    "message": "Follow browser language",
+    "description": "Language option auto/follow browser"
+  },
+  "settingsLanguageOptionEnglish": {
+    "message": "English",
+    "description": "Language option English"
+  },
+  "settingsLanguageOptionGerman": {
+    "message": "Deutsch",
+    "description": "Language option German"
+  },
+  "settingsLanguageOptionJapanese": {
+    "message": "Japanese",
+    "description": "Language option Japanese"
+  },
+  "settingsLanguageOptionKorean": {
+    "message": "Korean",
+    "description": "Language option Korean"
+  },
+  "settingsLanguageOptionSimplifiedChinese": {
+    "message": "Simplified Chinese",
+    "description": "Language option Simplified Chinese"
+  },
+  "settingsLanguageOptionTraditionalChinese": {
+    "message": "Traditional Chinese",
+    "description": "Language option Traditional Chinese"
+  },
+  "settingsLanguageHint": {
+    "message": "Language preference is saved locally. Reopen extension pages to apply updates.",
+    "description": "Hint below language selector"
+  },
+  "settingsLanguageSavedNotification": {
+    "message": "Language preference saved",
+    "description": "Toast when language preference is saved"
+  },
+  "settingsFloatingIconSizeSavedNotification": {
+    "message": "Floating icon size saved: $SIZE$px",
+    "description": "Toast when floating icon size is saved",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "96"
+      }
+    }
+  },
+  "welcomeBadgeText": {
+    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex",
+    "description": "Welcome page badge text"
+  },
+  "welcomeTitle": {
+    "message": "Ruminer Browser Agent",
+    "description": "Welcome page title"
+  },
+  "welcomeSubtitle": {
+    "message": "One browser, one memory, many agents. This page helps you wire up Chrome MCP server with your CLI agents for browser automation.",
+    "description": "Welcome page subtitle"
+  },
+  "welcomeStepInstallTitle": {
+    "message": "1) Run the Installation Command",
+    "description": "Welcome install step title"
+  },
+  "welcomeStepInstallSubtitle": {
+    "message": "This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw plugin as MCP client.",
+    "description": "Welcome install step subtitle"
+  },
+  "welcomeInstallTipPrefix": {
+    "message": "Tip: you can review the script in your browser first.",
+    "description": "Welcome install tip prefix"
+  },
+  "welcomeInstallTipSuffix": {
+    "message": "is powerful - apply it with care.",
+    "description": "Welcome install tip suffix"
+  },
+  "welcomeStepLanguageTitle": {
+    "message": "2) Choose Interface Language",
+    "description": "Welcome language step title"
+  },
+  "welcomeStepLanguageSubtitle": {
+    "message": "Set your preferred language for Ruminer extension interfaces.",
+    "description": "Welcome language step subtitle"
+  },
+  "welcomeStepGatewayTitle": {
+    "message": "3) Configure OpenClaw Gateway",
+    "description": "Welcome gateway step title"
+  },
+  "welcomeStepGatewaySubtitle": {
+    "message": "If used as AI agent backend.",
+    "description": "Welcome gateway step subtitle"
+  },
+  "welcomeStepMemoryTitle": {
+    "message": "4) Configure Memory Store",
+    "description": "Welcome memory step title"
+  },
+  "welcomeStepMemorySubtitle": {
+    "message": "Storage of your conversations and agent memories.",
+    "description": "Welcome memory step subtitle"
+  },
+  "welcomeTestingButtonLabel": {
+    "message": "Testing...",
+    "description": "Label for in-progress test button"
+  },
+  "welcomeTestButtonLabel": {
+    "message": "Test",
+    "description": "Label for test button"
+  },
+  "welcomeChecklistTitle": {
+    "message": "Checklist",
+    "description": "Welcome checklist title"
+  },
+  "welcomeTroubleshootingButtonLabel": {
+    "message": "Troubleshooting",
+    "description": "Welcome troubleshooting button label"
+  },
+  "welcomeChecklistItemInstall": {
+    "message": "Run the one-liner installation command.",
+    "description": "Welcome checklist item install"
+  },
+  "welcomeChecklistItemVerifyConnectionPrefix": {
+    "message": "Start Claude Code / Codex CLI and confirm you see a successful connection to the MCP server",
+    "description": "Welcome checklist item for verifying connection prefix"
+  },
+  "welcomeChecklistItemRunTools": {
+    "message": "Ask your agent to call some browser tools, like \"What tabs are there in my browser?\"",
+    "description": "Welcome checklist item for trying tools"
+  },
+  "welcomeChecklistItemQuickChat": {
+    "message": "Click the floating button at the bottom right to toggle Ruminer's side panel or hover on it to open the quick chat UI!",
+    "description": "Welcome checklist item for quick chat"
+  },
+  "welcomeCopyButtonLabel": {
+    "message": "Copy",
+    "description": "Welcome copy button label"
+  },
+  "welcomeCopiedButtonLabel": {
+    "message": "Copied",
+    "description": "Welcome copied button label"
   }
 }

@@ -12,6 +12,11 @@ import {
   setAnthropicSettings,
 } from '@/entrypoints/shared/utils/anthropic-settings';
 import {
+  getUiLanguage,
+  setUiLanguage,
+  type UiLanguage,
+} from '@/entrypoints/shared/utils/language-settings';
+import {
   getEmosSettings,
   getGatewaySettings,
   getMemorySettings,
@@ -311,6 +316,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     apiKey: '',
     anthropicBaseUrl: '',
     anthropicAuthToken: '',
+    uiLanguage: 'auto' as UiLanguage,
     testingGateway: false,
     testingMemory: false,
     gatewayOk: true,
@@ -325,6 +331,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     lastSavedEmos: { baseUrl: '', apiKey: '' },
     lastSavedFloatingIcon: true,
     lastSavedAnthropic: { baseUrl: '', authToken: '' },
+    lastSavedUiLanguage: 'auto' as UiLanguage,
   };
 
   function getEl(id: string): HTMLInputElement | HTMLButtonElement | HTMLDivElement | null {
@@ -356,14 +363,17 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   function updateMcpStatus(): void {
     const statusEl = getEl('mcpStatus') as HTMLSpanElement | null;
     const portEl = getEl('mcpPort') as HTMLSpanElement | null;
-    if (statusEl) statusEl.textContent = state.mcpServerRunning ? 'Running' : 'Stopped';
+    if (statusEl)
+      statusEl.textContent = state.mcpServerRunning
+        ? getMessage('settingsStatusRunning')
+        : getMessage('settingsStatusStopped');
     if (statusEl)
       statusEl.className = `qp-settings-value ${state.mcpServerRunning ? 'ok' : 'warn'}`;
     if (portEl)
       portEl.textContent =
         state.mcpServerPort != null
           ? String(state.mcpServerPort)
-          : `Default: ${NATIVE_HOST.DEFAULT_PORT}`;
+          : `${getMessage('settingsPortDefaultValuePrefix')} ${NATIVE_HOST.DEFAULT_PORT}`;
   }
 
   async function saveFloatingIcon(): Promise<void> {
@@ -377,11 +387,14 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   }
 
   async function loadSettings(): Promise<void> {
-    const gw = await getGatewaySettings();
-    const memory = await getMemorySettings();
-    const em = await getEmosSettings();
-    const an = await getAnthropicSettings();
-    const floatingIconEnabled = await doLoadFloatingIcon();
+    const [gw, memory, em, an, floatingIconEnabled, uiLanguage] = await Promise.all([
+      getGatewaySettings(),
+      getMemorySettings(),
+      getEmosSettings(),
+      getAnthropicSettings(),
+      doLoadFloatingIcon(),
+      getUiLanguage(),
+    ]);
     state.gatewayWsUrl = gw.gatewayWsUrl;
     state.gatewayAuthToken = gw.gatewayAuthToken;
     state.memoryBackend = memory.backend;
@@ -391,6 +404,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     state.apiKey = em.apiKey;
     state.anthropicBaseUrl = an.baseUrl;
     state.anthropicAuthToken = an.authToken;
+    state.uiLanguage = uiLanguage;
     state.floatingIconEnabled = floatingIconEnabled;
     state.lastSavedGateway = {
       wsUrl: gw.gatewayWsUrl.trim(),
@@ -409,6 +423,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       baseUrl: an.baseUrl.trim(),
       authToken: an.authToken.trim(),
     };
+    state.lastSavedUiLanguage = uiLanguage;
     updateInputs();
     updateStatus('gateway', state.gatewayOk, state.gatewayMessage);
     updateStatus('memory', state.memoryOk, state.memoryMessage);
@@ -425,6 +440,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
     const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
     const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
+    const languageSelect = getEl('uiLanguage') as HTMLSelectElement | null;
     const floatingCb = getEl('floatingIconCb') as HTMLInputElement | null;
     if (gwInput) gwInput.value = state.gatewayWsUrl;
     if (gwToken) gwToken.value = state.gatewayAuthToken;
@@ -435,6 +451,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (apiInput) apiInput.value = state.apiKey;
     if (anBaseInput) anBaseInput.value = state.anthropicBaseUrl;
     if (anTokenInput) anTokenInput.value = state.anthropicAuthToken;
+    if (languageSelect) languageSelect.value = state.uiLanguage;
     if (floatingCb) floatingCb.checked = state.floatingIconEnabled;
     updateMemoryFieldVisibility();
   }
@@ -472,6 +489,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
     const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
     const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
+    const languageSelect = getEl('uiLanguage') as HTMLSelectElement | null;
     if (gwInput) state.gatewayWsUrl = gwInput.value;
     if (gwToken) state.gatewayAuthToken = gwToken.value;
     if (memoryBackend) state.memoryBackend = memoryBackend.value as MemoryBackendType;
@@ -480,6 +498,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (apiInput) state.apiKey = apiInput.value;
     if (anBaseInput) state.anthropicBaseUrl = anBaseInput.value;
     if (anTokenInput) state.anthropicAuthToken = anTokenInput.value;
+    if (languageSelect) state.uiLanguage = languageSelect.value as UiLanguage;
     updateMemoryFieldVisibility();
   }
 
@@ -569,6 +588,18 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     showToast(getMessage('settingsAnthropicSavedNotification'));
   }
 
+  async function saveUiLanguage(): Promise<void> {
+    syncFromInputs();
+    if (state.uiLanguage === state.lastSavedUiLanguage) {
+      return;
+    }
+    const next = await setUiLanguage(state.uiLanguage);
+    state.uiLanguage = next;
+    state.lastSavedUiLanguage = next;
+    updateInputs();
+    showToast(getMessage('settingsLanguageSavedNotification'));
+  }
+
   async function testGateway(): Promise<void> {
     syncFromInputs();
     state.testingGateway = true;
@@ -627,11 +658,11 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const title = document.createElement('h2');
     title.id = 'qp-settings-title';
     title.className = 'qp-settings-modal-title';
-    title.textContent = 'System Settings';
+    title.textContent = getMessage('settingsTitle');
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'qp-settings-modal-close ac-focus-ring';
-    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.setAttribute('aria-label', getMessage('closeButton'));
     closeBtn.innerHTML = ICON_CLOSE;
     header.append(title, closeBtn);
 
@@ -650,16 +681,16 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     mcpCard.className = 'qp-settings-card';
     mcpCard.innerHTML = `
       <div class="qp-settings-card-header">
-        <h2 class="qp-settings-card-title">MCP Server</h2>
+        <h2 class="qp-settings-card-title">${getMessage('settingsCardMcpServerTitle')}</h2>
         <button data-id="refreshServer" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('refreshStatusButtonAria')}">${ICON_REFRESH}</button>
       </div>
       <div class="qp-settings-row qp-settings-row-label">
-        <span>Status</span>
-        <span data-id="mcpStatus" class="qp-settings-value warn">Stopped</span>
+        <span>${getMessage('statusLabel')}</span>
+        <span data-id="mcpStatus" class="qp-settings-value warn">${getMessage('settingsStatusStopped')}</span>
       </div>
       <div class="qp-settings-row qp-settings-row-label">
-        <span>Port</span>
-        <span data-id="mcpPort" class="qp-settings-value">Default: ${NATIVE_HOST.DEFAULT_PORT}</span>
+        <span>${getMessage('settingsPortLabel')}</span>
+        <span data-id="mcpPort" class="qp-settings-value">${getMessage('settingsPortDefaultValuePrefix')} ${NATIVE_HOST.DEFAULT_PORT}</span>
       </div>
     `;
 
@@ -667,10 +698,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const qpCard = document.createElement('section');
     qpCard.className = 'qp-settings-card';
     qpCard.innerHTML = `
-      <h2 class="qp-settings-card-title">Quick Panel</h2>
+      <h2 class="qp-settings-card-title">${getMessage('settingsCardQuickChatTitle')}</h2>
       <label class="qp-settings-checkbox">
         <input data-id="floatingIconCb" type="checkbox" checked/>
-        <span>Show in-page button</span>
+        <span>${getMessage('settingsQuickChatShowInPageButtonLabel')}</span>
       </label>
     `;
 
@@ -679,16 +710,16 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     gwCard.className = 'qp-settings-card';
     gwCard.innerHTML = `
       <div class="qp-settings-card-header">
-        <h2 class="qp-settings-card-title">OpenClaw Gateway</h2>
+        <h2 class="qp-settings-card-title">${getMessage('settingsCardGatewayTitle')}</h2>
         <button data-id="testGateway" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('testConnectionButtonAria')}">${ICON_PLUG}</button>
       </div>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Gateway WS URL</span>
-        <input data-id="gatewayWsUrl" class="qp-settings-field-input" type="text" placeholder="ws://127.0.0.1:18789"/>
+        <span class="qp-settings-field-label">${getMessage('settingsFieldGatewayWsUrlLabel')}</span>
+        <input data-id="gatewayWsUrl" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderGatewayWsUrl')}"/>
       </label>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Auth Token</span>
-        <input data-id="gatewayAuthToken" class="qp-settings-field-input" type="password" placeholder="gateway token"/>
+        <span class="qp-settings-field-label">${getMessage('settingsFieldAuthTokenLabel')}</span>
+        <input data-id="gatewayAuthToken" class="qp-settings-field-input" type="password" placeholder="${getMessage('settingsPlaceholderGatewayAuthToken')}"/>
       </label>
       <div data-id="gatewayStatus" class="qp-settings-status" hidden></div>
     `;
@@ -698,58 +729,77 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     memoryCard.className = 'qp-settings-card';
     memoryCard.innerHTML = `
       <div class="qp-settings-card-header">
-        <h2 class="qp-settings-card-title">Memory</h2>
+        <h2 class="qp-settings-card-title">${getMessage('settingsCardMemoryTitle')}</h2>
         <button data-id="testMemory" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('testConnectionButtonAria')}">${ICON_PLUG}</button>
       </div>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Backend</span>
+        <span class="qp-settings-field-label">${getMessage('settingsFieldBackendLabel')}</span>
         <select data-id="memoryBackend" class="qp-settings-field-input">
-          <option value="local_markdown_qmd">Local File System</option>
-          <option value="evermemos">EverMemOS (legacy)</option>
+          <option value="local_markdown_qmd">${getMessage('settingsBackendLocalFileSystemOption')}</option>
+          <option value="evermemos">${getMessage('settingsBackendEvermemosOption')}</option>
         </select>
       </label>
       <div data-id="memoryLocalFields" class="qp-settings-stack">
         <label class="qp-settings-field">
-          <span class="qp-settings-field-label">Directory Path</span>
-          <input data-id="memoryLocalRootPath" class="qp-settings-field-input" type="text" placeholder="User-global app data directory"/>
+          <span class="qp-settings-field-label">${getMessage('settingsFieldDirectoryPathLabel')}</span>
+          <input data-id="memoryLocalRootPath" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderMemoryLocalRootPath')}"/>
         </label>
         <label class="qp-settings-field">
-          <span class="qp-settings-field-label">QMD Index</span>
+          <span class="qp-settings-field-label">${getMessage('settingsFieldQmdIndexLabel')}</span>
           <input data-id="memoryQmdIndexPath" class="qp-settings-field-input" type="text" readonly/>
         </label>
       </div>
       <div data-id="evermemosFields" class="qp-settings-stack" hidden>
         <div class="qp-settings-value">
-          Legacy remote backend. Ruminer still routes memory operations through the native server.
+          ${getMessage('settingsMemoryLegacyNotice')}
         </div>
         <label class="qp-settings-field">
-          <span class="qp-settings-field-label">Base URL</span>
-          <input data-id="baseUrl" class="qp-settings-field-input" type="text" placeholder="https://api.evermind.ai"/>
+          <span class="qp-settings-field-label">${getMessage('settingsFieldBaseUrlLabel')}</span>
+          <input data-id="baseUrl" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderEvermemosBaseUrl')}"/>
         </label>
         <label class="qp-settings-field">
-          <span class="qp-settings-field-label">API Key</span>
-          <input data-id="apiKey" class="qp-settings-field-input" type="password" placeholder="legacy EverMemOS API key"/>
+          <span class="qp-settings-field-label">${getMessage('settingsFieldApiKeyLabel')}</span>
+          <input data-id="apiKey" class="qp-settings-field-input" type="password" placeholder="${getMessage('settingsPlaceholderEvermemosApiKey')}"/>
         </label>
       </div>
       <div data-id="memoryStatus" class="qp-settings-status" hidden></div>
+    `;
+
+    const languageCard = document.createElement('section');
+    languageCard.className = 'qp-settings-card';
+    languageCard.innerHTML = `
+      <h2 class="qp-settings-card-title">${getMessage('settingsCardLanguageTitle')}</h2>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">${getMessage('languageSelectorLabel')}</span>
+        <select data-id="uiLanguage" class="qp-settings-field-input">
+          <option value="auto">${getMessage('settingsLanguageOptionAuto')}</option>
+          <option value="en">${getMessage('settingsLanguageOptionEnglish')}</option>
+          <option value="de">${getMessage('settingsLanguageOptionGerman')}</option>
+          <option value="ja">${getMessage('settingsLanguageOptionJapanese')}</option>
+          <option value="ko">${getMessage('settingsLanguageOptionKorean')}</option>
+          <option value="zh_CN">${getMessage('settingsLanguageOptionSimplifiedChinese')}</option>
+          <option value="zh_TW">${getMessage('settingsLanguageOptionTraditionalChinese')}</option>
+        </select>
+      </label>
+      <div class="qp-settings-value">${getMessage('settingsLanguageHint')}</div>
     `;
 
     // Anthropic card
     const anCard = document.createElement('section');
     anCard.className = 'qp-settings-card';
     anCard.innerHTML = `
-      <h2 class="qp-settings-card-title">Anthropic (Claude Code)</h2>
+      <h2 class="qp-settings-card-title">${getMessage('settingsCardClaudeCodeTitle')}</h2>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Base URL</span>
-        <input data-id="anthropicBaseUrl" class="qp-settings-field-input" type="text" placeholder="(optional)"/>
+        <span class="qp-settings-field-label">${getMessage('settingsFieldBaseUrlLabel')}</span>
+        <input data-id="anthropicBaseUrl" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderAnthropicBaseUrl')}"/>
       </label>
       <label class="qp-settings-field">
-        <span class="qp-settings-field-label">Auth Token</span>
-        <input data-id="anthropicAuthToken" class="qp-settings-field-input" type="password" placeholder="(optional)"/>
+        <span class="qp-settings-field-label">${getMessage('settingsFieldApiKeyLabel')}</span>
+        <input data-id="anthropicAuthToken" class="qp-settings-field-input" type="password" placeholder="${getMessage('settingsPlaceholderAnthropicApiKey')}"/>
       </label>
     `;
 
-    body.append(mcpCard, qpCard, gwCard, memoryCard, anCard);
+    body.append(mcpCard, qpCard, gwCard, memoryCard, languageCard, anCard);
     modal.append(header, body);
     back.append(style, modal, toast);
 
@@ -809,6 +859,13 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     for (const id of ['anthropicBaseUrl', 'anthropicAuthToken']) {
       const input = anCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
       if (input) disposer.listen(input, 'blur', () => void saveAnthropic());
+    }
+
+    const languageSelect = languageCard.querySelector(
+      '[data-id="uiLanguage"]',
+    ) as HTMLSelectElement | null;
+    if (languageSelect) {
+      disposer.listen(languageSelect, 'change', () => void saveUiLanguage());
     }
 
     return back;

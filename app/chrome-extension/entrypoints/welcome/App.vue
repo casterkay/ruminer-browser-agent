@@ -4,6 +4,11 @@ import type { MemoryBackendType } from 'chrome-mcp-shared';
 import { computed, onMounted, ref } from 'vue';
 
 import {
+  getUiLanguage,
+  setUiLanguage,
+  type UiLanguage,
+} from '@/entrypoints/shared/utils/language-settings';
+import {
   getEmosSettings,
   getGatewaySettings,
   getMemorySettings,
@@ -15,6 +20,7 @@ import {
   testGateway as doTestGateway,
   testMemoryBackend as doTestMemoryBackend,
 } from '@/entrypoints/shared/utils/system-settings';
+import { getMessage } from '@/utils/i18n';
 import ILucideCopy from '~icons/lucide/copy';
 import ILucideExternalLink from '~icons/lucide/external-link';
 import ILucidePlug from '~icons/lucide/plug';
@@ -27,7 +33,13 @@ const COMMANDS = {
 
 type CopyKey = 'setup' | 'extensionId';
 const copiedKey = ref<CopyKey | null>(null);
-const extensionId = computed(() => chrome.runtime.id);
+type ChromeLike = {
+  runtime?: { id?: string };
+  tabs?: { create: (createProperties: { url: string }) => Promise<unknown> | unknown };
+};
+const chromeApi = (globalThis as { chrome?: ChromeLike }).chrome;
+const extensionId = computed(() => chromeApi?.runtime?.id ?? '');
+const t = (key: string, substitutions?: string[]) => getMessage(key, substitutions);
 
 const setupCommand = computed(() => {
   return `${COMMANDS.installerBase} --extension-id ${extensionId.value}`;
@@ -46,15 +58,19 @@ async function copyText(key: CopyKey, text: string): Promise<void> {
 }
 
 function copyLabel(key: CopyKey): string {
-  return copiedKey.value === key ? 'Copied' : 'Copy';
+  return copiedKey.value === key ? t('welcomeCopiedButtonLabel') : t('welcomeCopyButtonLabel');
 }
 
 async function openDocs(): Promise<void> {
   try {
-    await chrome.tabs.create({ url: LINKS.TROUBLESHOOTING });
+    if (chromeApi?.tabs?.create) {
+      await chromeApi.tabs.create({ url: LINKS.TROUBLESHOOTING });
+      return;
+    }
   } catch {
-    window.open(LINKS.TROUBLESHOOTING, '_blank', 'noopener,noreferrer');
+    // fall through to window.open
   }
+  window.open(LINKS.TROUBLESHOOTING, '_blank', 'noopener,noreferrer');
 }
 
 const gatewayWsUrl = ref('ws://127.0.0.1:18789');
@@ -70,19 +86,22 @@ const emosApiKey = ref('');
 const memoryTesting = ref(false);
 const memoryOk = ref<boolean | null>(null);
 const memoryMessage = ref('');
+const uiLanguage = ref<UiLanguage>('auto');
 
 async function loadSettings(): Promise<void> {
-  const gateway = await getGatewaySettings();
+  const [gateway, memory, emos, language] = await Promise.all([
+    getGatewaySettings(),
+    getMemorySettings(),
+    getEmosSettings(),
+    getUiLanguage(),
+  ]);
   gatewayWsUrl.value = gateway.gatewayWsUrl;
   gatewayAuthToken.value = gateway.gatewayAuthToken;
-
-  const memory = await getMemorySettings();
   memoryBackend.value = memory.backend;
   memoryLocalRootPath.value = memory.localRootPath;
-
-  const emos = await getEmosSettings();
   emosBaseUrl.value = emos.baseUrl;
   emosApiKey.value = emos.apiKey;
+  uiLanguage.value = language;
 }
 
 async function saveGateway(): Promise<void> {
@@ -106,6 +125,10 @@ async function saveEmosCredentials(): Promise<void> {
     baseUrl: emosBaseUrl.value,
     apiKey: emosApiKey.value,
   });
+}
+
+async function saveUiLanguage(): Promise<void> {
+  uiLanguage.value = await setUiLanguage(uiLanguage.value);
 }
 
 async function testGateway(): Promise<void> {
@@ -148,20 +171,18 @@ onMounted(() => {
   <div class="agent-theme welcome-root" data-agent-theme="warm-editorial">
     <div class="welcome-container ac-scroll">
       <header class="welcome-header">
-        <div class="welcome-badge">Chrome MCP • Memory • OpenClaw • Claude Code • Codex</div>
-        <h1 class="welcome-title">Ruminer Browser Agent</h1>
+        <div class="welcome-badge">{{ t('welcomeBadgeText') }}</div>
+        <h1 class="welcome-title">{{ t('welcomeTitle') }}</h1>
         <p class="welcome-subtitle">
-          One browser, one memory, many agents. This page helps you wire up Chrome MCP server with
-          your CLI agents for browser automation.
+          {{ t('welcomeSubtitle') }}
         </p>
       </header>
 
       <main class="welcome-main">
         <section class="welcome-card">
-          <div class="welcome-card-title">1) Run the Installation Command</div>
+          <div class="welcome-card-title">{{ t('welcomeStepInstallTitle') }}</div>
           <div class="welcome-card-subtitle">
-            This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw
-            plugin as MCP client.
+            {{ t('welcomeStepInstallSubtitle') }}
           </div>
 
           <div class="code-row">
@@ -173,30 +194,50 @@ onMounted(() => {
           </div>
 
           <div class="note">
-            Tip: you can review the script in your browser first. (Piping scripts into
-            <span class="mono">bash</span> is powerful – apply it with care.)
+            {{ t('welcomeInstallTipPrefix') }} (<span class="mono">bash</span>
+            {{ t('welcomeInstallTipSuffix') }})
           </div>
         </section>
 
         <section class="welcome-grid">
           <div class="welcome-card">
+            <div class="welcome-card-title">{{ t('welcomeStepLanguageTitle') }}</div>
+            <div class="welcome-card-subtitle">{{ t('welcomeStepLanguageSubtitle') }}</div>
+
+            <label class="field">
+              <span class="label">{{ t('languageSelectorLabel') }}</span>
+              <select v-model="uiLanguage" class="input" @change="saveUiLanguage">
+                <option value="auto">{{ t('settingsLanguageOptionAuto') }}</option>
+                <option value="en">{{ t('settingsLanguageOptionEnglish') }}</option>
+                <option value="de">{{ t('settingsLanguageOptionGerman') }}</option>
+                <option value="ja">{{ t('settingsLanguageOptionJapanese') }}</option>
+                <option value="ko">{{ t('settingsLanguageOptionKorean') }}</option>
+                <option value="zh_CN">{{ t('settingsLanguageOptionSimplifiedChinese') }}</option>
+                <option value="zh_TW">{{ t('settingsLanguageOptionTraditionalChinese') }}</option>
+              </select>
+            </label>
+
+            <div class="welcome-card-subtitle">{{ t('settingsLanguageHint') }}</div>
+          </div>
+
+          <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">2) Configure OpenClaw Gateway</div>
-                <div class="welcome-card-subtitle">If used as AI agent backend.</div>
+                <div class="welcome-card-title">{{ t('welcomeStepGatewayTitle') }}</div>
+                <div class="welcome-card-subtitle">{{ t('welcomeStepGatewaySubtitle') }}</div>
               </div>
               <button class="btn" :disabled="gatewayTesting" @click="testGateway">
                 <ILucidePlug class="icon" />
-                {{ gatewayTesting ? 'Testing…' : 'Test' }}
+                {{ gatewayTesting ? t('welcomeTestingButtonLabel') : t('welcomeTestButtonLabel') }}
               </button>
             </div>
 
             <label class="field">
-              <span class="label">Gateway WS URL</span>
+              <span class="label">{{ t('settingsFieldGatewayWsUrlLabel') }}</span>
               <input v-model="gatewayWsUrl" class="input" type="text" @blur="saveGateway" />
             </label>
             <label class="field">
-              <span class="label">Auth token</span>
+              <span class="label">{{ t('settingsFieldAuthTokenLabel') }}</span>
               <input
                 v-model="gatewayAuthToken"
                 class="input"
@@ -214,33 +255,35 @@ onMounted(() => {
           <div class="welcome-card">
             <div class="settings-header">
               <div>
-                <div class="welcome-card-title">3) Configure Memory Store</div>
+                <div class="welcome-card-title">{{ t('welcomeStepMemoryTitle') }}</div>
                 <div class="welcome-card-subtitle">
-                  Storage of your conversations and agent memories.
+                  {{ t('welcomeStepMemorySubtitle') }}
                 </div>
               </div>
               <button class="btn" :disabled="memoryTesting" @click="testMemory">
                 <ILucidePlug class="icon" />
-                {{ memoryTesting ? 'Testing…' : 'Test' }}
+                {{ memoryTesting ? t('welcomeTestingButtonLabel') : t('welcomeTestButtonLabel') }}
               </button>
             </div>
 
             <label class="field">
-              <span class="label">Backend</span>
+              <span class="label">{{ t('settingsFieldBackendLabel') }}</span>
               <select v-model="memoryBackend" class="input" @change="saveMemory">
-                <option value="local_markdown_qmd">Local File System</option>
-                <option value="evermemos">EverMemOS</option>
+                <option value="local_markdown_qmd">
+                  {{ t('settingsBackendLocalFileSystemOption') }}
+                </option>
+                <option value="evermemos">{{ t('settingsBackendEvermemosOption') }}</option>
               </select>
             </label>
 
             <template v-if="memoryBackend === 'local_markdown_qmd'">
               <label class="field">
-                <span class="label">Directory Path</span>
+                <span class="label">{{ t('settingsFieldDirectoryPathLabel') }}</span>
                 <input
                   v-model="memoryLocalRootPath"
                   class="input"
                   type="text"
-                  placeholder="~/ruminer/memory"
+                  :placeholder="t('settingsPlaceholderMemoryLocalRootPath')"
                   @blur="saveMemory"
                 />
               </label>
@@ -248,26 +291,27 @@ onMounted(() => {
 
             <template v-else>
               <div class="welcome-card-subtitle">
-                Legacy remote backend. Ruminer still routes memory reads and writes through the
-                native server.
+                {{ t('settingsMemoryLegacyNotice') }}
               </div>
               <label class="field">
-                <span class="label">Base URL</span>
+                <span class="label">{{ t('settingsFieldBaseUrlLabel') }}</span>
                 <input
                   v-model="emosBaseUrl"
                   class="input"
                   type="text"
                   autocomplete="off"
+                  :placeholder="t('settingsPlaceholderEvermemosBaseUrl')"
                   @blur="saveEmosCredentials"
                 />
               </label>
               <label class="field">
-                <span class="label">API key</span>
+                <span class="label">{{ t('settingsFieldApiKeyLabel') }}</span>
                 <input
                   v-model="emosApiKey"
                   class="input"
                   type="password"
                   autocomplete="off"
+                  :placeholder="t('settingsPlaceholderEvermemosApiKey')"
                   @blur="saveEmosCredentials"
                 />
               </label>
@@ -282,10 +326,10 @@ onMounted(() => {
         <section class="welcome-card">
           <div class="settings-header">
             <div>
-              <div class="welcome-card-title">Checklist</div>
+              <div class="welcome-card-title">{{ t('welcomeChecklistTitle') }}</div>
             </div>
             <button class="link-btn" @click="openDocs">
-              Troubleshooting <ILucideExternalLink class="icon" />
+              {{ t('welcomeTroubleshootingButtonLabel') }} <ILucideExternalLink class="icon" />
             </button>
           </div>
 
@@ -293,7 +337,7 @@ onMounted(() => {
             <li>
               <label class="check-item">
                 <input type="checkbox" />
-                <span>Run the one-liner installation command.</span>
+                <span>{{ t('welcomeChecklistItemInstall') }}</span>
               </label>
             </li>
 
@@ -301,8 +345,8 @@ onMounted(() => {
               <label class="check-item">
                 <input type="checkbox" />
                 <span
-                  >Start Claude Code / Codex CLI and confirm you see a successful connection to the
-                  MCP server <span class="mono">ruminer-chrome</span>.</span
+                  >{{ t('welcomeChecklistItemVerifyConnectionPrefix') }}
+                  <span class="mono">ruminer-chrome</span>.</span
                 >
               </label>
             </li>
@@ -310,20 +354,14 @@ onMounted(() => {
             <li>
               <label class="check-item">
                 <input type="checkbox" />
-                <span
-                  >Ask your agent to call some browser tools, like "What tabs are there in my
-                  browser?"</span
-                >
+                <span>{{ t('welcomeChecklistItemRunTools') }}</span>
               </label>
             </li>
 
             <li>
               <label class="check-item">
                 <input type="checkbox" />
-                <span
-                  >Click the floating button at the bottom right to toggle Ruminer's side panel or
-                  hover on it to open the quick chat UI!</span
-                >
+                <span>{{ t('welcomeChecklistItemQuickChat') }}</span>
               </label>
             </li>
           </ol>

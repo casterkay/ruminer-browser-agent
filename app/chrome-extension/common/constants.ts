@@ -231,6 +231,7 @@ export const STORAGE_KEYS = {
   EMOS_SETTINGS: 'emosSettings',
   TOOL_GROUP_STATE: 'toolGroupState',
   INDIVIDUAL_TOOL_STATE: 'individualToolState',
+  UI_LANGUAGE: 'uiLanguage',
   SEMANTIC_MODEL: 'selectedModel',
   USER_PREFERENCES: 'userPreferences',
   VECTOR_INDEX: 'vectorIndex',
