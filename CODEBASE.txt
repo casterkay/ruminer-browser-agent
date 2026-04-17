@@ -140,6 +140,7 @@ app/
 │   │   │       ├── emos-settings.ts
 │   │   │       ├── gateway-settings.ts
 │   │   │       ├── index.ts
+│   │   │       ├── language-settings.ts
 │   │   │       ├── memory-settings.ts
 │   │   │       ├── openclaw-settings.ts
 │   │   │       ├── rr-flow-convert.ts
@@ -456,4 +457,4 @@ app/
         │   └── check-versions.js
         └── tsconfig.json
 
-99 directories, 333 files
+99 directories, 334 files

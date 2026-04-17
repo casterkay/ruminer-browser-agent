@@ -476,171 +476,171 @@
     "description": "연결 테스트 버튼 aria-label"
   },
   "userscriptsManagerTitle": {
-    "message": "Userscripts Manager",
+    "message": "사용자 스크립트 관리자",
     "description": "Options page title"
   },
   "emergencySwitchLabel": {
-    "message": "Emergency Switch",
+    "message": "긴급 스위치",
     "description": "Global disable switch"
   },
   "createRunSectionTitle": {
-    "message": "Create / Run",
+    "message": "생성 / 실행",
     "description": "Create & run section title"
   },
   "nameLabel": {
-    "message": "Name",
+    "message": "이름",
     "description": "Name input label"
   },
   "runAtLabel": {
-    "message": "Run At",
+    "message": "실행 시점",
     "description": "runAt select label"
   },
   "runAtAuto": {
-    "message": "auto",
+    "message": "자동",
     "description": "runAt auto"
   },
   "runAtDocumentStart": {
-    "message": "document_start",
+    "message": "문서 시작",
     "description": "runAt document_start"
   },
   "runAtDocumentEnd": {
-    "message": "document_end",
+    "message": "문서 종료",
     "description": "runAt document_end"
   },
   "runAtDocumentIdle": {
-    "message": "document_idle",
+    "message": "문서 유휴",
     "description": "runAt document_idle"
   },
   "worldLabel": {
-    "message": "World",
+    "message": "월드",
     "description": "world select label"
   },
   "worldAuto": {
-    "message": "auto",
+    "message": "자동",
     "description": "world auto"
   },
   "worldIsolated": {
-    "message": "ISOLATED",
+    "message": "격리 환경",
     "description": "ISOLATED world"
   },
   "worldMain": {
-    "message": "MAIN",
+    "message": "메인 환경",
     "description": "MAIN world"
   },
   "modeLabel": {
-    "message": "Mode",
+    "message": "모드",
     "description": "mode select label"
   },
   "modeAuto": {
-    "message": "auto",
+    "message": "자동",
     "description": "mode auto"
   },
   "modePersistent": {
-    "message": "persistent",
+    "message": "지속",
     "description": "mode persistent"
   },
   "modeCss": {
-    "message": "css",
+    "message": "CSS",
     "description": "mode css"
   },
   "modeOnce": {
-    "message": "once",
+    "message": "1회만",
     "description": "mode once"
   },
   "allFramesLabel": {
-    "message": "All Frames",
+    "message": "모든 프레임",
     "description": "allFrames checkbox"
   },
   "persistLabel": {
-    "message": "Persist",
+    "message": "유지",
     "description": "persist checkbox"
   },
   "dnrFallbackLabel": {
-    "message": "DNR Fallback",
+    "message": "DNR 대체 동작",
     "description": "dnr fallback checkbox"
   },
   "matchesInputLabel": {
-    "message": "Matches (comma-separated)",
+    "message": "일치 항목(쉼표로 구분)",
     "description": "matches input"
   },
   "excludesInputLabel": {
-    "message": "Excludes (comma-separated)",
+    "message": "제외 항목(쉼표로 구분)",
     "description": "excludes input"
   },
   "tagsInputLabel": {
-    "message": "Tags (comma-separated)",
+    "message": "태그(쉼표로 구분)",
     "description": "tags input"
   },
   "scriptLabel": {
-    "message": "Script",
+    "message": "스크립트",
     "description": "script textarea label"
   },
   "applyButton": {
-    "message": "Apply",
+    "message": "적용",
     "description": "apply button"
   },
   "runOnceButton": {
-    "message": "Run Once (CDP)",
+    "message": "1회 실행 (CDP)",
     "description": "run once button"
   },
   "listSectionTitle": {
-    "message": "List",
+    "message": "목록",
     "description": "list section title"
   },
   "queryLabel": {
-    "message": "Query",
+    "message": "쿼리",
     "description": "query input label"
   },
   "statusAll": {
-    "message": "all",
+    "message": "전체",
     "description": "status all"
   },
   "statusEnabled": {
-    "message": "enabled",
+    "message": "활성화",
     "description": "status enabled"
   },
   "statusDisabled": {
-    "message": "disabled",
+    "message": "비활성화",
     "description": "status disabled"
   },
   "domainLabel": {
-    "message": "Domain",
+    "message": "도메인",
     "description": "domain filter label"
   },
   "exportAllButton": {
-    "message": "Export All",
+    "message": "모두 내보내기",
     "description": "export button"
   },
   "tableHeaderName": {
-    "message": "Name",
+    "message": "이름",
     "description": "table header name"
   },
   "tableHeaderWorld": {
-    "message": "World",
+    "message": "월드",
     "description": "table header world"
   },
   "tableHeaderRunAt": {
-    "message": "Run At",
+    "message": "실행 시점",
     "description": "table header runAt"
   },
   "tableHeaderUpdated": {
-    "message": "Updated",
+    "message": "업데이트됨",
     "description": "table header updated"
   },
   "deleteButton": {
-    "message": "Delete",
+    "message": "삭제",
     "description": "delete button"
   },
   "placeholderOptional": {
-    "message": "optional",
+    "message": "선택 사항",
     "description": "generic optional placeholder"
   },
   "placeholderMatchesExample": {
-    "message": "e.g. https://*.example.com/*",
+    "message": "예: https://*.example.com/*",
     "description": "matches example placeholder"
   },
   "placeholderScriptHint": {
-    "message": "Paste JS/CSS/TM here",
+    "message": "여기에 JS/CSS/TM 붙여넣기",
     "description": "script textarea placeholder"
   },
   "placeholderDomainHint": {
@@ -648,11 +648,11 @@
     "description": "domain filter placeholder"
   },
   "settingsCardMcpServerTitle": {
-    "message": "MCP Server",
+    "message": "MCP 서버",
     "description": "Settings card title for MCP server"
   },
   "settingsCardQuickChatTitle": {
-    "message": "Quick Chat",
+    "message": "퀵 채팅",
     "description": "Settings card title for quick chat"
   },
   "settingsCardGatewayTitle": {
@@ -660,11 +660,11 @@
     "description": "Settings card title for OpenClaw gateway"
   },
   "settingsCardMemoryTitle": {
-    "message": "Memory",
+    "message": "메모리",
     "description": "Settings card title for memory"
   },
   "settingsCardLanguageTitle": {
-    "message": "Language",
+    "message": "언어",
     "description": "Settings card title for language"
   },
   "settingsCardClaudeCodeTitle": {
@@ -672,27 +672,27 @@
     "description": "Settings card title for Claude Code"
   },
   "settingsStatusRunning": {
-    "message": "Running",
+    "message": "실행 중",
     "description": "Server status running"
   },
   "settingsStatusStopped": {
-    "message": "Stopped",
+    "message": "중지됨",
     "description": "Server status stopped"
   },
   "settingsPortLabel": {
-    "message": "Port",
+    "message": "포트",
     "description": "Port field label"
   },
   "settingsPortDefaultValuePrefix": {
-    "message": "Default:",
+    "message": "기본값:",
     "description": "Prefix for default port value"
   },
   "settingsQuickChatShowInPageButtonLabel": {
-    "message": "Show in-page button",
+    "message": "페이지 내 버튼 표시",
     "description": "Quick chat floating button toggle label"
   },
   "settingsQuickChatFloatingIconSizeLabel": {
-    "message": "Floating icon size",
+    "message": "플로팅 아이콘 크기",
     "description": "Quick chat floating icon size label"
   },
   "settingsFieldGatewayWsUrlLabel": {
@@ -700,31 +700,31 @@
     "description": "Gateway websocket url field label"
   },
   "settingsFieldAuthTokenLabel": {
-    "message": "Auth Token",
+    "message": "인증 토큰",
     "description": "Auth token field label"
   },
   "settingsFieldBackendLabel": {
-    "message": "Backend",
+    "message": "백엔드",
     "description": "Backend field label"
   },
   "settingsFieldDirectoryPathLabel": {
-    "message": "Directory Path",
+    "message": "디렉터리 경로",
     "description": "Directory path field label"
   },
   "settingsFieldQmdIndexLabel": {
-    "message": "QMD Index",
+    "message": "QMD 인덱스",
     "description": "QMD index path field label"
   },
   "settingsFieldBaseUrlLabel": {
-    "message": "Base URL",
+    "message": "기본 URL",
     "description": "Base URL field label"
   },
   "settingsFieldApiKeyLabel": {
-    "message": "API Key",
+    "message": "API 키",
     "description": "API key field label"
   },
   "settingsBackendLocalFileSystemOption": {
-    "message": "Local File System",
+    "message": "로컬 파일 시스템",
     "description": "Memory backend local file system option"
   },
   "settingsBackendEvermemosOption": {
@@ -732,7 +732,7 @@
     "description": "Memory backend EverMemOS option"
   },
   "settingsMemoryLegacyNotice": {
-    "message": "Legacy remote backend. Ruminer still routes memory operations through the native server.",
+    "message": "레거시 원격 백엔드입니다. Ruminer는 여전히 메모리 작업을 네이티브 서버를 통해 라우팅합니다.",
     "description": "Notice shown for legacy memory backend"
   },
   "settingsPlaceholderGatewayWsUrl": {
@@ -740,11 +740,11 @@
     "description": "Gateway websocket url placeholder"
   },
   "settingsPlaceholderGatewayAuthToken": {
-    "message": "gateway token",
+    "message": "Gateway 토큰",
     "description": "Gateway auth token placeholder"
   },
   "settingsPlaceholderMemoryLocalRootPath": {
-    "message": "User-global app data directory",
+    "message": "사용자 전역 앱 데이터 디렉터리",
     "description": "Local memory root path placeholder"
   },
   "settingsPlaceholderEvermemosBaseUrl": {
@@ -752,7 +752,7 @@
     "description": "Legacy EverMemOS base URL placeholder"
   },
   "settingsPlaceholderEvermemosApiKey": {
-    "message": "legacy EverMemOS API key",
+    "message": "레거시 EverMemOS API 키",
     "description": "Legacy EverMemOS api key placeholder"
   },
   "settingsPlaceholderAnthropicBaseUrl": {
@@ -760,47 +760,47 @@
     "description": "Anthropic base URL placeholder"
   },
   "settingsPlaceholderAnthropicApiKey": {
-    "message": "your Anthropic API key",
+    "message": "Anthropic API 키",
     "description": "Anthropic api key placeholder"
   },
   "settingsLanguageOptionAuto": {
-    "message": "Follow browser language",
+    "message": "브라우저 언어 따르기",
     "description": "Language option auto/follow browser"
   },
   "settingsLanguageOptionEnglish": {
-    "message": "English",
+    "message": "영어",
     "description": "Language option English"
   },
   "settingsLanguageOptionGerman": {
-    "message": "Deutsch",
+    "message": "독일어",
     "description": "Language option German"
   },
   "settingsLanguageOptionJapanese": {
-    "message": "Japanese",
+    "message": "일본어",
     "description": "Language option Japanese"
   },
   "settingsLanguageOptionKorean": {
-    "message": "Korean",
+    "message": "한국어",
     "description": "Language option Korean"
   },
   "settingsLanguageOptionSimplifiedChinese": {
-    "message": "Simplified Chinese",
+    "message": "중국어(간체)",
     "description": "Language option Simplified Chinese"
   },
   "settingsLanguageOptionTraditionalChinese": {
-    "message": "Traditional Chinese",
+    "message": "중국어(번체)",
     "description": "Language option Traditional Chinese"
   },
   "settingsLanguageHint": {
-    "message": "Language preference is saved locally. Reopen extension pages to apply updates.",
+    "message": "언어 설정은 로컬에 저장됩니다. 변경 사항을 적용하려면 확장 프로그램 페이지를 다시 열어 주세요.",
     "description": "Hint below language selector"
   },
   "settingsLanguageSavedNotification": {
-    "message": "Language preference saved",
+    "message": "언어 설정이 저장되었습니다",
     "description": "Toast when language preference is saved"
   },
   "settingsFloatingIconSizeSavedNotification": {
-    "message": "Floating icon size saved: $SIZE$px",
+    "message": "플로팅 아이콘 크기가 저장되었습니다: $SIZE$px",
     "description": "Toast when floating icon size is saved",
     "placeholders": {
       "size": {
@@ -810,7 +810,7 @@
     }
   },
   "welcomeBadgeText": {
-    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex",
+    "message": "Chrome MCP • 메모리 • OpenClaw • Claude Code • Codex",
     "description": "Welcome page badge text"
   },
   "welcomeTitle": {
@@ -818,87 +818,87 @@
     "description": "Welcome page title"
   },
   "welcomeSubtitle": {
-    "message": "One browser, one memory, many agents. This page helps you wire up Chrome MCP server with your CLI agents for browser automation.",
+    "message": "하나의 브라우저, 하나의 메모리, 여러 에이전트. 이 페이지에서 브라우저 자동화를 위해 Chrome MCP 서버를 CLI 에이전트와 연결할 수 있습니다.",
     "description": "Welcome page subtitle"
   },
   "welcomeStepInstallTitle": {
-    "message": "1) Run the Installation Command",
+    "message": "1) 설치 명령 실행",
     "description": "Welcome install step title"
   },
   "welcomeStepInstallSubtitle": {
-    "message": "This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw plugin as MCP client.",
+    "message": "이 작업은 Claude Code 및 Codex에 네이티브 MCP 서버를 등록하고 OpenClaw 플러그인을 MCP 클라이언트로 설치합니다.",
     "description": "Welcome install step subtitle"
   },
   "welcomeInstallTipPrefix": {
-    "message": "Tip: you can review the script in your browser first.",
+    "message": "팁: 먼저 브라우저에서 스크립트를 확인할 수 있습니다.",
     "description": "Welcome install tip prefix"
   },
   "welcomeInstallTipSuffix": {
-    "message": "is powerful - apply it with care.",
+    "message": "는 강력합니다. 주의해서 사용하세요.",
     "description": "Welcome install tip suffix"
   },
   "welcomeStepLanguageTitle": {
-    "message": "2) Choose Interface Language",
+    "message": "2) 인터페이스 언어 선택",
     "description": "Welcome language step title"
   },
   "welcomeStepLanguageSubtitle": {
-    "message": "Set your preferred language for Ruminer extension interfaces.",
+    "message": "Ruminer 확장 프로그램 인터페이스의 기본 언어를 설정하세요.",
     "description": "Welcome language step subtitle"
   },
   "welcomeStepGatewayTitle": {
-    "message": "3) Configure OpenClaw Gateway",
+    "message": "3) OpenClaw Gateway 설정",
     "description": "Welcome gateway step title"
   },
   "welcomeStepGatewaySubtitle": {
-    "message": "If used as AI agent backend.",
+    "message": "AI 에이전트 백엔드로 사용하는 경우.",
     "description": "Welcome gateway step subtitle"
   },
   "welcomeStepMemoryTitle": {
-    "message": "4) Configure Memory Store",
+    "message": "4) 메모리 저장소 설정",
     "description": "Welcome memory step title"
   },
   "welcomeStepMemorySubtitle": {
-    "message": "Storage of your conversations and agent memories.",
+    "message": "대화와 에이전트 메모리 저장소입니다.",
     "description": "Welcome memory step subtitle"
   },
   "welcomeTestingButtonLabel": {
-    "message": "Testing...",
+    "message": "테스트 중...",
     "description": "Label for in-progress test button"
   },
   "welcomeTestButtonLabel": {
-    "message": "Test",
+    "message": "테스트",
     "description": "Label for test button"
   },
   "welcomeChecklistTitle": {
-    "message": "Checklist",
+    "message": "체크리스트",
     "description": "Welcome checklist title"
   },
   "welcomeTroubleshootingButtonLabel": {
-    "message": "Troubleshooting",
+    "message": "문제 해결",
     "description": "Welcome troubleshooting button label"
   },
   "welcomeChecklistItemInstall": {
-    "message": "Run the one-liner installation command.",
+    "message": "원라이너 설치 명령을 실행한다.",
     "description": "Welcome checklist item install"
   },
   "welcomeChecklistItemVerifyConnectionPrefix": {
-    "message": "Start Claude Code / Codex CLI and confirm you see a successful connection to the MCP server",
+    "message": "Claude Code / Codex CLI를 시작하고 MCP 서버에 성공적으로 연결되는지 확인한다",
     "description": "Welcome checklist item for verifying connection prefix"
   },
   "welcomeChecklistItemRunTools": {
-    "message": "Ask your agent to call some browser tools, like \"What tabs are there in my browser?\"",
+    "message": "에이전트에게 \"내 브라우저에 어떤 탭이 있어?\" 같은 브라우저 도구 호출을 요청한다",
     "description": "Welcome checklist item for trying tools"
   },
   "welcomeChecklistItemQuickChat": {
-    "message": "Click the floating button at the bottom right to toggle Ruminer's side panel or hover on it to open the quick chat UI!",
+    "message": "오른쪽 아래의 플로팅 버튼을 클릭해 Ruminer 사이드패널을 토글하거나, 마우스를 올려 퀵 채팅 UI를 엽니다.",
     "description": "Welcome checklist item for quick chat"
   },
   "welcomeCopyButtonLabel": {
-    "message": "Copy",
+    "message": "복사",
     "description": "Welcome copy button label"
   },
   "welcomeCopiedButtonLabel": {
-    "message": "Copied",
+    "message": "복사됨",
     "description": "Welcome copied button label"
   }
 }

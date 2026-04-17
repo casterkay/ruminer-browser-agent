@@ -368,171 +368,171 @@
     "description": "接続テストボタンのaria-label"
   },
   "userscriptsManagerTitle": {
-    "message": "Userscripts Manager",
+    "message": "ユーザースクリプト管理",
     "description": "Options page title"
   },
   "emergencySwitchLabel": {
-    "message": "Emergency Switch",
+    "message": "緊急スイッチ",
     "description": "Global disable switch"
   },
   "createRunSectionTitle": {
-    "message": "Create / Run",
+    "message": "作成 / 実行",
     "description": "Create & run section title"
   },
   "nameLabel": {
-    "message": "Name",
+    "message": "名前",
     "description": "Name input label"
   },
   "runAtLabel": {
-    "message": "Run At",
+    "message": "実行タイミング",
     "description": "runAt select label"
   },
   "runAtAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "runAt auto"
   },
   "runAtDocumentStart": {
-    "message": "document_start",
+    "message": "ドキュメント開始",
     "description": "runAt document_start"
   },
   "runAtDocumentEnd": {
-    "message": "document_end",
+    "message": "ドキュメント終了",
     "description": "runAt document_end"
   },
   "runAtDocumentIdle": {
-    "message": "document_idle",
+    "message": "ドキュメント待機",
     "description": "runAt document_idle"
   },
   "worldLabel": {
-    "message": "World",
+    "message": "実行ワールド",
     "description": "world select label"
   },
   "worldAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "world auto"
   },
   "worldIsolated": {
-    "message": "ISOLATED",
+    "message": "分離環境",
     "description": "ISOLATED world"
   },
   "worldMain": {
-    "message": "MAIN",
+    "message": "メイン環境",
     "description": "MAIN world"
   },
   "modeLabel": {
-    "message": "Mode",
+    "message": "モード",
     "description": "mode select label"
   },
   "modeAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "mode auto"
   },
   "modePersistent": {
-    "message": "persistent",
+    "message": "永続",
     "description": "mode persistent"
   },
   "modeCss": {
-    "message": "css",
+    "message": "CSS",
     "description": "mode css"
   },
   "modeOnce": {
-    "message": "once",
+    "message": "1回のみ",
     "description": "mode once"
   },
   "allFramesLabel": {
-    "message": "All Frames",
+    "message": "すべてのフレーム",
     "description": "allFrames checkbox"
   },
   "persistLabel": {
-    "message": "Persist",
+    "message": "永続化",
     "description": "persist checkbox"
   },
   "dnrFallbackLabel": {
-    "message": "DNR Fallback",
+    "message": "DNR フォールバック",
     "description": "dnr fallback checkbox"
   },
   "matchesInputLabel": {
-    "message": "Matches (comma-separated)",
+    "message": "一致対象（カンマ区切り）",
     "description": "matches input"
   },
   "excludesInputLabel": {
-    "message": "Excludes (comma-separated)",
+    "message": "除外対象（カンマ区切り）",
     "description": "excludes input"
   },
   "tagsInputLabel": {
-    "message": "Tags (comma-separated)",
+    "message": "タグ（カンマ区切り）",
     "description": "tags input"
   },
   "scriptLabel": {
-    "message": "Script",
+    "message": "スクリプト",
     "description": "script textarea label"
   },
   "applyButton": {
-    "message": "Apply",
+    "message": "適用",
     "description": "apply button"
   },
   "runOnceButton": {
-    "message": "Run Once (CDP)",
+    "message": "1回実行 (CDP)",
     "description": "run once button"
   },
   "listSectionTitle": {
-    "message": "List",
+    "message": "一覧",
     "description": "list section title"
   },
   "queryLabel": {
-    "message": "Query",
+    "message": "クエリ",
     "description": "query input label"
   },
   "statusAll": {
-    "message": "all",
+    "message": "すべて",
     "description": "status all"
   },
   "statusEnabled": {
-    "message": "enabled",
+    "message": "有効",
     "description": "status enabled"
   },
   "statusDisabled": {
-    "message": "disabled",
+    "message": "無効",
     "description": "status disabled"
   },
   "domainLabel": {
-    "message": "Domain",
+    "message": "ドメイン",
     "description": "domain filter label"
   },
   "exportAllButton": {
-    "message": "Export All",
+    "message": "すべてエクスポート",
     "description": "export button"
   },
   "tableHeaderName": {
-    "message": "Name",
+    "message": "名前",
     "description": "table header name"
   },
   "tableHeaderWorld": {
-    "message": "World",
+    "message": "ワールド",
     "description": "table header world"
   },
   "tableHeaderRunAt": {
-    "message": "Run At",
+    "message": "実行タイミング",
     "description": "table header runAt"
   },
   "tableHeaderUpdated": {
-    "message": "Updated",
+    "message": "更新日時",
     "description": "table header updated"
   },
   "deleteButton": {
-    "message": "Delete",
+    "message": "削除",
     "description": "delete button"
   },
   "placeholderOptional": {
-    "message": "optional",
+    "message": "任意",
     "description": "generic optional placeholder"
   },
   "placeholderMatchesExample": {
-    "message": "e.g. https://*.example.com/*",
+    "message": "例: https://*.example.com/*",
     "description": "matches example placeholder"
   },
   "placeholderScriptHint": {
-    "message": "Paste JS/CSS/TM here",
+    "message": "ここに JS/CSS/TM を貼り付け",
     "description": "script textarea placeholder"
   },
   "placeholderDomainHint": {
@@ -540,11 +540,11 @@
     "description": "domain filter placeholder"
   },
   "settingsCardMcpServerTitle": {
-    "message": "MCP Server",
+    "message": "MCP サーバー",
     "description": "Settings card title for MCP server"
   },
   "settingsCardQuickChatTitle": {
-    "message": "Quick Chat",
+    "message": "クイックチャット",
     "description": "Settings card title for quick chat"
   },
   "settingsCardGatewayTitle": {
@@ -552,11 +552,11 @@
     "description": "Settings card title for OpenClaw gateway"
   },
   "settingsCardMemoryTitle": {
-    "message": "Memory",
+    "message": "メモリ",
     "description": "Settings card title for memory"
   },
   "settingsCardLanguageTitle": {
-    "message": "Language",
+    "message": "言語",
     "description": "Settings card title for language"
   },
   "settingsCardClaudeCodeTitle": {
@@ -564,27 +564,27 @@
     "description": "Settings card title for Claude Code"
   },
   "settingsStatusRunning": {
-    "message": "Running",
+    "message": "稼働中",
     "description": "Server status running"
   },
   "settingsStatusStopped": {
-    "message": "Stopped",
+    "message": "停止",
     "description": "Server status stopped"
   },
   "settingsPortLabel": {
-    "message": "Port",
+    "message": "ポート",
     "description": "Port field label"
   },
   "settingsPortDefaultValuePrefix": {
-    "message": "Default:",
+    "message": "既定値:",
     "description": "Prefix for default port value"
   },
   "settingsQuickChatShowInPageButtonLabel": {
-    "message": "Show in-page button",
+    "message": "ページ内ボタンを表示",
     "description": "Quick chat floating button toggle label"
   },
   "settingsQuickChatFloatingIconSizeLabel": {
-    "message": "Floating icon size",
+    "message": "フローティングアイコンサイズ",
     "description": "Quick chat floating icon size label"
   },
   "settingsFieldGatewayWsUrlLabel": {
@@ -592,31 +592,31 @@
     "description": "Gateway websocket url field label"
   },
   "settingsFieldAuthTokenLabel": {
-    "message": "Auth Token",
+    "message": "認証トークン",
     "description": "Auth token field label"
   },
   "settingsFieldBackendLabel": {
-    "message": "Backend",
+    "message": "バックエンド",
     "description": "Backend field label"
   },
   "settingsFieldDirectoryPathLabel": {
-    "message": "Directory Path",
+    "message": "ディレクトリパス",
     "description": "Directory path field label"
   },
   "settingsFieldQmdIndexLabel": {
-    "message": "QMD Index",
+    "message": "QMD インデックス",
     "description": "QMD index path field label"
   },
   "settingsFieldBaseUrlLabel": {
-    "message": "Base URL",
+    "message": "ベース URL",
     "description": "Base URL field label"
   },
   "settingsFieldApiKeyLabel": {
-    "message": "API Key",
+    "message": "API キー",
     "description": "API key field label"
   },
   "settingsBackendLocalFileSystemOption": {
-    "message": "Local File System",
+    "message": "ローカルファイルシステム",
     "description": "Memory backend local file system option"
   },
   "settingsBackendEvermemosOption": {
@@ -624,7 +624,7 @@
     "description": "Memory backend EverMemOS option"
   },
   "settingsMemoryLegacyNotice": {
-    "message": "Legacy remote backend. Ruminer still routes memory operations through the native server.",
+    "message": "旧来のリモートバックエンドです。Ruminer は引き続きメモリ操作をネイティブサーバー経由で処理します。",
     "description": "Notice shown for legacy memory backend"
   },
   "settingsPlaceholderGatewayWsUrl": {
@@ -632,11 +632,11 @@
     "description": "Gateway websocket url placeholder"
   },
   "settingsPlaceholderGatewayAuthToken": {
-    "message": "gateway token",
+    "message": "Gateway トークン",
     "description": "Gateway auth token placeholder"
   },
   "settingsPlaceholderMemoryLocalRootPath": {
-    "message": "User-global app data directory",
+    "message": "ユーザー共通のアプリデータディレクトリ",
     "description": "Local memory root path placeholder"
   },
   "settingsPlaceholderEvermemosBaseUrl": {
@@ -644,7 +644,7 @@
     "description": "Legacy EverMemOS base URL placeholder"
   },
   "settingsPlaceholderEvermemosApiKey": {
-    "message": "legacy EverMemOS API key",
+    "message": "旧 EverMemOS API キー",
     "description": "Legacy EverMemOS api key placeholder"
   },
   "settingsPlaceholderAnthropicBaseUrl": {
@@ -652,47 +652,47 @@
     "description": "Anthropic base URL placeholder"
   },
   "settingsPlaceholderAnthropicApiKey": {
-    "message": "your Anthropic API key",
+    "message": "あなたの Anthropic API キー",
     "description": "Anthropic api key placeholder"
   },
   "settingsLanguageOptionAuto": {
-    "message": "Follow browser language",
+    "message": "ブラウザ言語に従う",
     "description": "Language option auto/follow browser"
   },
   "settingsLanguageOptionEnglish": {
-    "message": "English",
+    "message": "英語",
     "description": "Language option English"
   },
   "settingsLanguageOptionGerman": {
-    "message": "Deutsch",
+    "message": "ドイツ語",
     "description": "Language option German"
   },
   "settingsLanguageOptionJapanese": {
-    "message": "Japanese",
+    "message": "日本語",
     "description": "Language option Japanese"
   },
   "settingsLanguageOptionKorean": {
-    "message": "Korean",
+    "message": "韓国語",
     "description": "Language option Korean"
   },
   "settingsLanguageOptionSimplifiedChinese": {
-    "message": "Simplified Chinese",
+    "message": "簡体字中国語",
     "description": "Language option Simplified Chinese"
   },
   "settingsLanguageOptionTraditionalChinese": {
-    "message": "Traditional Chinese",
+    "message": "繁体字中国語",
     "description": "Language option Traditional Chinese"
   },
   "settingsLanguageHint": {
-    "message": "Language preference is saved locally. Reopen extension pages to apply updates.",
+    "message": "言語設定はローカルに保存されます。変更を反映するには拡張機能ページを再度開いてください。",
     "description": "Hint below language selector"
   },
   "settingsLanguageSavedNotification": {
-    "message": "Language preference saved",
+    "message": "言語設定を保存しました",
     "description": "Toast when language preference is saved"
   },
   "settingsFloatingIconSizeSavedNotification": {
-    "message": "Floating icon size saved: $SIZE$px",
+    "message": "フローティングアイコンサイズを保存しました: $SIZE$px",
     "description": "Toast when floating icon size is saved",
     "placeholders": {
       "size": {
@@ -702,7 +702,7 @@
     }
   },
   "welcomeBadgeText": {
-    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex",
+    "message": "Chrome MCP • メモリ • OpenClaw • Claude Code • Codex",
     "description": "Welcome page badge text"
   },
   "welcomeTitle": {
@@ -710,87 +710,87 @@
     "description": "Welcome page title"
   },
   "welcomeSubtitle": {
-    "message": "One browser, one memory, many agents. This page helps you wire up Chrome MCP server with your CLI agents for browser automation.",
+    "message": "1つのブラウザ、1つのメモリ、複数のエージェント。このページでは、ブラウザ自動化のために Chrome MCP サーバーを CLI エージェントと接続できます。",
     "description": "Welcome page subtitle"
   },
   "welcomeStepInstallTitle": {
-    "message": "1) Run the Installation Command",
+    "message": "1) インストールコマンドを実行",
     "description": "Welcome install step title"
   },
   "welcomeStepInstallSubtitle": {
-    "message": "This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw plugin as MCP client.",
+    "message": "これにより、ネイティブ MCP サーバーが Claude Code と Codex に登録され、OpenClaw プラグインが MCP クライアントとしてインストールされます。",
     "description": "Welcome install step subtitle"
   },
   "welcomeInstallTipPrefix": {
-    "message": "Tip: you can review the script in your browser first.",
+    "message": "ヒント: 先にブラウザでスクリプトを確認できます。",
     "description": "Welcome install tip prefix"
   },
   "welcomeInstallTipSuffix": {
-    "message": "is powerful - apply it with care.",
+    "message": "は強力です。注意して実行してください。",
     "description": "Welcome install tip suffix"
   },
   "welcomeStepLanguageTitle": {
-    "message": "2) Choose Interface Language",
+    "message": "2) インターフェース言語を選択",
     "description": "Welcome language step title"
   },
   "welcomeStepLanguageSubtitle": {
-    "message": "Set your preferred language for Ruminer extension interfaces.",
+    "message": "Ruminer 拡張機能の表示言語を設定します。",
     "description": "Welcome language step subtitle"
   },
   "welcomeStepGatewayTitle": {
-    "message": "3) Configure OpenClaw Gateway",
+    "message": "3) OpenClaw Gateway を設定",
     "description": "Welcome gateway step title"
   },
   "welcomeStepGatewaySubtitle": {
-    "message": "If used as AI agent backend.",
+    "message": "AI エージェントのバックエンドとして使う場合。",
     "description": "Welcome gateway step subtitle"
   },
   "welcomeStepMemoryTitle": {
-    "message": "4) Configure Memory Store",
+    "message": "4) メモリストアを設定",
     "description": "Welcome memory step title"
   },
   "welcomeStepMemorySubtitle": {
-    "message": "Storage of your conversations and agent memories.",
+    "message": "会話とエージェントメモリの保存先です。",
     "description": "Welcome memory step subtitle"
   },
   "welcomeTestingButtonLabel": {
-    "message": "Testing...",
+    "message": "テスト中...",
     "description": "Label for in-progress test button"
   },
   "welcomeTestButtonLabel": {
-    "message": "Test",
+    "message": "テスト",
     "description": "Label for test button"
   },
   "welcomeChecklistTitle": {
-    "message": "Checklist",
+    "message": "チェックリスト",
     "description": "Welcome checklist title"
   },
   "welcomeTroubleshootingButtonLabel": {
-    "message": "Troubleshooting",
+    "message": "トラブルシューティング",
     "description": "Welcome troubleshooting button label"
   },
   "welcomeChecklistItemInstall": {
-    "message": "Run the one-liner installation command.",
+    "message": "ワンライナーのインストールコマンドを実行する。",
     "description": "Welcome checklist item install"
   },
   "welcomeChecklistItemVerifyConnectionPrefix": {
-    "message": "Start Claude Code / Codex CLI and confirm you see a successful connection to the MCP server",
+    "message": "Claude Code / Codex CLI を起動し、MCP サーバーへの接続成功を確認する",
     "description": "Welcome checklist item for verifying connection prefix"
   },
   "welcomeChecklistItemRunTools": {
-    "message": "Ask your agent to call some browser tools, like \"What tabs are there in my browser?\"",
+    "message": "エージェントに「ブラウザにどのタブが開いている？」のようなブラウザツール呼び出しを依頼する",
     "description": "Welcome checklist item for trying tools"
   },
   "welcomeChecklistItemQuickChat": {
-    "message": "Click the floating button at the bottom right to toggle Ruminer's side panel or hover on it to open the quick chat UI!",
+    "message": "右下のフローティングボタンをクリックして Ruminer サイドパネルを切り替えるか、ホバーしてクイックチャット UI を開きます。",
     "description": "Welcome checklist item for quick chat"
   },
   "welcomeCopyButtonLabel": {
-    "message": "Copy",
+    "message": "コピー",
     "description": "Welcome copy button label"
   },
   "welcomeCopiedButtonLabel": {
-    "message": "Copied",
+    "message": "コピー済み",
     "description": "Welcome copied button label"
   }
 }

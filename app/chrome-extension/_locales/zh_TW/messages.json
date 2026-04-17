@@ -476,171 +476,171 @@
     "description": "測試連線按鈕無障礙標籤"
   },
   "userscriptsManagerTitle": {
-    "message": "Userscripts Manager",
+    "message": "使用者腳本管理",
     "description": "Options page title"
   },
   "emergencySwitchLabel": {
-    "message": "Emergency Switch",
+    "message": "緊急開關",
     "description": "Global disable switch"
   },
   "createRunSectionTitle": {
-    "message": "Create / Run",
+    "message": "建立 / 執行",
     "description": "Create & run section title"
   },
   "nameLabel": {
-    "message": "Name",
+    "message": "名稱",
     "description": "Name input label"
   },
   "runAtLabel": {
-    "message": "Run At",
+    "message": "執行時機",
     "description": "runAt select label"
   },
   "runAtAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "runAt auto"
   },
   "runAtDocumentStart": {
-    "message": "document_start",
+    "message": "文件開始",
     "description": "runAt document_start"
   },
   "runAtDocumentEnd": {
-    "message": "document_end",
+    "message": "文件結束",
     "description": "runAt document_end"
   },
   "runAtDocumentIdle": {
-    "message": "document_idle",
+    "message": "文件閒置",
     "description": "runAt document_idle"
   },
   "worldLabel": {
-    "message": "World",
+    "message": "執行世界",
     "description": "world select label"
   },
   "worldAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "world auto"
   },
   "worldIsolated": {
-    "message": "ISOLATED",
+    "message": "隔離環境",
     "description": "ISOLATED world"
   },
   "worldMain": {
-    "message": "MAIN",
+    "message": "主環境",
     "description": "MAIN world"
   },
   "modeLabel": {
-    "message": "Mode",
+    "message": "模式",
     "description": "mode select label"
   },
   "modeAuto": {
-    "message": "auto",
+    "message": "自動",
     "description": "mode auto"
   },
   "modePersistent": {
-    "message": "persistent",
+    "message": "持續",
     "description": "mode persistent"
   },
   "modeCss": {
-    "message": "css",
+    "message": "CSS",
     "description": "mode css"
   },
   "modeOnce": {
-    "message": "once",
+    "message": "僅一次",
     "description": "mode once"
   },
   "allFramesLabel": {
-    "message": "All Frames",
+    "message": "所有框架",
     "description": "allFrames checkbox"
   },
   "persistLabel": {
-    "message": "Persist",
+    "message": "持久化",
     "description": "persist checkbox"
   },
   "dnrFallbackLabel": {
-    "message": "DNR Fallback",
+    "message": "DNR 備援",
     "description": "dnr fallback checkbox"
   },
   "matchesInputLabel": {
-    "message": "Matches (comma-separated)",
+    "message": "匹配項（以逗號分隔）",
     "description": "matches input"
   },
   "excludesInputLabel": {
-    "message": "Excludes (comma-separated)",
+    "message": "排除項（以逗號分隔）",
     "description": "excludes input"
   },
   "tagsInputLabel": {
-    "message": "Tags (comma-separated)",
+    "message": "標籤（以逗號分隔）",
     "description": "tags input"
   },
   "scriptLabel": {
-    "message": "Script",
+    "message": "腳本",
     "description": "script textarea label"
   },
   "applyButton": {
-    "message": "Apply",
+    "message": "套用",
     "description": "apply button"
   },
   "runOnceButton": {
-    "message": "Run Once (CDP)",
+    "message": "執行一次 (CDP)",
     "description": "run once button"
   },
   "listSectionTitle": {
-    "message": "List",
+    "message": "清單",
     "description": "list section title"
   },
   "queryLabel": {
-    "message": "Query",
+    "message": "查詢",
     "description": "query input label"
   },
   "statusAll": {
-    "message": "all",
+    "message": "全部",
     "description": "status all"
   },
   "statusEnabled": {
-    "message": "enabled",
+    "message": "啟用",
     "description": "status enabled"
   },
   "statusDisabled": {
-    "message": "disabled",
+    "message": "停用",
     "description": "status disabled"
   },
   "domainLabel": {
-    "message": "Domain",
+    "message": "網域",
     "description": "domain filter label"
   },
   "exportAllButton": {
-    "message": "Export All",
+    "message": "全部匯出",
     "description": "export button"
   },
   "tableHeaderName": {
-    "message": "Name",
+    "message": "名稱",
     "description": "table header name"
   },
   "tableHeaderWorld": {
-    "message": "World",
+    "message": "世界",
     "description": "table header world"
   },
   "tableHeaderRunAt": {
-    "message": "Run At",
+    "message": "執行時機",
     "description": "table header runAt"
   },
   "tableHeaderUpdated": {
-    "message": "Updated",
+    "message": "已更新",
     "description": "table header updated"
   },
   "deleteButton": {
-    "message": "Delete",
+    "message": "刪除",
     "description": "delete button"
   },
   "placeholderOptional": {
-    "message": "optional",
+    "message": "選填",
     "description": "generic optional placeholder"
   },
   "placeholderMatchesExample": {
-    "message": "e.g. https://*.example.com/*",
+    "message": "例如：https://*.example.com/*",
     "description": "matches example placeholder"
   },
   "placeholderScriptHint": {
-    "message": "Paste JS/CSS/TM here",
+    "message": "在此貼上 JS/CSS/TM",
     "description": "script textarea placeholder"
   },
   "placeholderDomainHint": {
@@ -648,11 +648,11 @@
     "description": "domain filter placeholder"
   },
   "settingsCardMcpServerTitle": {
-    "message": "MCP Server",
+    "message": "MCP 伺服器",
     "description": "Settings card title for MCP server"
   },
   "settingsCardQuickChatTitle": {
-    "message": "Quick Chat",
+    "message": "快速聊天",
     "description": "Settings card title for quick chat"
   },
   "settingsCardGatewayTitle": {
@@ -660,11 +660,11 @@
     "description": "Settings card title for OpenClaw gateway"
   },
   "settingsCardMemoryTitle": {
-    "message": "Memory",
+    "message": "記憶",
     "description": "Settings card title for memory"
   },
   "settingsCardLanguageTitle": {
-    "message": "Language",
+    "message": "語言",
     "description": "Settings card title for language"
   },
   "settingsCardClaudeCodeTitle": {
@@ -672,27 +672,27 @@
     "description": "Settings card title for Claude Code"
   },
   "settingsStatusRunning": {
-    "message": "Running",
+    "message": "運行中",
     "description": "Server status running"
   },
   "settingsStatusStopped": {
-    "message": "Stopped",
+    "message": "已停止",
     "description": "Server status stopped"
   },
   "settingsPortLabel": {
-    "message": "Port",
+    "message": "埠號",
     "description": "Port field label"
   },
   "settingsPortDefaultValuePrefix": {
-    "message": "Default:",
+    "message": "預設值：",
     "description": "Prefix for default port value"
   },
   "settingsQuickChatShowInPageButtonLabel": {
-    "message": "Show in-page button",
+    "message": "顯示頁內按鈕",
     "description": "Quick chat floating button toggle label"
   },
   "settingsQuickChatFloatingIconSizeLabel": {
-    "message": "Floating icon size",
+    "message": "浮動圖示大小",
     "description": "Quick chat floating icon size label"
   },
   "settingsFieldGatewayWsUrlLabel": {
@@ -700,31 +700,31 @@
     "description": "Gateway websocket url field label"
   },
   "settingsFieldAuthTokenLabel": {
-    "message": "Auth Token",
+    "message": "驗證權杖",
     "description": "Auth token field label"
   },
   "settingsFieldBackendLabel": {
-    "message": "Backend",
+    "message": "後端",
     "description": "Backend field label"
   },
   "settingsFieldDirectoryPathLabel": {
-    "message": "Directory Path",
+    "message": "目錄路徑",
     "description": "Directory path field label"
   },
   "settingsFieldQmdIndexLabel": {
-    "message": "QMD Index",
+    "message": "QMD 索引",
     "description": "QMD index path field label"
   },
   "settingsFieldBaseUrlLabel": {
-    "message": "Base URL",
+    "message": "基礎 URL",
     "description": "Base URL field label"
   },
   "settingsFieldApiKeyLabel": {
-    "message": "API Key",
+    "message": "API 金鑰",
     "description": "API key field label"
   },
   "settingsBackendLocalFileSystemOption": {
-    "message": "Local File System",
+    "message": "本地檔案系統",
     "description": "Memory backend local file system option"
   },
   "settingsBackendEvermemosOption": {
@@ -732,7 +732,7 @@
     "description": "Memory backend EverMemOS option"
   },
   "settingsMemoryLegacyNotice": {
-    "message": "Legacy remote backend. Ruminer still routes memory operations through the native server.",
+    "message": "舊版遠端後端。Ruminer 仍會透過原生伺服器路由記憶操作。",
     "description": "Notice shown for legacy memory backend"
   },
   "settingsPlaceholderGatewayWsUrl": {
@@ -740,11 +740,11 @@
     "description": "Gateway websocket url placeholder"
   },
   "settingsPlaceholderGatewayAuthToken": {
-    "message": "gateway token",
+    "message": "Gateway 權杖",
     "description": "Gateway auth token placeholder"
   },
   "settingsPlaceholderMemoryLocalRootPath": {
-    "message": "User-global app data directory",
+    "message": "使用者全域應用資料目錄",
     "description": "Local memory root path placeholder"
   },
   "settingsPlaceholderEvermemosBaseUrl": {
@@ -752,7 +752,7 @@
     "description": "Legacy EverMemOS base URL placeholder"
   },
   "settingsPlaceholderEvermemosApiKey": {
-    "message": "legacy EverMemOS API key",
+    "message": "舊版 EverMemOS API 金鑰",
     "description": "Legacy EverMemOS api key placeholder"
   },
   "settingsPlaceholderAnthropicBaseUrl": {
@@ -760,47 +760,47 @@
     "description": "Anthropic base URL placeholder"
   },
   "settingsPlaceholderAnthropicApiKey": {
-    "message": "your Anthropic API key",
+    "message": "你的 Anthropic API 金鑰",
     "description": "Anthropic api key placeholder"
   },
   "settingsLanguageOptionAuto": {
-    "message": "Follow browser language",
+    "message": "跟隨瀏覽器語言",
     "description": "Language option auto/follow browser"
   },
   "settingsLanguageOptionEnglish": {
-    "message": "English",
+    "message": "英文",
     "description": "Language option English"
   },
   "settingsLanguageOptionGerman": {
-    "message": "Deutsch",
+    "message": "德文",
     "description": "Language option German"
   },
   "settingsLanguageOptionJapanese": {
-    "message": "Japanese",
+    "message": "日文",
     "description": "Language option Japanese"
   },
   "settingsLanguageOptionKorean": {
-    "message": "Korean",
+    "message": "韓文",
     "description": "Language option Korean"
   },
   "settingsLanguageOptionSimplifiedChinese": {
-    "message": "Simplified Chinese",
+    "message": "簡體中文",
     "description": "Language option Simplified Chinese"
   },
   "settingsLanguageOptionTraditionalChinese": {
-    "message": "Traditional Chinese",
+    "message": "繁體中文",
     "description": "Language option Traditional Chinese"
   },
   "settingsLanguageHint": {
-    "message": "Language preference is saved locally. Reopen extension pages to apply updates.",
+    "message": "語言偏好會儲存在本機。請重新開啟擴充功能頁面以套用更新。",
     "description": "Hint below language selector"
   },
   "settingsLanguageSavedNotification": {
-    "message": "Language preference saved",
+    "message": "語言偏好已儲存",
     "description": "Toast when language preference is saved"
   },
   "settingsFloatingIconSizeSavedNotification": {
-    "message": "Floating icon size saved: $SIZE$px",
+    "message": "浮動圖示大小已儲存：$SIZE$px",
     "description": "Toast when floating icon size is saved",
     "placeholders": {
       "size": {
@@ -810,7 +810,7 @@
     }
   },
   "welcomeBadgeText": {
-    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex",
+    "message": "Chrome MCP • 記憶 • OpenClaw • Claude Code • Codex",
     "description": "Welcome page badge text"
   },
   "welcomeTitle": {
@@ -818,87 +818,87 @@
     "description": "Welcome page title"
   },
   "welcomeSubtitle": {
-    "message": "One browser, one memory, many agents. This page helps you wire up Chrome MCP server with your CLI agents for browser automation.",
+    "message": "一個瀏覽器、一份記憶、多個代理。此頁面可協助你將 Chrome MCP 伺服器與 CLI 代理連接，用於瀏覽器自動化。",
     "description": "Welcome page subtitle"
   },
   "welcomeStepInstallTitle": {
-    "message": "1) Run the Installation Command",
+    "message": "1) 執行安裝命令",
     "description": "Welcome install step title"
   },
   "welcomeStepInstallSubtitle": {
-    "message": "This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw plugin as MCP client.",
+    "message": "這會在 Claude Code 與 Codex 中註冊原生 MCP 伺服器，並安裝 OpenClaw 外掛作為 MCP 客戶端。",
     "description": "Welcome install step subtitle"
   },
   "welcomeInstallTipPrefix": {
-    "message": "Tip: you can review the script in your browser first.",
+    "message": "提示：你可以先在瀏覽器中檢視腳本。",
     "description": "Welcome install tip prefix"
   },
   "welcomeInstallTipSuffix": {
-    "message": "is powerful - apply it with care.",
+    "message": "功能強大，請謹慎使用。",
     "description": "Welcome install tip suffix"
   },
   "welcomeStepLanguageTitle": {
-    "message": "2) Choose Interface Language",
+    "message": "2) 選擇介面語言",
     "description": "Welcome language step title"
   },
   "welcomeStepLanguageSubtitle": {
-    "message": "Set your preferred language for Ruminer extension interfaces.",
+    "message": "設定 Ruminer 擴充功能介面的偏好語言。",
     "description": "Welcome language step subtitle"
   },
   "welcomeStepGatewayTitle": {
-    "message": "3) Configure OpenClaw Gateway",
+    "message": "3) 設定 OpenClaw Gateway",
     "description": "Welcome gateway step title"
   },
   "welcomeStepGatewaySubtitle": {
-    "message": "If used as AI agent backend.",
+    "message": "若作為 AI 代理後端使用。",
     "description": "Welcome gateway step subtitle"
   },
   "welcomeStepMemoryTitle": {
-    "message": "4) Configure Memory Store",
+    "message": "4) 設定記憶儲存",
     "description": "Welcome memory step title"
   },
   "welcomeStepMemorySubtitle": {
-    "message": "Storage of your conversations and agent memories.",
+    "message": "用於儲存你的對話與代理記憶。",
     "description": "Welcome memory step subtitle"
   },
   "welcomeTestingButtonLabel": {
-    "message": "Testing...",
+    "message": "測試中...",
     "description": "Label for in-progress test button"
   },
   "welcomeTestButtonLabel": {
-    "message": "Test",
+    "message": "測試",
     "description": "Label for test button"
   },
   "welcomeChecklistTitle": {
-    "message": "Checklist",
+    "message": "檢查清單",
     "description": "Welcome checklist title"
   },
   "welcomeTroubleshootingButtonLabel": {
-    "message": "Troubleshooting",
+    "message": "疑難排解",
     "description": "Welcome troubleshooting button label"
   },
   "welcomeChecklistItemInstall": {
-    "message": "Run the one-liner installation command.",
+    "message": "執行一行安裝命令。",
     "description": "Welcome checklist item install"
   },
   "welcomeChecklistItemVerifyConnectionPrefix": {
-    "message": "Start Claude Code / Codex CLI and confirm you see a successful connection to the MCP server",
+    "message": "啟動 Claude Code / Codex CLI，並確認看到 MCP 伺服器連線成功",
     "description": "Welcome checklist item for verifying connection prefix"
   },
   "welcomeChecklistItemRunTools": {
-    "message": "Ask your agent to call some browser tools, like \"What tabs are there in my browser?\"",
+    "message": "請代理呼叫一些瀏覽器工具，例如「我的瀏覽器裡有哪些分頁？」",
     "description": "Welcome checklist item for trying tools"
   },
   "welcomeChecklistItemQuickChat": {
-    "message": "Click the floating button at the bottom right to toggle Ruminer's side panel or hover on it to open the quick chat UI!",
+    "message": "點擊右下角浮動按鈕可切換 Ruminer 側邊面板，或將滑鼠停留其上開啟快速聊天介面！",
     "description": "Welcome checklist item for quick chat"
   },
   "welcomeCopyButtonLabel": {
-    "message": "Copy",
+    "message": "複製",
     "description": "Welcome copy button label"
   },
   "welcomeCopiedButtonLabel": {
-    "message": "Copied",
+    "message": "已複製",
     "description": "Welcome copied button label"
   }
 }
