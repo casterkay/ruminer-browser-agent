@@ -56,5 +56,6 @@ CLAUDE.md
 .docs/
 .claude/
 _ref/
+opc-doc/
 .pnpm-store/
 .history/

@@ -1,11 +1,11 @@
 # Ruminer Browser Agent
 
-**The AI agent you love with central long-term memory integrating from all your AI chat platforms.**
+**Sync your AI conversations from 5+ platforms into your second brain — quick search, agent-ready, yours forever.**
 
-- Continuously import conversations into EverMemOS across AI chat platforms: ChatGPT, Gemini, Claude, DeepSeek, and Grok.
+- Continuously export conversations to local Markdown files across AI chat platforms: ChatGPT, Gemini, Claude, DeepSeek, and Grok.
 - Your user credentials on these platforms stay secure in your own browser, never uploaded to cloud.
 - Freely choose your AI agent backend: OpenClaw, Claude Code, or Codex.
-- Make your agent understand you deeply and faithfully via RAG from your centralized EverMemOS memory store.
+- Make your agent understand you deeply via RAG from your local Markdown conversation archive.
 - Seamlessly integrated into your Chrome browser with beautiful UI and powerful automation.
 
 [Visit Our Landing Page!](https://chrome.ruminer.app)
@@ -46,8 +46,8 @@ flowchart TB
         APIs[Chrome APIs<br/>tabs, read page, scrolling, click]
     end
 
-    subgraph Memory[EverMemOS]
-        EMOS[Memories API]
+    subgraph Memory[Local Memory]
+        LocalMD[Markdown Files<br/>~/your-memory-dir/]
     end
 
     subgraph AIPlatforms[AI Chat Platforms]
@@ -56,7 +56,7 @@ flowchart TB
 
     MCP_Clients <-->|"Streamable HTTP"| McpServer
     APIs <-->|"Browser Tools"| McpServer
-    EMOS -->|"RAG Tools"| McpServer
+    LocalMD -->|"RAG Tools"| McpServer
 
     NativeServer <-->|"Native Messaging"| Extension
     Extension <--> APIs
@@ -64,26 +64,26 @@ flowchart TB
     Sidepanel <-->|"Chat"| NativeServer
     NativeServer <-->|"WebSocket"| Gateway
 
-    Workflows -->|"Memory Upsert"| EMOS
-    EMOS -->|"Memory Search"| Sidepanel
+    Workflows -->|"Write Markdown"| LocalMD
+    LocalMD -->|"Memory Search"| Sidepanel
 
     AIPlatforms -->|"Conversation Data"| Workflows
 ```
 
 The Ruminer UI has three major pillars in one Chrome extension:
 
-1. **Chat tab**: communicate with your CLI agents via native server, providing MCP tools for browser operations and EverMemOS RAG.
+1. **Chat tab**: communicate with your CLI agents via native server, providing MCP tools for browser operations and local RAG.
    - You can toggle tool groups (Memory / Observe / Navigate / Interact / Execute / Workflow) in the message input box to control which ones the agent can use.
-2. **Memory tab**: browse/search/manage your EverMemOS memory store.
-   - Memories can be grouped by AI chat platforms they are ingested from.
-3. **Workflows tab**: create, edit, and schedule automation workflows to import messages into EverMemOS or accomplish other tasks in browser.
+2. **Memory tab**: browse/search/manage your local memory directory.
+   - Conversations are organized by AI chat platform and stored as plain Markdown files you own.
+3. **Workflows tab**: create, edit, and schedule automation workflows to export conversations to your local Markdown directory or accomplish other tasks in browser.
    - Coming soon: agent-driven workflow development by autonomously interacting with the browser and editing the workflow graph!
 
 ### Glossary
 
 - **OpenClaw Gateway**: local control plane for chat + tool runtime (Ruminer sidepanel chat talks to it).
 - **MCP**: Model Context Protocol; here it’s the standard interface your clients use to call browser tools.
-- **EverMemOS**: long‑term agent memory system where Ruminer can search and ingest messages.
+- **Local Markdown memory**: plain `.md` files written to a directory you configure — compatible with Obsidian, Logseq, and any agent that can read files (OpenClaw, Hermes, GBrain, Claude Code, Codex).
 
 ## Getting Started (local dev)
 
@@ -94,7 +94,7 @@ The Ruminer UI has three major pillars in one Chrome extension:
 - Chrome/Chromium (MV3 + sidepanel enabled)
 - Optional but recommended:
   - `openclaw` CLI (for sidepanel chat + plugin routing)
-  - EverMemOS base URL + API key (for memory + ingestion)
+  - A local Markdown directory path (for memory storage + RAG ingestion)
 
 ### 1) Quick setup
 
@@ -136,9 +136,8 @@ In the `Settings` tab in Ruminer side panel:
 - **OpenClaw Gateway**
   - WS URL: `ws://127.0.0.1:18789`
   - Token: your Gateway token
-- **EverMemOS**
-  - Base URL
-  - API key
+- **Memory Directory**
+  - Local path to your Markdown memory folder (e.g. `~/Documents/my-second-brain`)
 
 ## Verify It Works
 
@@ -146,9 +145,9 @@ In the `Settings` tab in Ruminer side panel:
    - Ask the agent to call a tool (e.g. "List the current tab titles in my browser") in CLI.
 2. **Side panel chat**:
    - Open Ruminer side panel → Chat → send a message → see tool calls render inline
-3. **Memory suggestions** (requires EverMemOS configured):
-   - Type ≥ 3 characters in message input box → see debounced suggestions appear quickly
-4. **Workflows** (requires EverMemOS configured):
+3. **Memory suggestions** (requires memory directory configured):
+   - Type ≥ 3 characters in message input box → see debounced suggestions from your local Markdown files
+4. **Workflows** (requires memory directory configured):
    - Open Workflows tab → run a built‑in workflow → re-run should not duplicate (ledger + stable IDs)
 
 ## Developer Notes
