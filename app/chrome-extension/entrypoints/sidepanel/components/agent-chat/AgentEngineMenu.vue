@@ -33,15 +33,28 @@
             :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
           >
             <img
-              v-if="getEngineIconUrl(engine.name)"
-              :src="getEngineIconUrl(engine.name)"
+              v-if="getAgentEngineIconUrl(engine.name)"
+              :src="getAgentEngineIconUrl(engine.name)"
               alt=""
               class="w-4 h-4 rounded-full object-cover"
               :style="{ backgroundColor: 'var(--ac-surface, #ffffff)' }"
             />
-            <ILucidePointer v-else-if="engine.name === 'cursor'" class="w-4 h-4" />
-            <ILucideSparkles v-else-if="engine.name === 'qwen'" class="w-4 h-4" />
-            <ILucideBrain v-else-if="engine.name === 'glm'" class="w-4 h-4" />
+            <ILucidePointer
+              v-else-if="getEngineIconFallback(engine.name) === 'pointer'"
+              class="w-4 h-4"
+            />
+            <ILucideSparkles
+              v-else-if="getEngineIconFallback(engine.name) === 'sparkles'"
+              class="w-4 h-4"
+            />
+            <ILucideBrain
+              v-else-if="getEngineIconFallback(engine.name) === 'brain'"
+              class="w-4 h-4"
+            />
+            <ILucideFeather
+              v-else-if="getEngineIconFallback(engine.name) === 'feather'"
+              class="w-4 h-4"
+            />
             <ILucideCpu v-else class="w-4 h-4" />
           </span>
           <span class="truncate">{{ toDisplayName(engine.name) }}</span>
@@ -68,6 +81,8 @@
 
 <script lang="ts" setup>
 import type { AgentEngineInfo } from 'chrome-mcp-shared';
+import { getAgentEngineMetadata, getAgentEngineIconUrl } from '@/common/agent-engines';
+import ILucideFeather from '~icons/lucide/feather';
 import ILucidePointer from '~icons/lucide/mouse-pointer-2';
 import ILucideSparkles from '~icons/lucide/sparkles';
 import ILucideBrain from '~icons/lucide/brain';
@@ -83,46 +98,11 @@ defineEmits<{
   'engine:select': [engineName: string];
 }>();
 
-function getEngineIconUrl(engineName: string): string {
-  const normalized = engineName.trim();
-  const path =
-    normalized === 'openclaw'
-      ? 'engine-icons/openclaw.svg'
-      : normalized === 'claude'
-        ? 'engine-icons/claude.png'
-        : normalized === 'codex'
-          ? 'engine-icons/codex.svg'
-          : '';
-
-  if (!path) return '';
-
-  try {
-    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
-      return chrome.runtime.getURL(path);
-    }
-  } catch {
-    // ignore
-  }
-
-  return `/${path}`;
+function getEngineIconFallback(engineName: string): string {
+  return getAgentEngineMetadata(engineName).iconFallback;
 }
 
 function toDisplayName(engineName: string): string {
-  switch (engineName) {
-    case 'openclaw':
-      return 'OpenClaw';
-    case 'claude':
-      return 'Claude Code';
-    case 'codex':
-      return 'Codex';
-    case 'cursor':
-      return 'Cursor';
-    case 'qwen':
-      return 'Qwen';
-    case 'glm':
-      return 'GLM';
-    default:
-      return engineName;
-  }
+  return getAgentEngineMetadata(engineName).displayName;
 }
 </script>

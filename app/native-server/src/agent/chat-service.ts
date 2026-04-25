@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { AgentActRequest } from './types';
 import type {
   AgentEngine,
@@ -21,9 +22,10 @@ import {
 } from './session-service';
 import { publishSessionUpdated } from './sessions-stream-events';
 import { attachmentService, type SavedAttachment } from './attachment-service';
+import { getHermesSettings } from './hermes/settings-service';
 import {
   getEphemeralSessionState,
-  setEphemeralClaudeSessionId,
+  setEphemeralEngineSessionId,
   upsertEphemeralSessionContext,
 } from './ephemeral-session-store';
 
@@ -117,11 +119,8 @@ export class AgentChatService {
     const projectSelectedModel = project.selectedModel;
     const projectUseCcr = project.useCcr;
 
-    // Legacy fallback: if caller does not use sessions table, use project-level resume id
-    let resumeClaudeSessionId: string | undefined;
-    if (!dbSessionId && !isEphemeral) {
-      resumeClaudeSessionId = project.activeClaudeSessionId;
-    }
+    // Generic resume state is session-scoped. Project-scoped fallback remains Claude-only.
+    let resumeEngineSessionId: string | undefined;
 
     // Resolve engine name - session binding takes precedence
     let engineName: EngineName;
@@ -145,6 +144,8 @@ export class AgentChatService {
       throw new Error(`No agent engine registered for ${engineName}`);
     }
 
+    await this.assertEngineProjectCompatibility(engineName, projectRoot);
+
     if (isEphemeral) {
       upsertEphemeralSessionContext({ sessionId, projectId, engineName });
     }
@@ -152,15 +153,17 @@ export class AgentChatService {
     // Model priority: request > session > project
     const effectiveModel = payload.model?.trim() || dbSession?.model || projectSelectedModel;
 
-    // For Claude engine with session, use session's engineSessionId for resume.
+    // Resolve resumable engine session state.
     // In ephemeral mode, prefer in-memory resume state over DB/project-level state.
-    if (engineName === 'claude') {
-      const ephemeralState = isEphemeral ? getEphemeralSessionState(sessionId) : null;
-      if (isEphemeral && ephemeralState?.claudeSessionId) {
-        resumeClaudeSessionId = ephemeralState.claudeSessionId;
-      } else if (dbSession) {
-        resumeClaudeSessionId = dbSession.engineSessionId;
-      }
+    if (!dbSessionId && !isEphemeral && engineName === 'claude') {
+      resumeEngineSessionId = project.activeClaudeSessionId;
+    }
+
+    const ephemeralState = isEphemeral ? getEphemeralSessionState(sessionId) : null;
+    if (isEphemeral && ephemeralState?.engineSessionId) {
+      resumeEngineSessionId = ephemeralState.engineSessionId;
+    } else if (dbSession?.engineSessionId) {
+      resumeEngineSessionId = dbSession.engineSessionId;
     }
 
     const now = new Date().toISOString();
@@ -279,6 +282,22 @@ export class AgentChatService {
       },
     });
 
+    const persistEngineSessionId = async (engineSessionId: string): Promise<void> => {
+      if (isEphemeral) {
+        setEphemeralEngineSessionId(sessionId, engineSessionId);
+        return;
+      }
+
+      if (dbSessionId) {
+        await updateEngineSessionId(dbSessionId, engineSessionId);
+        return;
+      }
+
+      if (projectId && engineName === 'claude') {
+        await updateProjectClaudeSessionId(projectId, engineSessionId);
+      }
+    };
+
     const ctx: EngineExecutionContext = {
       emit: (event: RealtimeEvent) => {
         this.streamManager.publish(event);
@@ -336,22 +355,12 @@ export class AgentChatService {
           }
         }
       },
-      // Callback to persist Claude session ID when SDK returns system/init message
+      // Callback to persist engine session state after engine initialization.
       // Prefer session-level persistence over project-level. In ephemeral mode, store resume state in-memory only.
+      persistEngineSessionId,
+      // Backward-compatible alias for ClaudeEngine.
       persistClaudeSessionId: async (claudeSessionId: string) => {
-        if (isEphemeral) {
-          setEphemeralClaudeSessionId(sessionId, claudeSessionId);
-          return;
-        }
-
-        if (dbSessionId) {
-          await updateEngineSessionId(dbSessionId, claudeSessionId);
-          return;
-        }
-
-        if (projectId) {
-          await updateProjectClaudeSessionId(projectId, claudeSessionId);
-        }
+        await persistEngineSessionId(claudeSessionId);
       },
       // Callback to persist management info from system:init message
       // Only available when using session-level persistence
@@ -379,8 +388,10 @@ export class AgentChatService {
       allowDangerouslySkipPermissions: dbSession?.allowDangerouslySkipPermissions,
       systemPromptConfig: dbSession?.systemPromptConfig,
       optionsConfig: dbSession?.optionsConfig,
+      // Pass resumable engine session state
+      resumeEngineSessionId,
       // Pass Claude session ID for session resumption (ClaudeEngine only)
-      resumeClaudeSessionId: engineName === 'claude' ? resumeClaudeSessionId : undefined,
+      resumeClaudeSessionId: engineName === 'claude' ? resumeEngineSessionId : undefined,
       // Pass useCcr flag for Claude Code Router support (ClaudeEngine only)
       useCcr: engineName === 'claude' ? projectUseCcr : undefined,
       // Pass Codex-specific configuration (CodexEngine only)
@@ -564,5 +575,36 @@ export class AgentChatService {
       });
     }
     return result;
+  }
+
+  private async assertEngineProjectCompatibility(
+    engineName: EngineName,
+    projectRoot: string,
+  ): Promise<void> {
+    if (engineName !== 'hermes') {
+      return;
+    }
+
+    const settings = await getHermesSettings();
+    const configuredWorkspaceRoot = settings.workspaceRoot.trim();
+    if (!configuredWorkspaceRoot) {
+      throw new Error(
+        `Hermes workspace root is not configured. Configure Hermes to use ${projectRoot} before starting a session.`,
+      );
+    }
+
+    if (
+      this.normalizeComparablePath(configuredWorkspaceRoot) !==
+      this.normalizeComparablePath(projectRoot)
+    ) {
+      throw new Error(
+        `Hermes workspace root does not match the selected project. Configure Hermes to use ${projectRoot} or create a matching project.`,
+      );
+    }
+  }
+
+  private normalizeComparablePath(input: string): string {
+    const normalized = path.normalize(path.resolve(input.trim())).replace(/[\\/]+$/, '');
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
   }
 }

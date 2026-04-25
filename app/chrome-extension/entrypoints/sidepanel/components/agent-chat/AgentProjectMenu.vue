@@ -104,7 +104,7 @@
     </div>
 
     <!-- Model Selection -->
-    <div class="px-3 py-2 flex items-center gap-2">
+    <div v-if="showModelSelection" class="px-3 py-2 flex items-center gap-2">
       <span class="text-xs w-12" :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }"> Model </span>
       <select
         :value="normalizedModel"
@@ -222,6 +222,7 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 import type { AgentProject, AgentEngineInfo, CodexReasoningEffort } from 'chrome-mcp-shared';
+import { shouldShowAgentModelSelector } from '@/common/agent-engines';
 import {
   getModelsForCli,
   getDefaultModelForCli,
@@ -258,6 +259,10 @@ const emit = defineEmits<{
 // Get available models based on selected CLI
 const availableModels = computed<ModelDefinition[]>(() => {
   return getModelsForCli(props.selectedCli);
+});
+
+const showModelSelection = computed(() => {
+  return !props.selectedCli || shouldShowAgentModelSelector(props.selectedCli);
 });
 
 // Normalize model value: ensure it exists in available models or fallback to empty

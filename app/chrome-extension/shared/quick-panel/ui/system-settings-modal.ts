@@ -11,6 +11,7 @@ import {
   getAnthropicSettings,
   setAnthropicSettings,
 } from '@/entrypoints/shared/utils/anthropic-settings';
+import { getHermesSettings, setHermesSettings } from '@/entrypoints/shared/utils/hermes-settings';
 import {
   getUiLanguage,
   setUiLanguage,
@@ -29,6 +30,7 @@ import {
   refreshServerStatus as doRefreshServerStatus,
   saveFloatingIcon as doSaveFloatingIcon,
   testGateway as doTestGateway,
+  testHermes as doTestHermes,
   testMemoryBackend as doTestMemoryBackend,
 } from '@/entrypoints/shared/utils/system-settings';
 import { Disposer } from '@/entrypoints/web-editor-v2/utils/disposables';
@@ -316,13 +318,19 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     apiKey: '',
     anthropicBaseUrl: '',
     anthropicAuthToken: '',
+    hermesBaseUrl: 'http://127.0.0.1:8642',
+    hermesApiKey: '',
+    hermesWorkspaceRoot: '',
     uiLanguage: 'auto' as UiLanguage,
     testingGateway: false,
     testingMemory: false,
+    testingHermes: false,
     gatewayOk: true,
     gatewayMessage: '',
     memoryOk: true,
     memoryMessage: '',
+    hermesOk: true,
+    hermesMessage: '',
     lastSavedGateway: { wsUrl: '', authToken: '' },
     lastSavedMemory: {
       backend: 'local_markdown_qmd' as MemoryBackendType,
@@ -331,6 +339,7 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     lastSavedEmos: { baseUrl: '', apiKey: '' },
     lastSavedFloatingIcon: true,
     lastSavedAnthropic: { baseUrl: '', authToken: '' },
+    lastSavedHermes: { baseUrl: '', apiKey: '', workspaceRoot: '' },
     lastSavedUiLanguage: 'auto' as UiLanguage,
   };
 
@@ -387,11 +396,12 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   }
 
   async function loadSettings(): Promise<void> {
-    const [gw, memory, em, an, floatingIconEnabled, uiLanguage] = await Promise.all([
+    const [gw, memory, em, an, hermes, floatingIconEnabled, uiLanguage] = await Promise.all([
       getGatewaySettings(),
       getMemorySettings(),
       getEmosSettings(),
       getAnthropicSettings(),
+      getHermesSettings(),
       doLoadFloatingIcon(),
       getUiLanguage(),
     ]);
@@ -404,6 +414,9 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     state.apiKey = em.apiKey;
     state.anthropicBaseUrl = an.baseUrl;
     state.anthropicAuthToken = an.authToken;
+    state.hermesBaseUrl = hermes.baseUrl;
+    state.hermesApiKey = hermes.apiKey;
+    state.hermesWorkspaceRoot = hermes.workspaceRoot;
     state.uiLanguage = uiLanguage;
     state.floatingIconEnabled = floatingIconEnabled;
     state.lastSavedGateway = {
@@ -423,10 +436,16 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       baseUrl: an.baseUrl.trim(),
       authToken: an.authToken.trim(),
     };
+    state.lastSavedHermes = {
+      baseUrl: hermes.baseUrl.trim(),
+      apiKey: hermes.apiKey.trim(),
+      workspaceRoot: hermes.workspaceRoot.trim(),
+    };
     state.lastSavedUiLanguage = uiLanguage;
     updateInputs();
     updateStatus('gateway', state.gatewayOk, state.gatewayMessage);
     updateStatus('memory', state.memoryOk, state.memoryMessage);
+    updateStatus('hermes', state.hermesOk, state.hermesMessage);
     await refreshServerStatus();
   }
 
@@ -440,6 +459,9 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
     const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
     const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
+    const hermesBaseInput = getEl('hermesBaseUrl') as HTMLInputElement | null;
+    const hermesTokenInput = getEl('hermesApiKey') as HTMLInputElement | null;
+    const hermesWorkspaceInput = getEl('hermesWorkspaceRoot') as HTMLInputElement | null;
     const languageSelect = getEl('uiLanguage') as HTMLSelectElement | null;
     const floatingCb = getEl('floatingIconCb') as HTMLInputElement | null;
     if (gwInput) gwInput.value = state.gatewayWsUrl;
@@ -451,6 +473,9 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (apiInput) apiInput.value = state.apiKey;
     if (anBaseInput) anBaseInput.value = state.anthropicBaseUrl;
     if (anTokenInput) anTokenInput.value = state.anthropicAuthToken;
+    if (hermesBaseInput) hermesBaseInput.value = state.hermesBaseUrl;
+    if (hermesTokenInput) hermesTokenInput.value = state.hermesApiKey;
+    if (hermesWorkspaceInput) hermesWorkspaceInput.value = state.hermesWorkspaceRoot;
     if (languageSelect) languageSelect.value = state.uiLanguage;
     if (floatingCb) floatingCb.checked = state.floatingIconEnabled;
     updateMemoryFieldVisibility();
@@ -470,9 +495,13 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
   const ICON_ERR =
     '<svg class="qp-settings-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
 
-  function updateStatus(which: 'gateway' | 'memory', ok: boolean, message: string): void {
+  function updateStatus(
+    which: 'gateway' | 'memory' | 'hermes',
+    ok: boolean,
+    message: string,
+  ): void {
     const el = getEl(
-      which === 'gateway' ? 'gatewayStatus' : 'memoryStatus',
+      which === 'gateway' ? 'gatewayStatus' : which === 'memory' ? 'memoryStatus' : 'hermesStatus',
     ) as HTMLDivElement | null;
     if (!el) return;
     el.innerHTML = (ok ? ICON_OK : ICON_ERR) + (message ? ` ${message}` : '');
@@ -489,6 +518,9 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     const apiInput = getEl('apiKey') as HTMLInputElement | null;
     const anBaseInput = getEl('anthropicBaseUrl') as HTMLInputElement | null;
     const anTokenInput = getEl('anthropicAuthToken') as HTMLInputElement | null;
+    const hermesBaseInput = getEl('hermesBaseUrl') as HTMLInputElement | null;
+    const hermesTokenInput = getEl('hermesApiKey') as HTMLInputElement | null;
+    const hermesWorkspaceInput = getEl('hermesWorkspaceRoot') as HTMLInputElement | null;
     const languageSelect = getEl('uiLanguage') as HTMLSelectElement | null;
     if (gwInput) state.gatewayWsUrl = gwInput.value;
     if (gwToken) state.gatewayAuthToken = gwToken.value;
@@ -498,6 +530,9 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     if (apiInput) state.apiKey = apiInput.value;
     if (anBaseInput) state.anthropicBaseUrl = anBaseInput.value;
     if (anTokenInput) state.anthropicAuthToken = anTokenInput.value;
+    if (hermesBaseInput) state.hermesBaseUrl = hermesBaseInput.value;
+    if (hermesTokenInput) state.hermesApiKey = hermesTokenInput.value;
+    if (hermesWorkspaceInput) state.hermesWorkspaceRoot = hermesWorkspaceInput.value;
     if (languageSelect) state.uiLanguage = languageSelect.value as UiLanguage;
     updateMemoryFieldVisibility();
   }
@@ -588,6 +623,36 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     showToast(getMessage('settingsAnthropicSavedNotification'));
   }
 
+  async function saveHermes(showNotification = true): Promise<void> {
+    syncFromInputs();
+    const baseUrl = state.hermesBaseUrl.trim();
+    const apiKey = state.hermesApiKey.trim();
+    const workspaceRoot = state.hermesWorkspaceRoot.trim().replace(/[\\/]+$/, '');
+    if (
+      baseUrl === state.lastSavedHermes.baseUrl &&
+      apiKey === state.lastSavedHermes.apiKey &&
+      workspaceRoot === state.lastSavedHermes.workspaceRoot
+    ) {
+      return;
+    }
+    const next = await setHermesSettings({ baseUrl, apiKey, workspaceRoot });
+    state.hermesBaseUrl = next.baseUrl;
+    state.hermesApiKey = next.apiKey;
+    state.hermesWorkspaceRoot = next.workspaceRoot;
+    state.lastSavedHermes = {
+      baseUrl: next.baseUrl.trim(),
+      apiKey: next.apiKey.trim(),
+      workspaceRoot: next.workspaceRoot.trim(),
+    };
+    state.hermesOk = true;
+    state.hermesMessage = '';
+    updateInputs();
+    updateStatus('hermes', true, '');
+    if (showNotification) {
+      showToast(getMessage('settingsHermesSavedNotification'));
+    }
+  }
+
   async function saveUiLanguage(): Promise<void> {
     syncFromInputs();
     if (state.uiLanguage === state.lastSavedUiLanguage) {
@@ -637,6 +702,29 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       const btn = getEl('testMemory') as HTMLButtonElement | null;
       if (btn) btn.disabled = false;
       updateStatus('memory', state.memoryOk, state.memoryMessage);
+    }
+  }
+
+  async function testHermes(): Promise<void> {
+    syncFromInputs();
+    state.testingHermes = true;
+    const testBtn = getEl('testHermes') as HTMLButtonElement | null;
+    if (testBtn) testBtn.disabled = true;
+    state.hermesMessage = '';
+    try {
+      await saveHermes(false);
+      const result = await doTestHermes(
+        state.hermesBaseUrl,
+        state.hermesApiKey,
+        state.hermesWorkspaceRoot,
+      );
+      state.hermesOk = result.ok;
+      state.hermesMessage = result.message;
+    } finally {
+      state.testingHermes = false;
+      const btn = getEl('testHermes') as HTMLButtonElement | null;
+      if (btn) btn.disabled = false;
+      updateStatus('hermes', state.hermesOk, state.hermesMessage);
     }
   }
 
@@ -799,7 +887,35 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       </label>
     `;
 
-    body.append(mcpCard, qpCard, gwCard, memoryCard, languageCard, anCard);
+    const hermesCard = document.createElement('section');
+    hermesCard.className = 'qp-settings-card';
+    hermesCard.innerHTML = `
+      <div class="qp-settings-card-header">
+        <h2 class="qp-settings-card-title">${getMessage('settingsCardHermesTitle')}</h2>
+        <button data-id="testHermes" type="button" class="qp-settings-btn-icon ac-focus-ring" aria-label="${getMessage('testConnectionButtonAria')}">${ICON_PLUG}</button>
+      </div>
+      <div class="qp-settings-value">
+        ${getMessage('settingsHermesServerHint')}
+      </div>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">${getMessage('settingsFieldBaseUrlLabel')}</span>
+        <input data-id="hermesBaseUrl" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderHermesBaseUrl')}"/>
+      </label>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">${getMessage('settingsFieldApiKeyLabel')}</span>
+        <input data-id="hermesApiKey" class="qp-settings-field-input" type="password" placeholder="${getMessage('settingsPlaceholderHermesApiKey')}"/>
+      </label>
+      <label class="qp-settings-field">
+        <span class="qp-settings-field-label">${getMessage('settingsFieldWorkspaceRootLabel')}</span>
+        <input data-id="hermesWorkspaceRoot" class="qp-settings-field-input" type="text" placeholder="${getMessage('settingsPlaceholderHermesWorkspaceRoot')}"/>
+      </label>
+      <div class="qp-settings-value">
+        ${getMessage('settingsHermesWorkspaceHint')}
+      </div>
+      <div data-id="hermesStatus" class="qp-settings-status" hidden></div>
+    `;
+
+    body.append(mcpCard, qpCard, gwCard, memoryCard, languageCard, anCard, hermesCard);
     modal.append(header, body);
     back.append(style, modal, toast);
 
@@ -826,6 +942,11 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
       memoryCard.querySelector('[data-id="testMemory"]')!,
       'click',
       () => void testMemory(),
+    );
+    disposer.listen(
+      hermesCard.querySelector('[data-id="testHermes"]')!,
+      'click',
+      () => void testHermes(),
     );
 
     // Auto-save on blur for Gateway inputs
@@ -859,6 +980,10 @@ export function createSystemSettingsModal(parent: HTMLElement): SystemSettingsMo
     for (const id of ['anthropicBaseUrl', 'anthropicAuthToken']) {
       const input = anCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
       if (input) disposer.listen(input, 'blur', () => void saveAnthropic());
+    }
+    for (const id of ['hermesBaseUrl', 'hermesApiKey', 'hermesWorkspaceRoot']) {
+      const input = hermesCard.querySelector(`[data-id="${id}"]`) as HTMLInputElement;
+      if (input) disposer.listen(input, 'blur', () => void saveHermes());
     }
 
     const languageSelect = languageCard.querySelector(

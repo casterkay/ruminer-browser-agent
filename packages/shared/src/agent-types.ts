@@ -95,7 +95,14 @@ export interface AgentAttachment {
   dataBase64: string;
 }
 
-export type AgentCliPreference = 'openclaw' | 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+export type AgentCliPreference =
+  | 'openclaw'
+  | 'claude'
+  | 'codex'
+  | 'hermes'
+  | 'cursor'
+  | 'qwen'
+  | 'glm';
 
 export interface AgentActRequest {
   instruction: string;
@@ -257,6 +264,47 @@ export interface UpdateAnthropicSettingsRequest {
 
 export interface UpdateAnthropicSettingsResponse {
   settings: AnthropicSettingsDto;
+}
+
+// ============================================================
+// Hermes Settings API (native-server owned)
+// ============================================================
+
+export interface HermesSettingsDto {
+  /**
+   * Base URL for the Hermes API server.
+   */
+  baseUrl: string;
+  /**
+   * Shared API key used for bearer authentication.
+   */
+  apiKey: string;
+  /**
+   * Workspace root that Hermes should use for local project operations.
+   */
+  workspaceRoot: string;
+  updatedAt: string;
+  lastTestOkAt: string | null;
+  lastTestError: string | null;
+}
+
+export interface GetHermesSettingsResponse {
+  settings: HermesSettingsDto;
+}
+
+export interface UpdateHermesSettingsRequest {
+  baseUrl?: string;
+  apiKey?: string;
+  workspaceRoot?: string;
+}
+
+export interface UpdateHermesSettingsResponse {
+  settings: HermesSettingsDto;
+}
+
+export interface TestHermesResponse {
+  ok: boolean;
+  message: string;
 }
 
 // ============================================================

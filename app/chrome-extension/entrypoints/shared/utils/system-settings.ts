@@ -6,6 +6,7 @@
  */
 
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { setHermesSettings } from '@/entrypoints/shared/utils/hermes-settings';
 import { setGatewaySettings } from '@/entrypoints/shared/utils/gateway-settings';
 import { getNativeServerPort, readJson } from '@/entrypoints/shared/utils/settings-internals';
 import type { MemoryBackendType } from 'chrome-mcp-shared';
@@ -155,6 +156,57 @@ export async function testGateway(
     await setGatewaySettings({ gatewayWsUrl: wsUrl, gatewayAuthToken: authToken });
 
     const response = await fetch(`http://127.0.0.1:${status.port}/agent/openclaw/test`, {
+      method: 'POST',
+    });
+
+    const text = await response.text().catch(() => '');
+    let data: any = null;
+    try {
+      data = text ? (JSON.parse(text) as any) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      return { ok: false, message: text || `HTTP ${response.status}` };
+    }
+
+    const ok = data?.ok === true;
+    const message = typeof data?.message === 'string' ? data.message : ok ? 'OK' : 'Failed';
+    return { ok, message };
+  } catch (reason) {
+    return {
+      ok: false,
+      message: reason instanceof Error ? reason.message : String(reason),
+    };
+  }
+}
+
+export async function testHermes(
+  baseUrl: string,
+  apiKey: string,
+  workspaceRoot: string,
+): Promise<TestResult> {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+  const normalizedApiKey = apiKey.trim();
+  const normalizedWorkspaceRoot = workspaceRoot.trim().replace(/[\\/]+$/, '');
+
+  const status = await refreshServerStatus();
+  if (!status.isRunning || !status.port) {
+    return {
+      ok: false,
+      message: 'Native server is not running. Start it first to test Hermes Agent.',
+    };
+  }
+
+  try {
+    await setHermesSettings({
+      baseUrl: normalizedBaseUrl,
+      apiKey: normalizedApiKey,
+      workspaceRoot: normalizedWorkspaceRoot,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${status.port}/agent/hermes/test`, {
       method: 'POST',
     });
 

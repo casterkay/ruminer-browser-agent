@@ -235,6 +235,7 @@ const fallbackMessages: Record<string, string> = {
   settingsEmosSavedNotification: 'Memory settings saved',
   settingsQuickPanelSavedNotification: 'Quick Panel settings saved',
   settingsAnthropicSavedNotification: 'Anthropic settings saved',
+  settingsHermesSavedNotification: 'Hermes settings saved',
   settingsLanguageSavedNotification: 'Language preference saved',
   settingsFloatingIconSizeSavedNotification: 'Floating icon size saved: {0}px',
   refreshStatusButtonAria: 'Refresh status',
@@ -247,6 +248,7 @@ const fallbackMessages: Record<string, string> = {
   settingsCardMemoryTitle: 'Memory',
   settingsCardLanguageTitle: 'Language',
   settingsCardClaudeCodeTitle: 'Claude Code',
+  settingsCardHermesTitle: 'Hermes Agent',
   settingsStatusRunning: 'Running',
   settingsStatusStopped: 'Stopped',
   settingsPortLabel: 'Port',
@@ -260,10 +262,15 @@ const fallbackMessages: Record<string, string> = {
   settingsFieldQmdIndexLabel: 'QMD Index',
   settingsFieldBaseUrlLabel: 'Base URL',
   settingsFieldApiKeyLabel: 'API Key',
+  settingsFieldWorkspaceRootLabel: 'Workspace Root',
   settingsBackendLocalFileSystemOption: 'Local File System',
   settingsBackendEvermemosOption: 'EverMemOS',
   settingsMemoryLegacyNotice:
     'Legacy remote backend. Ruminer still routes memory operations through the native server.',
+  settingsHermesServerHint:
+    'Ruminer connects to an existing Hermes API server. Start it separately with `hermes api-server`.',
+  settingsHermesWorkspaceHint:
+    'Set this to the exact workspace root used by your Hermes API server. Ruminer will only use Hermes when it matches the selected project.',
   settingsPlaceholderGatewayWsUrl: 'ws://127.0.0.1:18789',
   settingsPlaceholderGatewayAuthToken: 'gateway token',
   settingsPlaceholderMemoryLocalRootPath: 'User-global app data directory',
@@ -271,6 +278,9 @@ const fallbackMessages: Record<string, string> = {
   settingsPlaceholderEvermemosApiKey: 'legacy EverMemOS API key',
   settingsPlaceholderAnthropicBaseUrl: 'https://api.anthropic.com',
   settingsPlaceholderAnthropicApiKey: 'your Anthropic API key',
+  settingsPlaceholderHermesBaseUrl: 'http://127.0.0.1:8642',
+  settingsPlaceholderHermesApiKey: 'your Hermes API server key',
+  settingsPlaceholderHermesWorkspaceRoot: '/absolute/path/to/project',
   settingsLanguageOptionAuto: 'Follow browser language',
   settingsLanguageOptionEnglish: 'English',
   settingsLanguageOptionGerman: 'Deutsch',
@@ -282,13 +292,13 @@ const fallbackMessages: Record<string, string> = {
     'Language preference is saved locally. Reopen extension pages to apply updates.',
 
   // Welcome page
-  welcomeBadgeText: 'Chrome MCP • Memory • OpenClaw • Claude Code • Codex',
+  welcomeBadgeText: 'Chrome MCP • Memory • OpenClaw • Claude Code • Codex • Hermes Agent',
   welcomeTitle: 'Ruminer Browser Agent',
   welcomeSubtitle:
-    'One browser, one memory, many agents. This page helps you wire up Chrome MCP server with your CLI agents for browser automation.',
+    'One browser, one memory, many agents. This page helps you wire up Ruminer across OpenClaw, Claude Code, Codex, and Hermes Agent for browser automation.',
   welcomeStepInstallTitle: '1) Run the Installation Command',
   welcomeStepInstallSubtitle:
-    'This registers the native MCP server in Claude Code and Codex, and installs an OpenClaw plugin as MCP client.',
+    'This registers the native MCP server in Claude Code and Codex, configures Hermes Agent when its CLI is installed, and installs an OpenClaw plugin as MCP client.',
   welcomeInstallTipPrefix: 'Tip: you can review the script in your browser first.',
   welcomeInstallTipSuffix: 'is powerful - apply it with care.',
   welcomeStepLanguageTitle: '2) Choose Interface Language',
@@ -297,6 +307,9 @@ const fallbackMessages: Record<string, string> = {
   welcomeStepGatewaySubtitle: 'If used as AI agent backend.',
   welcomeStepMemoryTitle: '4) Configure Memory Store',
   welcomeStepMemorySubtitle: 'Storage of your conversations and agent memories.',
+  welcomeStepHermesTitle: '5) Configure Hermes Agent',
+  welcomeStepHermesSubtitle:
+    'Connect Ruminer to a running Hermes API server. Ruminer does not launch or supervise Hermes for you.',
   welcomeTestingButtonLabel: 'Testing...',
   welcomeTestButtonLabel: 'Test',
   welcomeChecklistTitle: 'Checklist',
@@ -306,6 +319,8 @@ const fallbackMessages: Record<string, string> = {
     'Start Claude Code / Codex CLI and confirm you see a successful connection to the MCP server',
   welcomeChecklistItemRunTools:
     'Ask your agent to call some browser tools, like "What tabs are there in my browser?"',
+  welcomeChecklistItemHermesServer:
+    'If you use Hermes Agent, start it with `hermes api-server` and verify the connection here.',
   welcomeChecklistItemQuickChat:
     "Click the floating button at the bottom right to toggle Ruminer's side panel or hover on it to open the quick chat UI!",
   welcomeCopyButtonLabel: 'Copy',

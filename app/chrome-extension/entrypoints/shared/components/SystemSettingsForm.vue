@@ -219,6 +219,64 @@
         />
       </label>
     </section>
+
+    <!-- Hermes Agent card -->
+    <section class="settings-card">
+      <div class="settings-card-header">
+        <h2 class="settings-card-title">{{ t('settingsCardHermesTitle') }}</h2>
+        <button
+          type="button"
+          class="btn-icon"
+          :disabled="testingHermes"
+          :aria-label="t('testConnectionButtonAria')"
+          @click="testHermes"
+        >
+          <ILucidePlug class="w-4 h-4" />
+        </button>
+      </div>
+      <div class="settings-value settings-muted">
+        {{ t('settingsHermesServerHint') }}
+      </div>
+      <label class="settings-field">
+        <span class="settings-field-label">{{ t('settingsFieldBaseUrlLabel') }}</span>
+        <input
+          v-model="hermesBaseUrl"
+          class="settings-field-input"
+          type="text"
+          autocomplete="off"
+          :placeholder="t('settingsPlaceholderHermesBaseUrl')"
+          @blur="() => saveHermes()"
+        />
+      </label>
+      <label class="settings-field">
+        <span class="settings-field-label">{{ t('settingsFieldApiKeyLabel') }}</span>
+        <input
+          v-model="hermesApiKey"
+          class="settings-field-input"
+          type="password"
+          autocomplete="off"
+          :placeholder="t('settingsPlaceholderHermesApiKey')"
+          @blur="() => saveHermes()"
+        />
+      </label>
+      <label class="settings-field">
+        <span class="settings-field-label">{{ t('settingsFieldWorkspaceRootLabel') }}</span>
+        <input
+          v-model="hermesWorkspaceRoot"
+          class="settings-field-input"
+          type="text"
+          autocomplete="off"
+          :placeholder="t('settingsPlaceholderHermesWorkspaceRoot')"
+          @blur="() => saveHermes()"
+        />
+      </label>
+      <div class="settings-value settings-muted">
+        {{ t('settingsHermesWorkspaceHint') }}
+      </div>
+      <div v-if="hermesMessage" class="settings-status" :class="hermesOk ? 'ok' : 'error'">
+        {{ hermesMessage }}
+      </div>
+    </section>
   </div>
 </template>
 
@@ -228,6 +286,7 @@ import {
   getAnthropicSettings,
   setAnthropicSettings,
 } from '@/entrypoints/shared/utils/anthropic-settings';
+import { getHermesSettings, setHermesSettings } from '@/entrypoints/shared/utils/hermes-settings';
 import {
   getUiLanguage,
   setUiLanguage,
@@ -247,6 +306,7 @@ import {
   saveFloatingIcon as doSaveFloatingIcon,
   saveFloatingIconSize as doSaveFloatingIconSize,
   testGateway as doTestGateway,
+  testHermes as doTestHermes,
   testMemoryBackend as doTestMemoryBackend,
   FLOATING_ICON_SIZE_MAX,
   FLOATING_ICON_SIZE_MIN,
@@ -300,6 +360,14 @@ const memoryMessage = ref('');
 const anthropicBaseUrl = ref('https://api.anthropic.com');
 const anthropicAuthToken = ref('');
 
+// Hermes state
+const hermesBaseUrl = ref('http://127.0.0.1:8642');
+const hermesApiKey = ref('');
+const hermesWorkspaceRoot = ref('');
+const testingHermes = ref(false);
+const hermesOk = ref(true);
+const hermesMessage = ref('');
+
 // Language state
 const uiLanguage = ref<UiLanguage>('auto');
 
@@ -317,6 +385,7 @@ const lastSavedEmos = ref({ baseUrl: '', apiKey: '' });
 const lastSavedFloatingIcon = ref(true);
 const lastSavedFloatingIconSize = ref(96);
 const lastSavedAnthropic = ref({ baseUrl: '', authToken: '' });
+const lastSavedHermes = ref({ baseUrl: '', apiKey: '', workspaceRoot: '' });
 const lastSavedUiLanguage = ref<UiLanguage>('auto');
 
 async function refreshServerStatus(): Promise<void> {
@@ -331,12 +400,13 @@ async function refreshServerStatus(): Promise<void> {
 }
 
 async function loadSettings(): Promise<void> {
-  const [gw, memory, em, fi, an, language] = await Promise.all([
+  const [gw, memory, em, fi, an, hermes, language] = await Promise.all([
     getGatewaySettings(),
     getMemorySettings(),
     getEmosSettings(),
     loadFloatingIcon(),
     getAnthropicSettings(),
+    getHermesSettings(),
     getUiLanguage(),
   ]);
   gatewayWsUrl.value = gw.gatewayWsUrl;
@@ -349,6 +419,9 @@ async function loadSettings(): Promise<void> {
   floatingIconEnabled.value = fi;
   anthropicBaseUrl.value = an.baseUrl;
   anthropicAuthToken.value = an.authToken;
+  hermesBaseUrl.value = hermes.baseUrl;
+  hermesApiKey.value = hermes.apiKey;
+  hermesWorkspaceRoot.value = hermes.workspaceRoot;
   uiLanguage.value = language;
   lastSavedGateway.value = { wsUrl: gw.gatewayWsUrl.trim(), authToken: gw.gatewayAuthToken.trim() };
   lastSavedMemory.value = {
@@ -361,6 +434,11 @@ async function loadSettings(): Promise<void> {
   };
   lastSavedFloatingIcon.value = fi;
   lastSavedAnthropic.value = { baseUrl: an.baseUrl.trim(), authToken: an.authToken.trim() };
+  lastSavedHermes.value = {
+    baseUrl: hermes.baseUrl.trim(),
+    apiKey: hermes.apiKey.trim(),
+    workspaceRoot: hermes.workspaceRoot.trim(),
+  };
   lastSavedUiLanguage.value = language;
   try {
     const size = await doLoadFloatingIconSize();
@@ -459,6 +537,33 @@ async function saveAnthropic(): Promise<void> {
   showToast(t('settingsAnthropicSavedNotification'));
 }
 
+async function saveHermes(showNotification = true): Promise<void> {
+  const base = hermesBaseUrl.value.trim();
+  const key = hermesApiKey.value.trim();
+  const workspaceRoot = hermesWorkspaceRoot.value.trim().replace(/[\\/]+$/, '');
+  if (
+    base === lastSavedHermes.value.baseUrl &&
+    key === lastSavedHermes.value.apiKey &&
+    workspaceRoot === lastSavedHermes.value.workspaceRoot
+  ) {
+    return;
+  }
+  const next = await setHermesSettings({ baseUrl: base, apiKey: key, workspaceRoot });
+  hermesBaseUrl.value = next.baseUrl;
+  hermesApiKey.value = next.apiKey;
+  hermesWorkspaceRoot.value = next.workspaceRoot;
+  lastSavedHermes.value = {
+    baseUrl: next.baseUrl.trim(),
+    apiKey: next.apiKey.trim(),
+    workspaceRoot: next.workspaceRoot.trim(),
+  };
+  hermesOk.value = true;
+  hermesMessage.value = '';
+  if (showNotification) {
+    showToast(t('settingsHermesSavedNotification'));
+  }
+}
+
 async function testGateway(): Promise<void> {
   testingGateway.value = true;
   gatewayMessage.value = '';
@@ -484,6 +589,23 @@ async function testMemory(): Promise<void> {
     memoryMessage.value = result.message;
   } finally {
     testingMemory.value = false;
+  }
+}
+
+async function testHermes(): Promise<void> {
+  testingHermes.value = true;
+  hermesMessage.value = '';
+  try {
+    await saveHermes(false);
+    const result = await doTestHermes(
+      hermesBaseUrl.value,
+      hermesApiKey.value,
+      hermesWorkspaceRoot.value,
+    );
+    hermesOk.value = result.ok;
+    hermesMessage.value = result.message;
+  } finally {
+    testingHermes.value = false;
   }
 }
 

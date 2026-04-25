@@ -3,6 +3,7 @@ import { LINKS } from '@/common/constants';
 import type { MemoryBackendType } from 'chrome-mcp-shared';
 import { computed, onMounted, ref } from 'vue';
 
+import { getHermesSettings, setHermesSettings } from '@/entrypoints/shared/utils/hermes-settings';
 import {
   getUiLanguage,
   setUiLanguage,
@@ -18,6 +19,7 @@ import {
 } from '@/entrypoints/shared/utils/openclaw-settings';
 import {
   testGateway as doTestGateway,
+  testHermes as doTestHermes,
   testMemoryBackend as doTestMemoryBackend,
 } from '@/entrypoints/shared/utils/system-settings';
 import { getMessage } from '@/utils/i18n';
@@ -86,13 +88,22 @@ const emosApiKey = ref('');
 const memoryTesting = ref(false);
 const memoryOk = ref<boolean | null>(null);
 const memoryMessage = ref('');
+const hermesBaseUrl = ref('http://127.0.0.1:8642');
+const hermesApiKey = ref('');
+const hermesWorkspaceRoot = ref('');
+const hermesTesting = ref(false);
+const hermesOk = ref<boolean | null>(null);
+const hermesMessage = ref('');
 const uiLanguage = ref<UiLanguage>('auto');
 
+const lastSavedHermes = ref({ baseUrl: '', apiKey: '', workspaceRoot: '' });
+
 async function loadSettings(): Promise<void> {
-  const [gateway, memory, emos, language] = await Promise.all([
+  const [gateway, memory, emos, hermes, language] = await Promise.all([
     getGatewaySettings(),
     getMemorySettings(),
     getEmosSettings(),
+    getHermesSettings(),
     getUiLanguage(),
   ]);
   gatewayWsUrl.value = gateway.gatewayWsUrl;
@@ -101,6 +112,14 @@ async function loadSettings(): Promise<void> {
   memoryLocalRootPath.value = memory.localRootPath;
   emosBaseUrl.value = emos.baseUrl;
   emosApiKey.value = emos.apiKey;
+  hermesBaseUrl.value = hermes.baseUrl;
+  hermesApiKey.value = hermes.apiKey;
+  hermesWorkspaceRoot.value = hermes.workspaceRoot;
+  lastSavedHermes.value = {
+    baseUrl: hermes.baseUrl.trim(),
+    apiKey: hermes.apiKey.trim(),
+    workspaceRoot: hermes.workspaceRoot.trim(),
+  };
   uiLanguage.value = language;
 }
 
@@ -125,6 +144,30 @@ async function saveEmosCredentials(): Promise<void> {
     baseUrl: emosBaseUrl.value,
     apiKey: emosApiKey.value,
   });
+}
+
+async function saveHermes(): Promise<void> {
+  const baseUrl = hermesBaseUrl.value.trim();
+  const apiKey = hermesApiKey.value.trim();
+  const workspaceRoot = hermesWorkspaceRoot.value.trim().replace(/[\\/]+$/, '');
+  if (
+    baseUrl === lastSavedHermes.value.baseUrl &&
+    apiKey === lastSavedHermes.value.apiKey &&
+    workspaceRoot === lastSavedHermes.value.workspaceRoot
+  ) {
+    return;
+  }
+  const next = await setHermesSettings({ baseUrl, apiKey, workspaceRoot });
+  hermesBaseUrl.value = next.baseUrl;
+  hermesApiKey.value = next.apiKey;
+  hermesWorkspaceRoot.value = next.workspaceRoot;
+  lastSavedHermes.value = {
+    baseUrl: next.baseUrl.trim(),
+    apiKey: next.apiKey.trim(),
+    workspaceRoot: next.workspaceRoot.trim(),
+  };
+  hermesOk.value = true;
+  hermesMessage.value = '';
 }
 
 async function saveUiLanguage(): Promise<void> {
@@ -159,6 +202,24 @@ async function testMemory(): Promise<void> {
     memoryMessage.value = result.message;
   } finally {
     memoryTesting.value = false;
+  }
+}
+
+async function testHermes(): Promise<void> {
+  hermesTesting.value = true;
+  hermesMessage.value = '';
+  hermesOk.value = null;
+  try {
+    await saveHermes();
+    const result = await doTestHermes(
+      hermesBaseUrl.value,
+      hermesApiKey.value,
+      hermesWorkspaceRoot.value,
+    );
+    hermesOk.value = result.ok;
+    hermesMessage.value = result.message;
+  } finally {
+    hermesTesting.value = false;
   }
 }
 
@@ -321,6 +382,66 @@ onMounted(() => {
               {{ memoryMessage }}
             </div>
           </div>
+
+          <div class="welcome-card">
+            <div class="settings-header">
+              <div>
+                <div class="welcome-card-title">{{ t('welcomeStepHermesTitle') }}</div>
+                <div class="welcome-card-subtitle">
+                  {{ t('welcomeStepHermesSubtitle') }}
+                </div>
+              </div>
+              <button class="btn" :disabled="hermesTesting" @click="testHermes">
+                <ILucidePlug class="icon" />
+                {{ hermesTesting ? t('welcomeTestingButtonLabel') : t('welcomeTestButtonLabel') }}
+              </button>
+            </div>
+
+            <div class="welcome-card-subtitle">
+              {{ t('settingsHermesServerHint') }}
+            </div>
+
+            <label class="field">
+              <span class="label">{{ t('settingsFieldBaseUrlLabel') }}</span>
+              <input
+                v-model="hermesBaseUrl"
+                class="input"
+                type="text"
+                autocomplete="off"
+                :placeholder="t('settingsPlaceholderHermesBaseUrl')"
+                @blur="saveHermes"
+              />
+            </label>
+            <label class="field">
+              <span class="label">{{ t('settingsFieldApiKeyLabel') }}</span>
+              <input
+                v-model="hermesApiKey"
+                class="input"
+                type="password"
+                autocomplete="off"
+                :placeholder="t('settingsPlaceholderHermesApiKey')"
+                @blur="saveHermes"
+              />
+            </label>
+            <label class="field">
+              <span class="label">{{ t('settingsFieldWorkspaceRootLabel') }}</span>
+              <input
+                v-model="hermesWorkspaceRoot"
+                class="input"
+                type="text"
+                autocomplete="off"
+                :placeholder="t('settingsPlaceholderHermesWorkspaceRoot')"
+                @blur="saveHermes"
+              />
+            </label>
+            <div class="welcome-card-subtitle">
+              {{ t('settingsHermesWorkspaceHint') }}
+            </div>
+
+            <div v-if="hermesMessage" class="status" :class="hermesOk ? 'ok' : 'error'">
+              {{ hermesMessage }}
+            </div>
+          </div>
         </section>
 
         <section class="welcome-card">
@@ -355,6 +476,13 @@ onMounted(() => {
               <label class="check-item">
                 <input type="checkbox" />
                 <span>{{ t('welcomeChecklistItemRunTools') }}</span>
+              </label>
+            </li>
+
+            <li>
+              <label class="check-item">
+                <input type="checkbox" />
+                <span>{{ t('welcomeChecklistItemHermesServer') }}</span>
               </label>
             </li>
 

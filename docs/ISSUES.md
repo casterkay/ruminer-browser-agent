@@ -12,6 +12,7 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 
 ## Misc Issues
 
+- [ ] Create an agent skill to process and manage conversational memories.
 - [ ] User messages are not rendered in markdown format. Newlines are gone after import.
 - [x] ChatGPT scan workflow progress is stuck at 0%.
 - [ ] Gemini scan workflow hangs for a long time (>1min) after it has scrolled to the top of the first conversation in the ingest phase.

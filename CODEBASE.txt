@@ -39,6 +39,7 @@ app/
 │   │   └── zh_TW
 │   │       └── messages.json
 │   ├── common
+│   │   ├── agent-engines.ts
 │   │   ├── agent-models.ts
 │   │   ├── chat-platforms.ts
 │   │   ├── constants.ts
@@ -141,6 +142,7 @@ app/
 │   │   │       ├── anthropic-settings.ts
 │   │   │       ├── emos-settings.ts
 │   │   │       ├── gateway-settings.ts
+│   │   │       ├── hermes-settings.ts
 │   │   │       ├── index.ts
 │   │   │       ├── language-settings.ts
 │   │   │       ├── memory-settings.ts
@@ -378,10 +380,15 @@ app/
 │   │   │   ├── engines
 │   │   │   │   ├── claude.ts
 │   │   │   │   ├── codex.ts
+│   │   │   │   ├── hermes.test.ts
+│   │   │   │   ├── hermes.ts
 │   │   │   │   ├── openclaw.ts
 │   │   │   │   └── types.ts
+│   │   │   ├── ephemeral-session-store.test.ts
 │   │   │   ├── ephemeral-session-store.ts
 │   │   │   ├── evermemos
+│   │   │   │   └── settings-service.ts
+│   │   │   ├── hermes
 │   │   │   │   └── settings-service.ts
 │   │   │   ├── mcp-tool-telemetry.ts
 │   │   │   ├── memory
@@ -459,4 +466,4 @@ app/
     │   └── check-versions.js
     └── tsconfig.json
 
-98 directories, 337 files
+99 directories, 343 files

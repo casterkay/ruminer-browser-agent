@@ -178,6 +178,17 @@ CREATE TABLE IF NOT EXISTS anthropic_settings (
   updated_at TEXT NOT NULL
 );
 
+-- Hermes API server settings (native-server owned)
+CREATE TABLE IF NOT EXISTS hermes_settings (
+  id TEXT PRIMARY KEY,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  workspace_root TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  last_test_ok_at TEXT,
+  last_test_error TEXT
+);
+
 -- UI/system settings (native-server owned)
 CREATE TABLE IF NOT EXISTS ui_settings (
   id TEXT PRIMARY KEY,
@@ -237,6 +248,18 @@ function runMigrations(sqlite: DatabaseSync): void {
 
   if (!columnExists(sqlite, 'memory_documents', 'relative_path')) {
     sqlite.exec("ALTER TABLE memory_documents ADD COLUMN relative_path TEXT NOT NULL DEFAULT ''");
+  }
+
+  if (!columnExists(sqlite, 'hermes_settings', 'last_test_ok_at')) {
+    sqlite.exec('ALTER TABLE hermes_settings ADD COLUMN last_test_ok_at TEXT');
+  }
+
+  if (!columnExists(sqlite, 'hermes_settings', 'last_test_error')) {
+    sqlite.exec('ALTER TABLE hermes_settings ADD COLUMN last_test_error TEXT');
+  }
+
+  if (!columnExists(sqlite, 'hermes_settings', 'workspace_root')) {
+    sqlite.exec("ALTER TABLE hermes_settings ADD COLUMN workspace_root TEXT NOT NULL DEFAULT ''");
   }
 }
 

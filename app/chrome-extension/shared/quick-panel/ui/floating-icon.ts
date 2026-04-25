@@ -6,6 +6,7 @@
  * Features beautiful motion flow with spring animations.
  */
 
+import { getSelectableQuickPanelEngines } from '@/common/agent-engines';
 import { QUICK_PANEL_STYLES } from './styles';
 
 // ============================================================
@@ -1231,11 +1232,11 @@ const ICON_CPU = createSvgIcon([
 const ICON_CHEVRON_LEFT = createSvgIcon(['M15 18l-6-6 6-6']);
 const ICON_CHECK = createSvgIcon(['M20 6L9 17l-5-5']);
 
-const ENGINE_CHOICES: Array<{ engineName: string; label: string }> = [
-  { engineName: 'claude', label: 'Claude Code' },
-  { engineName: 'openclaw', label: 'OpenClaw' },
-  { engineName: 'codex', label: 'Codex CLI' },
-];
+const ENGINE_CHOICES: Array<{ engineName: string; label: string }> =
+  getSelectableQuickPanelEngines().map((engine) => ({
+    engineName: engine.name,
+    label: engine.displayName,
+  }));
 
 // ============================================================
 // Main Factory

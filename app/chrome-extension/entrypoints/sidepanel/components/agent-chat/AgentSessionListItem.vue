@@ -17,9 +17,10 @@
           alt=""
           class="w-full h-full rounded-full object-cover"
         />
-        <ILucidePointer v-else-if="session.engineName === 'cursor'" class="w-4 h-4" />
-        <ILucideSparkles v-else-if="session.engineName === 'qwen'" class="w-4 h-4" />
-        <ILucideBrain v-else-if="session.engineName === 'glm'" class="w-4 h-4" />
+        <ILucidePointer v-else-if="engineIconFallback === 'pointer'" class="w-4 h-4" />
+        <ILucideSparkles v-else-if="engineIconFallback === 'sparkles'" class="w-4 h-4" />
+        <ILucideBrain v-else-if="engineIconFallback === 'brain'" class="w-4 h-4" />
+        <ILucideFeather v-else-if="engineIconFallback === 'feather'" class="w-4 h-4" />
         <ILucideCpu v-else class="w-4 h-4" />
       </div>
 
@@ -146,10 +147,12 @@
 </template>
 
 <script lang="ts" setup>
+import { getAgentEngineMetadata, getAgentEngineIconUrl } from '@/common/agent-engines';
 import type { AgentSession } from 'chrome-mcp-shared';
 import { computed, nextTick, ref, watch } from 'vue';
 import ILucideBrain from '~icons/lucide/brain';
 import ILucideCpu from '~icons/lucide/cpu';
+import ILucideFeather from '~icons/lucide/feather';
 import ILucidePointer from '~icons/lucide/mouse-pointer-2';
 import ILucidePaintbrush from '~icons/lucide/paintbrush';
 import ILucidePencil from '~icons/lucide/pencil';
@@ -201,24 +204,11 @@ const openclawAgentId = computed(() => {
 });
 
 const engineIconUrl = computed((): string => {
-  const name = props.session.engineName?.trim();
-  const path =
-    name === 'openclaw'
-      ? 'engine-icons/openclaw.svg'
-      : name === 'claude'
-        ? 'engine-icons/claude.png'
-        : name === 'codex'
-          ? 'engine-icons/codex.svg'
-          : '';
-  if (!path) return '';
-  try {
-    if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
-      return chrome.runtime.getURL(path);
-    }
-  } catch {
-    // ignore
-  }
-  return `/${path}`;
+  return getAgentEngineIconUrl(props.session.engineName);
+});
+
+const engineIconFallback = computed(() => {
+  return getAgentEngineMetadata(props.session.engineName).iconFallback;
 });
 
 const formattedDate = computed(() => {
@@ -311,6 +301,10 @@ const engineBadgeStyle = computed(() => {
     case 'cursor':
       backgroundColor = '#8b5cf6';
       color = '#ffffff';
+      break;
+    case 'hermes':
+      backgroundColor = '#f59e0b';
+      color = '#111827';
       break;
     case 'qwen':
       backgroundColor = '#6366f1';

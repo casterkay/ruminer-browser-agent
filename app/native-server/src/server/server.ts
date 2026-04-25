@@ -18,6 +18,7 @@ import { AgentChatService } from '../agent/chat-service';
 import { closeDb } from '../agent/db';
 import { ClaudeEngine } from '../agent/engines/claude';
 import { CodexEngine } from '../agent/engines/codex';
+import { HermesEngine } from '../agent/engines/hermes';
 import { OpenClawEngine } from '../agent/engines/openclaw';
 import {
   runWithMcpToolTelemetryContext,
@@ -66,7 +67,7 @@ export class Server {
     setMcpToolTelemetryStreamManager(this.agentStreamManager);
     setSessionsStreamManager(this.agentSessionsStreamManager);
     this.agentChatService = new AgentChatService({
-      engines: [new OpenClawEngine(), new CodexEngine(), new ClaudeEngine()],
+      engines: [new OpenClawEngine(), new CodexEngine(), new ClaudeEngine(), new HermesEngine()],
       streamManager: this.agentStreamManager,
     });
     this.setupPlugins();

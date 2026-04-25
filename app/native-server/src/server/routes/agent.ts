@@ -23,6 +23,7 @@ import type {
   OpenClawAgentDto,
   OpenProjectRequest,
   OpenProjectTarget,
+  TestHermesResponse,
   TestOpenClawGatewayResponse,
   UpdateAnthropicSettingsRequest,
   UpdateAnthropicSettingsResponse,
@@ -50,6 +51,11 @@ import {
   getEphemeralSessionState,
 } from '../../agent/ephemeral-session-store';
 import { getEmosSettings, updateEmosSettings } from '../../agent/evermemos/settings-service';
+import {
+  getHermesSettings,
+  recordHermesTestResult,
+  updateHermesSettings,
+} from '../../agent/hermes/settings-service';
 import {
   deleteMemory,
   getMemoryStatus,
@@ -173,6 +179,7 @@ const VALID_ENGINE_NAMES: readonly EngineName[] = [
   'openclaw',
   'claude',
   'codex',
+  'hermes',
   'cursor',
   'qwen',
   'glm',
@@ -511,6 +518,147 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       }
     },
   );
+
+  // ============================================================
+  // Hermes Settings (native-server owned)
+  // Used to configure the Hermes API server connection + auth.
+  // ============================================================
+
+  fastify.get('/agent/hermes/settings', async (_request, reply) => {
+    try {
+      const settings = await getHermesSettings();
+      const body = {
+        settings: {
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          workspaceRoot: settings.workspaceRoot,
+          updatedAt: settings.updatedAt,
+          lastTestOkAt: settings.lastTestOkAt,
+          lastTestError: settings.lastTestError,
+        },
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+    }
+  });
+
+  fastify.post(
+    '/agent/hermes/settings',
+    async (
+      request: FastifyRequest<{
+        Body: { baseUrl?: string; apiKey?: string; workspaceRoot?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const body = request.body || {};
+
+        const patch: { baseUrl?: string; apiKey?: string; workspaceRoot?: string } = {};
+        if (typeof body.baseUrl === 'string') {
+          patch.baseUrl = body.baseUrl;
+        }
+        if (typeof body.apiKey === 'string') {
+          patch.apiKey = body.apiKey;
+        }
+        if (typeof body.workspaceRoot === 'string') {
+          patch.workspaceRoot = body.workspaceRoot;
+        }
+
+        const settings = await updateHermesSettings(patch);
+        const resBody = {
+          settings: {
+            baseUrl: settings.baseUrl,
+            apiKey: settings.apiKey,
+            workspaceRoot: settings.workspaceRoot,
+            updatedAt: settings.updatedAt,
+            lastTestOkAt: settings.lastTestOkAt,
+            lastTestError: settings.lastTestError,
+          },
+        };
+        reply.status(HTTP_STATUS.OK).send(resBody);
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update Hermes settings');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post('/agent/hermes/test', async (_request, reply) => {
+    try {
+      const settings = await getHermesSettings();
+      const baseUrl = settings.baseUrl.trim().replace(/\/+$/, '');
+      const apiKey = settings.apiKey.trim();
+      const requiredModelId = 'hermes-agent';
+
+      if (!baseUrl) {
+        const message = 'Hermes API server base URL is not configured';
+        await recordHermesTestResult({ ok: false, message });
+        const body: TestHermesResponse = { ok: false, message };
+        reply.status(HTTP_STATUS.OK).send(body);
+        return;
+      }
+
+      if (!apiKey) {
+        const message = 'Hermes API server key is not configured';
+        await recordHermesTestResult({ ok: false, message });
+        const body: TestHermesResponse = { ok: false, message };
+        reply.status(HTTP_STATUS.OK).send(body);
+        return;
+      }
+
+      const headers = {
+        Authorization: `Bearer ${apiKey}`,
+      };
+
+      const healthResponse = await fetch(`${baseUrl}/health`, {
+        method: 'GET',
+        headers,
+      });
+      if (!healthResponse.ok) {
+        throw new Error(await healthResponse.text().catch(() => `HTTP ${healthResponse.status}`));
+      }
+
+      const modelsResponse = await fetch(`${baseUrl}/v1/models`, {
+        method: 'GET',
+        headers,
+      });
+      if (!modelsResponse.ok) {
+        throw new Error(await modelsResponse.text().catch(() => `HTTP ${modelsResponse.status}`));
+      }
+
+      const modelsPayload = await modelsResponse.json().catch(() => null);
+      const hasRequiredModel =
+        Array.isArray((modelsPayload as { data?: unknown } | null)?.data) &&
+        (modelsPayload as { data: Array<{ id?: unknown }> }).data.some(
+          (model) => typeof model?.id === 'string' && model.id.trim() === requiredModelId,
+        );
+      if (!hasRequiredModel) {
+        const message = `Hermes API server model ${requiredModelId} is not available`;
+        await recordHermesTestResult({ ok: false, message });
+        const body: TestHermesResponse = { ok: false, message };
+        reply.status(HTTP_STATUS.OK).send(body);
+        return;
+      }
+
+      await recordHermesTestResult({ ok: true, message: null });
+      const body: TestHermesResponse = {
+        ok: true,
+        message: 'Hermes API server connect OK',
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await recordHermesTestResult({ ok: false, message });
+      const body: TestHermesResponse = {
+        ok: false,
+        message,
+      };
+      reply.status(HTTP_STATUS.OK).send(body);
+    }
+  });
 
   // ============================================================
   // UI Settings (native-server owned)
@@ -1168,7 +1316,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
    * Materialize an in-memory (ephemeral) Quick Panel session into a persisted DB session.
    *
    * Creates a session with id=sessionId using the ephemeral context captured during chat
-   * (projectId, engineName, claude resume id), then bulk upserts the provided transcript.
+   * (projectId, engineName, engine resume id), then bulk upserts the provided transcript.
    */
   fastify.post(
     '/agent/ephemeral-sessions/:sessionId/persist',
@@ -1217,7 +1365,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
           const created = await createSession(projectId, engineName, {
             id,
             name: desiredName || `Quick Chat (${engineName})`,
-            engineSessionId: state?.claudeSessionId,
+            engineSessionId: state?.engineSessionId,
           });
           try {
             publishSessionCreated(created as any);
@@ -1227,8 +1375,8 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         } else {
           const patch: UpdateSessionInput = {};
           if (desiredName && !existing.name) patch.name = desiredName;
-          if (engineName === 'claude' && state?.claudeSessionId && !existing.engineSessionId) {
-            patch.engineSessionId = state.claudeSessionId;
+          if (state?.engineSessionId && !existing.engineSessionId) {
+            patch.engineSessionId = state.engineSessionId;
           }
           if (Object.keys(patch).length > 0) {
             await updateSession(id, patch);
@@ -1454,46 +1602,14 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
     },
   );
 
-  // Reset a session conversation (clear messages + engineSessionId)
+  // Conversation reset is intentionally unsupported. Create a new session instead.
   fastify.post(
     '/agent/sessions/:sessionId/reset',
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
-      const { sessionId } = request.params;
-      if (!sessionId) {
-        return reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'sessionId is required' });
-      }
-
-      try {
-        const existing = await getSession(sessionId);
-        if (!existing) {
-          return reply.status(HTTP_STATUS.NOT_FOUND).send({ error: 'Session not found' });
-        }
-
-        // Clear resume state first, then delete messages
-        await updateSession(sessionId, { engineSessionId: null });
-        const deletedMessages = await deleteMessagesBySessionId(sessionId);
-        const updated = await getSession(sessionId);
-        try {
-          if (updated) publishSessionUpdated({ sessionId, session: updated as any });
-          else publishSessionUpdated({ sessionId });
-        } catch {
-          // ignore
-        }
-
-        return reply.status(HTTP_STATUS.OK).send({
-          success: true,
-          sessionId,
-          deletedMessages,
-          clearedEngineSessionId: Boolean(existing.engineSessionId),
-          session: updated || null,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        fastify.log.error({ err: error }, 'Failed to reset session');
-        return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
-          error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
-        });
-      }
+      void request;
+      return reply.status(HTTP_STATUS.CONFLICT).send({
+        error: 'Conversation reset is not supported. Create a new session instead.',
+      });
     },
   );
 

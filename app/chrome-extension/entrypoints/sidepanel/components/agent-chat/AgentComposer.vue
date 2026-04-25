@@ -349,6 +349,7 @@
 </template>
 
 <script lang="ts" setup>
+import { getAgentEngineMetadata } from '@/common/agent-engines';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import type { RecordedActionSequence } from '@/common/recording-context';
 import { computed, ref, toRef } from 'vue';
@@ -408,10 +409,8 @@ const isRequestActive = computed(() => {
   );
 });
 
-// Image upload is supported for Claude, Codex, and OpenClaw engines
 const supportsImages = computed(() => {
-  const engine = props.engineName;
-  return engine === 'claude' || engine === 'codex' || engine === 'openclaw';
+  return getAgentEngineMetadata(props.engineName).supportsImages;
 });
 
 // =============================================================================
@@ -534,7 +533,6 @@ const emit = defineEmits<{
     },
   ];
   'recording:delete': [id: string];
-  'session:reset': [];
 }>();
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -583,16 +581,6 @@ function handlePrimaryAction(): void {
     emit('cancel');
   } else {
     handleSubmit();
-  }
-}
-
-function handleReset(): void {
-  if (
-    confirm(
-      'Reset this conversation? All messages will be deleted and the session will start fresh.',
-    )
-  ) {
-    emit('session:reset');
   }
 }
 

@@ -474,53 +474,6 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     return result !== null;
   }
 
-  // Reset a session conversation (delete messages + clear engineSessionId)
-  async function resetConversation(sessionId: string): Promise<{
-    deletedMessages: number;
-    clearedEngineSessionId: boolean;
-    session: AgentSession | null;
-  } | null> {
-    const ready = await options.ensureServer();
-    const serverPort = options.getServerPort();
-    if (!ready || !serverPort || !sessionId) {
-      sessionError.value = 'Server not available';
-      return null;
-    }
-
-    sessionError.value = null;
-
-    try {
-      const url = `http://127.0.0.1:${serverPort}/agent/sessions/${encodeURIComponent(sessionId)}/reset`;
-      const response = await fetch(url, { method: 'POST' });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(text || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const session = data.session as AgentSession | null;
-
-      // Update local session state
-      if (session?.id) {
-        const index = sessions.value.findIndex((s) => s.id === session.id);
-        if (index !== -1) {
-          sessions.value[index] = session;
-        }
-      }
-
-      return {
-        deletedMessages: typeof data.deletedMessages === 'number' ? data.deletedMessages : 0,
-        clearedEngineSessionId: data.clearedEngineSessionId === true,
-        session,
-      };
-    } catch (error) {
-      console.error('Failed to reset conversation:', error);
-      sessionError.value = error instanceof Error ? error.message : 'Failed to reset conversation';
-      return null;
-    }
-  }
-
   // Fetch Claude SDK management info for a session
   async function fetchClaudeInfo(sessionId: string): Promise<{
     managementInfo: AgentManagementInfo | null;
@@ -631,7 +584,6 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     deleteSession,
     selectSession,
     renameSession,
-    resetConversation,
     fetchClaudeInfo,
     clearSessions,
     updateSessionPreview,

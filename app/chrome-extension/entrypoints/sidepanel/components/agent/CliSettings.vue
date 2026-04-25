@@ -33,17 +33,19 @@
           {{ e.name }}
         </option>
       </select>
-      <span class="whitespace-nowrap">Model</span>
-      <select
-        :value="model"
-        class="flex-1 border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
-        @change="$emit('update:model', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">Default</option>
-        <option v-for="m in availableModels" :key="m.id" :value="m.id">
-          {{ m.name }}
-        </option>
-      </select>
+      <template v-if="showModelSelection">
+        <span class="whitespace-nowrap">Model</span>
+        <select
+          :value="model"
+          class="flex-1 border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
+          @change="$emit('update:model', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">Default</option>
+          <option v-for="m in availableModels" :key="m.id" :value="m.id">
+            {{ m.name }}
+          </option>
+        </select>
+      </template>
       <!-- CCR option (Claude Code Router) - only shown when Claude CLI is selected -->
       <label
         v-if="showCcrOption"
@@ -73,6 +75,7 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 import type { AgentProject, AgentEngineInfo } from 'chrome-mcp-shared';
+import { shouldShowAgentModelSelector } from '@/common/agent-engines';
 import {
   getModelsForCli,
   getDefaultModelForCli,
@@ -102,6 +105,10 @@ const emit = defineEmits<{
 // Get available models based on selected CLI
 const availableModels = computed<ModelDefinition[]>(() => {
   return getModelsForCli(props.selectedCli);
+});
+
+const showModelSelection = computed(() => {
+  return !props.selectedCli || shouldShowAgentModelSelector(props.selectedCli);
 });
 
 // Show CCR option only when Claude CLI is selected

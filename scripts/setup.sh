@@ -19,7 +19,9 @@ SKIP_NATIVE_HOST="${SKIP_NATIVE_HOST:-0}"
 SKIP_OPENCLAW="${SKIP_OPENCLAW:-0}"
 SKIP_CLAUDE="${SKIP_CLAUDE:-0}"
 SKIP_CODEX="${SKIP_CODEX:-0}"
+SKIP_HERMES="${SKIP_HERMES:-0}"
 RUN_DOCTOR="${RUN_DOCTOR:-1}"
+HERMES_API_KEY="${HERMES_API_KEY:-}"
 
 OPENCLAW_PROFILE="${OPENCLAW_PROFILE:-}"
 OPENCLAW_DEV="${OPENCLAW_DEV:-0}"
@@ -41,7 +43,8 @@ usage() {
   cat <<'USAGE'
 Usage:
   setup.sh [--help] [--yes] [--extension-id <id[,id...]>] [--mcp-url <url>]
-           [--skip-native-host] [--skip-openclaw] [--skip-claude] [--skip-codex] [--no-doctor]
+           [--skip-native-host] [--skip-openclaw] [--skip-claude] [--skip-codex] [--skip-hermes]
+           [--hermes-api-key <key>] [--no-doctor]
            [--openclaw-profile <name>] [--openclaw-dev]
 
 Recommended (from the extension Welcome page):
@@ -56,14 +59,16 @@ Args:
   --skip-openclaw             Skip OpenClaw plugin install/enable/config
   --skip-claude               Skip Claude Code MCP config
   --skip-codex                Skip Codex MCP config
+  --skip-hermes               Skip Hermes Agent MCP/API-server config
+  --hermes-api-key <key>      Hermes API server key to configure via `hermes config set`
   --no-doctor                 Skip native-host doctor checks
   --openclaw-profile <name>   Pass --profile <name> to all openclaw commands
   --openclaw-dev              Pass --dev to all openclaw commands
 
 Environment:
   RUMINER_MCP_URL, RUMINER_EXTENSION_ID, YES,
-  SKIP_NATIVE_HOST, SKIP_OPENCLAW, SKIP_CLAUDE, SKIP_CODEX, RUN_DOCTOR,
-  OPENCLAW_PROFILE, OPENCLAW_DEV
+  SKIP_NATIVE_HOST, SKIP_OPENCLAW, SKIP_CLAUDE, SKIP_CODEX, SKIP_HERMES, RUN_DOCTOR,
+  HERMES_API_KEY, OPENCLAW_PROFILE, OPENCLAW_DEV
 USAGE
 }
 
@@ -143,6 +148,37 @@ prompt_confirm() {
       *) ;;
     esac
   done
+}
+
+prompt_secret() {
+  local prompt="${1}"
+  local default_value="${2:-}"
+  local out
+
+  if [[ "${YES}" == "1" ]]; then
+    printf '%s' "${default_value}"
+    return 0
+  fi
+
+  if ! has_tty; then
+    printf '%s' "${default_value}"
+    return 0
+  fi
+
+  if [[ -n "${default_value}" ]]; then
+    printf '%s [%s]: ' "${prompt}" "${default_value}" >/dev/tty
+  else
+    printf '%s: ' "${prompt}" >/dev/tty
+  fi
+
+  IFS= read -r -s out </dev/tty || true
+  printf '\n' >/dev/tty
+  out="$(printf '%s' "${out}" | tr -d '\r')"
+  if [[ -z "${out}" ]]; then
+    printf '%s' "${default_value}"
+    return 0
+  fi
+  printf '%s' "${out}"
 }
 
 check_node_version() {
@@ -323,6 +359,56 @@ codex_mcp_add_or_replace() {
     die "Failed to add Codex MCP server. Try: codex mcp add ${name} --url ${RUMINER_MCP_URL}"
 }
 
+configure_hermes_agent() {
+  local name="ruminer-chrome"
+
+  if [[ "${SKIP_HERMES}" == "1" ]]; then
+    log "Skipping Hermes Agent config."
+    return 0
+  fi
+  if ! command -v hermes >/dev/null 2>&1; then
+    log "Hermes CLI not found; skipping Hermes Agent config."
+    return 0
+  fi
+
+  log "Configuring Hermes Agent API server + MCP bridge..."
+  if ! hermes config set API_SERVER_ENABLED true >/dev/null 2>&1; then
+    warn "Failed to enable Hermes API server via CLI (best-effort)."
+  fi
+
+  local api_key="${HERMES_API_KEY}"
+  if [[ -z "${api_key}" && "${YES}" != "1" ]]; then
+    api_key="$(prompt_secret "Hermes API server key (leave blank to keep the current Hermes config)" "")"
+  fi
+  if [[ -n "${api_key}" ]]; then
+    if ! hermes config set API_SERVER_KEY "${api_key}" >/dev/null 2>&1; then
+      warn "Failed to configure Hermes API server key via CLI (best-effort)."
+    fi
+  else
+    log "Hermes API server key not provided; keeping existing Hermes API key config."
+  fi
+
+  if hermes mcp get "${name}" >/dev/null 2>&1; then
+    if [[ "${YES}" == "1" ]] || prompt_confirm "Hermes MCP server '${name}' exists. Replace it?" 1; then
+      hermes mcp remove "${name}" >/dev/null 2>&1 || true
+    else
+      log "Keeping existing Hermes MCP server '${name}'."
+      return 0
+    fi
+  fi
+
+  if ! hermes mcp add "${name}" --url "${RUMINER_MCP_URL}" >/dev/null 2>&1; then
+    warn "Failed to add Hermes MCP server '${name}'. Try: hermes mcp add ${name} --url ${RUMINER_MCP_URL}"
+    return 0
+  fi
+
+  if ! hermes mcp test "${name}" >/dev/null 2>&1; then
+    warn "Hermes MCP server '${name}' was added but test failed (best-effort)."
+  fi
+
+  log "Hermes Agent configured (best-effort). Start it separately with: hermes api-server"
+}
+
 openclaw_cmd() {
   local args=()
   if [[ "${OPENCLAW_DEV}" == "1" ]]; then
@@ -442,6 +528,17 @@ main() {
         SKIP_CODEX="1"
         shift
         ;;
+      --skip-hermes)
+        SKIP_HERMES="1"
+        shift
+        ;;
+      --hermes-api-key)
+        if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          die "Missing value for --hermes-api-key (run --help)"
+        fi
+        HERMES_API_KEY="${2}"
+        shift 2
+        ;;
       --no-doctor)
         RUN_DOCTOR="0"
         shift
@@ -464,7 +561,7 @@ main() {
   done
 
   log ""
-  log "Ruminer setup (native host + MCP clients + OpenClaw plugin)"
+  log "Ruminer setup (native host + MCP clients + OpenClaw plugin + Hermes Agent)"
   log "MCP URL: ${RUMINER_MCP_URL}"
   log ""
 
@@ -474,11 +571,13 @@ main() {
   register_native_host
   claude_mcp_add_or_replace
   codex_mcp_add_or_replace
+  configure_hermes_agent
   install_openclaw_plugin
 
   log ""
   log "Setup complete!"
   log "Next: open Claude Code or Codex and try calling a Ruminer tool (e.g. get_windows_and_tabs)."
+  log "If you use Hermes Agent, start it separately with: hermes api-server"
 }
 
 main "$@"

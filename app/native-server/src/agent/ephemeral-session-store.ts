@@ -5,10 +5,10 @@ export interface EphemeralSessionState {
   projectId: string;
   engineName: EngineName;
   /**
-   * Engine resume state (Claude only for now).
+   * Engine-specific resume state.
    * Stored in-memory to keep Quick Panel sessions stateful per page without DB writes.
    */
-  claudeSessionId?: string;
+  engineSessionId?: string;
   updatedAtMs: number;
 }
 
@@ -52,19 +52,19 @@ export function upsertEphemeralSessionContext(input: {
     sessionId,
     projectId,
     engineName,
-    claudeSessionId: prev?.claudeSessionId,
+    engineSessionId: prev?.engineSessionId,
     updatedAtMs: nowMs(),
   });
   evictIfNeeded();
 }
 
-export function setEphemeralClaudeSessionId(
+export function setEphemeralEngineSessionId(
   sessionIdRaw: string,
-  claudeSessionIdRaw: string,
+  engineSessionIdRaw: string,
 ): void {
   const sessionId = normalizeId(sessionIdRaw);
-  const claudeSessionId = normalizeId(claudeSessionIdRaw);
-  if (!sessionId || !claudeSessionId) return;
+  const engineSessionId = normalizeId(engineSessionIdRaw);
+  if (!sessionId || !engineSessionId) return;
 
   const prev = stateBySessionId.get(sessionId);
   if (!prev) {
@@ -74,10 +74,17 @@ export function setEphemeralClaudeSessionId(
 
   stateBySessionId.set(sessionId, {
     ...prev,
-    claudeSessionId,
+    engineSessionId,
     updatedAtMs: nowMs(),
   });
   evictIfNeeded();
+}
+
+export function setEphemeralClaudeSessionId(
+  sessionIdRaw: string,
+  claudeSessionIdRaw: string,
+): void {
+  setEphemeralEngineSessionId(sessionIdRaw, claudeSessionIdRaw);
 }
 
 export function getEphemeralSessionState(sessionIdRaw: string): EphemeralSessionState | null {

@@ -87,10 +87,7 @@
                 <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Agent</span>
                 <span class="font-mono text-[10px]">{{ localOpenClawAgentId }}</span>
               </div>
-              <div
-                v-if="localModel && (isClaudeEngine || isCodexEngine)"
-                class="flex justify-between"
-              >
+              <div v-if="showModelSelection && localModel" class="flex justify-between">
                 <span :style="{ color: 'var(--ac-text-muted, #6e6e6e)' }">Model</span>
                 <span class="font-mono text-[10px]">{{ localModel }}</span>
               </div>
@@ -156,7 +153,7 @@
                       :style="{ color: 'var(--ac-text-muted, #6e6e6e)', borderRadius: '8px' }"
                       @click="handleFolderButtonClick"
                       :aria-expanded="
-                        isWorkspaceConfigurable ? 'false' : String(openProjectMenuOpen)
+                        isWorkspaceConfigurable ? 'false' : openProjectMenuOpen ? 'true' : 'false'
                       "
                     >
                       <ILucideFolderOpen class="w-4 h-4" />
@@ -217,8 +214,8 @@
             </div>
           </div>
 
-          <!-- Model Selection (not applicable to OpenClaw) -->
-          <div v-if="!isOpenClawEngine" class="space-y-2">
+          <!-- Model Selection -->
+          <div v-if="showModelSelection" class="space-y-2">
             <label
               class="text-[10px] font-bold uppercase tracking-wider"
               :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
@@ -520,6 +517,7 @@
 </template>
 
 <script lang="ts" setup>
+import { shouldShowAgentModelSelector } from '@/common/agent-engines';
 import {
   getCodexReasoningEfforts,
   getDefaultModelForCli,
@@ -705,6 +703,8 @@ const availableModels = computed(() => {
   return getModelsForCli(props.session.engineName);
 });
 
+const showModelSelection = computed(() => shouldShowAgentModelSelector(props.session?.engineName));
+
 // Get the currently selected OpenClaw agent
 const selectedOpenClawAgent = computed<OpenClawAgentDto | undefined>(() => {
   if (!props.openclawAgents?.length) return undefined;
@@ -724,7 +724,9 @@ watch(
   () => props.session,
   (session) => {
     if (session) {
-      localModel.value = session.model || getDefaultModelForCli(session.engineName);
+      localModel.value = showModelSelection.value
+        ? session.model || getDefaultModelForCli(session.engineName)
+        : '';
       localPermissionMode.value = session.permissionMode || '';
       // Runtime default: enabled when unset; only disabled when explicitly false.
       localSaveConversationToEverMemOS.value =
@@ -789,6 +791,7 @@ function getEngineColor(engineName: string): string {
   const colors: Record<string, string> = {
     claude: '#c87941',
     codex: '#10a37f',
+    hermes: '#f59e0b',
     cursor: '#8b5cf6',
     qwen: '#6366f1',
     glm: '#ef4444',
@@ -858,7 +861,7 @@ function handleSave(): void {
   };
 
   const settings: SessionSettings = {
-    model: localModel.value.trim(),
+    model: showModelSelection.value ? localModel.value.trim() : '',
     permissionMode: localPermissionMode.value,
     systemPromptConfig,
     optionsConfig,

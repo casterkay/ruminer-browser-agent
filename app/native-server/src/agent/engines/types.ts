@@ -48,6 +48,11 @@ export interface EngineInitOptions {
    */
   optionsConfig?: unknown;
   /**
+   * Optional engine-specific session ID for resuming a previous conversation.
+   * Preferred generic field for engines that support resumable sessions.
+   */
+  resumeEngineSessionId?: string;
+  /**
    * Optional Claude session ID (UUID) for resuming a previous session.
    * Only applicable to ClaudeEngine; retrieved from sessions.engineSessionId (preferred)
    * or project's activeClaudeSessionId (legacy fallback).
@@ -102,6 +107,10 @@ export interface EngineExecutionContext {
    * Emit a realtime event to all connected clients for the current session.
    */
   emit(event: RealtimeEvent): void;
+  /**
+   * Optional callback to persist engine-specific session ID after initialization.
+   */
+  persistEngineSessionId?: (sessionId: string) => Promise<void>;
   /**
    * Optional callback to persist Claude session ID after SDK initialization.
    * Only called by ClaudeEngine when projectId is provided.

@@ -97,7 +97,6 @@
             @marker:delete="handleDeleteMarker"
             @marker:highlight="handleHighlightMarker"
             @recording:delete="handleDeleteRecordingContextItem"
-            @session:reset="handleComposerReset"
           />
         </template>
       </AgentChatShell>
@@ -210,6 +209,7 @@
 
 <script lang="ts" setup>
 import type {
+  AgentCliPreference,
   AgentManagementInfo,
   AgentMessage,
   AgentSession,
@@ -222,6 +222,7 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 
 // Composables
 import type { OpenProjectTarget } from 'chrome-mcp-shared';
+import { getAgentEngineDisplayName, resolveDraftEngineName } from '@/common/agent-engines';
 import {
   AGENT_SERVER_PORT_KEY,
   useAgentChat,
@@ -673,28 +674,16 @@ const selectedEngineName = computed(() => {
   if (hasSession.value) {
     return sessions.selectedSession.value?.engineName ?? '';
   }
-  return selectedCli.value.trim() || projects.selectedProject.value?.preferredCli || 'openclaw';
+  return resolveDraftEngineName({
+    selectedCli: selectedCli.value,
+    projectPreferredCli: projects.selectedProject.value?.preferredCli,
+    fallbackEngine: 'openclaw',
+  });
 });
 
 // Engine display name for brand/footer
 const engineDisplayName = computed(() => {
-  const name = selectedEngineName.value;
-  switch (name) {
-    case 'openclaw':
-      return 'OpenClaw';
-    case 'claude':
-      return 'Claude Code';
-    case 'codex':
-      return 'Codex';
-    case 'cursor':
-      return 'Cursor';
-    case 'qwen':
-      return 'Qwen';
-    case 'glm':
-      return 'GLM';
-    default:
-      return 'Agent';
-  }
+  return getAgentEngineDisplayName(selectedEngineName.value);
 });
 
 const currentSessionModel = computed(() => {
@@ -1094,17 +1083,7 @@ async function handleOpenToolSelection(): Promise<void> {
   }
 }
 
-async function handleResetSession(sessionId: string): Promise<void> {
-  closeMenus();
-  const result = await sessions.resetConversation(sessionId);
-  // Guard: only clear messages if the reset session is still selected
-  // This prevents clearing messages if user switched during reset await
-  if (result && sessions.selectedSessionId.value === sessionId) {
-    chat.setMessages([]);
-  }
-}
-
-// Composer session settings/reset handlers (without sessionId parameter)
+// Composer session settings handlers (without sessionId parameter)
 function handleComposerOpenSettings(): void {
   const sessionId = sessions.selectedSessionId.value;
   if (sessionId) {
@@ -1265,13 +1244,6 @@ async function handleHighlightMarker(marker: {
   }
 }
 
-async function handleComposerReset(): Promise<void> {
-  const sessionId = sessions.selectedSessionId.value;
-  if (sessionId) {
-    await handleResetSession(sessionId);
-  }
-}
-
 function handleCloseSessionSettings(): void {
   sessionSettingsOpen.value = false;
   currentManagementInfo.value = null;
@@ -1421,13 +1393,7 @@ async function handleSaveSettings(): Promise<void> {
     // If CLI changed, create a new empty session with the new CLI
     const cliChanged = previousCli !== selectedCli.value;
     if (cliChanged && selectedCli.value) {
-      const engineName = selectedCli.value as
-        | 'openclaw'
-        | 'claude'
-        | 'codex'
-        | 'cursor'
-        | 'qwen'
-        | 'glm';
+      const engineName = selectedCli.value as AgentCliPreference;
 
       // Include codex config if using codex engine
       const optionsConfig =
@@ -1899,13 +1865,7 @@ async function handleSend(): Promise<void> {
   // First message starts the chat: if we don't have a session yet, create it now.
   if (!dbSessionId) {
     const typedEngineName =
-      (selectedEngineName.value.trim() as
-        | 'openclaw'
-        | 'claude'
-        | 'codex'
-        | 'cursor'
-        | 'qwen'
-        | 'glm') || 'openclaw';
+      (selectedEngineName.value.trim() as AgentCliPreference) || ('openclaw' as AgentCliPreference);
 
     const draft = draftSessionSettings.value;
     const draftOptions = draft?.optionsConfig;

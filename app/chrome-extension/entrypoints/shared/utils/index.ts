@@ -39,6 +39,7 @@ export {
   setMemorySettings,
   type MemoryConnectionSettings,
 } from './memory-settings';
+export { getHermesSettings, setHermesSettings, type HermesSettings } from './hermes-settings';
 export {
   clearIndividualToolOverrides,
   getDefaultToolGroupState,
