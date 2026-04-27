@@ -269,6 +269,7 @@ app/
 │   │   ├── engine-icons
 │   │   │   ├── claude.png
 │   │   │   ├── codex.svg
+│   │   │   ├── hermes.svg
 │   │   │   └── openclaw.svg
 │   │   ├── icon
 │   │   │   ├── 128.png
@@ -467,4 +468,4 @@ app/
     │   └── check-versions.js
     └── tsconfig.json
 
-100 directories, 343 files
+100 directories, 344 files

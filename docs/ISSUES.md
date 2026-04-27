@@ -13,9 +13,9 @@ Each issue includes: **symptom**, **impact**, **suspected cause**, and **fix dir
 ## Misc Issues
 
 - [ ] Create an agent skill to process and manage conversational memories.
+- [ ] Add Perplexity export support.
 - [ ] User messages are not rendered in markdown format. Newlines are gone after import.
 - [x] ChatGPT scan workflow progress is stuck at 0%.
-- [ ] Gemini scan workflow hangs for a long time (>1min) after it has scrolled to the top of the first conversation in the ingest phase.
 - [ ] Gemini ingested conversations have cross-session corruption (it appends messages from other conversations after messages in the current conversation).
 - [ ] Filenames like `README.md` are rendered as links to `http://{filename}` in the message cards.
 - [ ] Ingested DeepSeek conversations have duplicated messages.

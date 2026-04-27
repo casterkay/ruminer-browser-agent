@@ -59,3 +59,4 @@ _ref/
 opc-doc/
 .pnpm-store/
 .history/
+secrets/
