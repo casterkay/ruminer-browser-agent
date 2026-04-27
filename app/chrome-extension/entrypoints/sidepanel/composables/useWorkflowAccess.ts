@@ -31,7 +31,7 @@ export function useWorkflowAccess() {
     if (state.value.status === 'free') {
       return 'Upgrade to Ruminer Pro';
     }
-    return 'Sign in to unlock workflows';
+    return 'Sign in to unlock full features';
   });
 
   async function refresh(): Promise<WorkflowAccessState> {

@@ -1193,7 +1193,7 @@ const workflowAccessTitle = computed(() => {
     return 'Ruminer Pro turns workflows from teaser mode into execution';
   }
 
-  return 'Sign in to unlock workflows';
+  return 'Sign in to unlock full features';
 });
 
 const workflowAccessBody = computed(() => {
@@ -1237,7 +1237,7 @@ const workflowAccessCtaLabel = computed(() => {
     return 'Upgrade to Ruminer Pro';
   }
 
-  return 'Sign in and unlock workflows';
+  return 'Sign in and unlock full features';
 });
 
 const workflowLockedReason = computed(() => {

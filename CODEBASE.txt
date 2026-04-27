@@ -50,7 +50,8 @@ app/
 │   │   ├── rr-v3-keepalive-protocol.ts
 │   │   ├── step-types.ts
 │   │   ├── tool-handler.ts
-│   │   └── web-editor-types.ts
+│   │   ├── web-editor-types.ts
+│   │   └── workflow-access.ts
 │   ├── entrypoints
 │   │   ├── background
 │   │   │   ├── element-marker
@@ -97,8 +98,9 @@ app/
 │   │   │   │   └── step-supplement.ts
 │   │   │   ├── utils
 │   │   │   │   └── sidepanel.ts
-│   │   │   └── web-editor
-│   │   │       └── index.ts
+│   │   │   ├── web-editor
+│   │   │   │   └── index.ts
+│   │   │   └── workflow-access.ts
 │   │   ├── builder
 │   │   │   ├── App.vue
 │   │   │   ├── index.html
@@ -181,6 +183,7 @@ app/
 │   │   │   │   ├── useRRV3Rpc.ts
 │   │   │   │   ├── useTextareaAutoResize.ts
 │   │   │   │   ├── useWebEditorTxState.ts
+│   │   │   │   ├── useWorkflowAccess.ts
 │   │   │   │   └── useWorkflowsV3.ts
 │   │   │   ├── index.html
 │   │   │   ├── main.ts
@@ -456,4 +459,4 @@ app/
     │   └── check-versions.js
     └── tsconfig.json
 
-98 directories, 334 files
+98 directories, 337 files

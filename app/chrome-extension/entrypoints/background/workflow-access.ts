@@ -268,7 +268,7 @@ export async function refreshWorkflowAccessState(): Promise<WorkflowAccessState>
       if (hasLinkedWorkflowAccessState(currentState)) {
         return persistWorkflowAccessState({
           ...DEFAULT_WORKFLOW_ACCESS_STATE,
-          error: 'This browser link is missing. Sign in again to unlock workflows.',
+          error: 'This browser link is missing. Sign in again to unlock full features.',
         });
       }
 
@@ -287,7 +287,7 @@ export async function refreshWorkflowAccessState(): Promise<WorkflowAccessState>
         await clearWorkflowAccessLinkToken();
         return persistWorkflowAccessState({
           ...DEFAULT_WORKFLOW_ACCESS_STATE,
-          error: 'This browser link is no longer valid. Sign in again to unlock workflows.',
+          error: 'This browser link is no longer valid. Sign in again to unlock full features.',
         });
       }
       return persistWorkflowAccessState(applyRefreshFailure(currentState, error));
@@ -327,7 +327,7 @@ async function resolvePendingLink(pendingLink: WorkflowAccessLinkSession): Promi
           if (!status.linkToken) {
             await persistWorkflowAccessState({
               ...DEFAULT_WORKFLOW_ACCESS_STATE,
-              error: 'This browser link is missing. Sign in again to unlock workflows.',
+              error: 'This browser link is missing. Sign in again to unlock full features.',
             });
             return;
           }

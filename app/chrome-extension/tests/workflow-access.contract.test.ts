@@ -229,7 +229,7 @@ describe('workflow access (contract)', () => {
       expect.objectContaining({
         workflowAccessState: expect.objectContaining({
           workflowAccess: 'blocked',
-          error: 'This browser link is missing. Sign in again to unlock workflows.',
+          error: 'This browser link is missing. Sign in again to unlock full features.',
         }),
       }),
     );
