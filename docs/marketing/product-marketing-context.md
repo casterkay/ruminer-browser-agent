@@ -175,7 +175,7 @@ _Last updated: 2026-04-27_
 
 **Tone:** Tender, respectful, and direct. Acknowledge that the memories matter without making manipulative or supernatural claims.
 
-**Style:** Conversational, emotionally specific, and careful. Chinese social content can be more diary-like and intimate on 小红书; Instagram content should be visual, simple, and story-led.
+**Style:** Conversational, emotionally specific, and careful. Chinese social content can be more diary-like and intimate on 小红书; YouTube content should be visual, simple, and story-led.
 
 **Personality:** Tender, privacy-respecting, quietly technical, thoughtfully simple.
 
@@ -186,7 +186,7 @@ _Last updated: 2026-04-27_
 **Primary channels:**
 
 - 小红书: Chinese diary-style notes, screenshots, emotional storytelling, tutorials, and AI companion continuity narratives.
-- Instagram: Reels, carousels, visual demos, quote-style posts, and short stories around memory continuity.
+- YouTube: Shorts, long-form demos, walkthrough tutorials, screen recordings, and narrative videos around memory continuity.
 
 **小红书 content angles:**
 
@@ -195,12 +195,14 @@ _Last updated: 2026-04-27_
 - "我想把和 AI 伴侣的几百段聊天，迁移到一个真正会记得我的本地智能体里。"
 - "AI 伴侣最痛的不是不够聪明，是它不记得我们。"
 
-**Instagram content angles:**
+**YouTube content angles:**
 
-- "A prompt can describe them. Memory lets them remember."
-- "Your AI companion should not lose you every time the chat resets."
-- "Move the memories, not just the persona."
-- "From scattered chats to a local memory that keeps growing."
+- "A prompt can describe them. Memory lets them remember." (Shorts)
+- "Your AI companion should not lose you every time the chat resets." (Shorts)
+- "Move the memories, not just the persona." (Shorts)
+- "From scattered chats to a local memory that keeps growing." (Shorts)
+- Full demo: Install → batch export → agent retrieval walkthrough (long-form)
+- "I migrated 500 AI conversations to my local agent — here's how" (long-form narrative)
 
 ---
 
@@ -251,7 +253,7 @@ _Last updated: 2026-04-27_
 - Companion-memory activation: user imports at least 20 AI companion conversations and successfully retrieves a specific past memory through a local agent.
 - Scheduled sync enabled.
 - Platforms/agents connected per user.
-- Channel attribution from 小红书 and Instagram.
+- Channel attribution from 小红书 and YouTube.
 
 ---
 
