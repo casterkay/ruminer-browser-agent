@@ -143,7 +143,7 @@ _Last updated: 2026-04-27_
 
 **Glossary:**
 | Term | Meaning |
-|------|---------|
+| --------------- | -------------------------------------------------------------------------------------- |
 | Vendor lock-in | Conversations are trapped on each AI platform, can't be moved to other tools or agents |
 | Batch export | Export all past conversations across all platforms at once, not one by one |
 | Memory store | Local folder/database of exported conversations, searchable by AI agents |
@@ -167,7 +167,7 @@ _Last updated: 2026-04-27_
 **Metrics:**
 
 - 5+ AI chat platforms supported/planned (ChatGPT, Gemini, Claude, DeepSeek, and more)
-- 3+ AI agents compatible/planned (Claude Code, OpenClaw, and more)
+- 3+ AI agents compatible/planned (Claude Code, OpenClaw, Hermes, and more)
 - Batch export replaces one-by-one manual export
 - Local-first - conversations export to files the user owns
 - Zero new memory-store lock-in - markdown files remain portable
@@ -178,7 +178,7 @@ _Last updated: 2026-04-27_
 
 **Value themes:**
 | Theme | Proof |
-|-------|-------|
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | No more lost conversations | Batch export conversations across platforms in one go, then schedule automatic sync so new conversations are captured continuously |
 | Your data, your tools | Local-first architecture: conversations export to markdown files you own. No mandatory cloud memory database, no new vendor lock-in |
 | Your AI agent has a memory | Agent-ready memory store - ask your agent about a past discussion and get answers with citations to original messages |
