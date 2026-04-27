@@ -148,13 +148,13 @@
 
         <div class="grid gap-3 px-5 py-4 md:grid-cols-3">
           <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
-            Sign in with Google or magic link in a normal hosted browser tab.
+            Create and edit unlimited AI-powered automation tailored to your daily tasks.
           </div>
           <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
-            Checkout happens only after identity is attached, so payment friction stays low.
+            Execute your workflows entirely on your own device for maximum privacy.
           </div>
           <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
-            Workflow data stays local. The extension only consumes the entitlement snapshot.
+            Cancel anytime with transparent, hassle-free subscription management.
           </div>
         </div>
 
@@ -1190,26 +1190,26 @@ const workflowAccessTitle = computed(() => {
   }
 
   if (props.workflowAccess.status === 'free') {
-    return 'Ruminer Pro turns workflows from teaser mode into execution';
+    return 'Automate your browser with AI-powered workflows';
   }
 
-  return 'Sign in to unlock full features';
+  return 'Unlock the full power of your browser agent';
 });
 
 const workflowAccessBody = computed(() => {
   if (props.workflowAccess.syncing) {
-    return 'A hosted verification tab is already waiting. Finish identity and billing there, then this tab will unlock automatically when the background sync completes.';
+    return 'A verification tab is waiting for you. Please complete the sign-in process there, and this tab will unlock automatically.';
   }
 
   if (props.workflowAccess.blockReason === 'billing_recovery_required') {
-    return 'Your account is connected, but workflow execution is paused until the Pro subscription payment issue is resolved.';
+    return 'We encountered an issue with your Ruminer Pro subscription payment. Please update your billing details to resume using workflows.';
   }
 
   if (props.workflowAccess.status === 'free') {
-    return 'Your Ruminer account is connected, but workflow creation, editing, scheduling, and execution stay disabled until Ruminer Pro is active.';
+    return 'Your account is active. Upgrade to Ruminer Pro to unlock unlimited workflows, advanced automations, and priority execution.';
   }
 
-  return 'Workflows stay visible so the value is obvious, but every workflow control remains locked until this browser session is attached to a Ruminer account and an active Pro subscription.';
+  return 'Automate your daily repetitive tasks with a single click. Upgrade to Ruminer Pro to create, edit, and run unlimited custom workflows.';
 });
 
 const workflowAccessIdentity = computed(() => {
