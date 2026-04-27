@@ -233,16 +233,7 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
-  app/openclaw-extensions/evermemos:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.15.3
-        version: 22.19.11
-      typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
-
-  app/openclaw-extensions/mcp-client:
+  app/openclaw-mcp-client:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1

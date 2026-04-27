@@ -139,6 +139,27 @@ In the `Settings` tab in Ruminer side panel:
 - **Memory Directory**
   - Local path to your Markdown memory folder (e.g. `~/Documents/my-second-brain`)
 
+### Hosted auth and billing URL
+
+Workflow unlock now relies on the hosted Ruminer web app in `landing-page` for Better Auth + Stripe.
+The extension opens that app for sign-in, checkout, and account management, then receives a browser-bound
+access snapshot back through the background service worker.
+
+- Set `WXT_PUBLIC_RUMINER_WEB_URL` to your hosted web app origin when building or running the extension.
+- `VITE_RUMINER_WEB_URL` is also accepted as a fallback alias if you already use that naming in local env files.
+- If neither env var is set, the extension defaults to `http://localhost:3000`.
+
+Local dev example:
+
+```bash
+cd landing-page
+pnpm install
+pnpm dev
+
+cd ../app/chrome-extension
+WXT_PUBLIC_RUMINER_WEB_URL=http://localhost:3000 pnpm dev
+```
+
 ## Verify It Works
 
 1. **MCP tool check**:

@@ -30,7 +30,12 @@
           <span class="tip">工作流可视化编排</span>
         </div>
         <div class="right">
-          <button class="top-btn" @click="exportFlow" title="导出 JSON">
+          <button
+            class="top-btn"
+            :disabled="builderLocked"
+            @click="exportFlow"
+            :title="builderLocked ? builderLockedReason : '导出 JSON'"
+          >
             <svg
               width="14"
               height="14"
@@ -43,7 +48,7 @@
             </svg>
             导出
           </button>
-          <label class="top-btn import" title="导入 JSON">
+          <label class="top-btn import" :title="builderLocked ? builderLockedReason : '导入 JSON'">
             <svg
               width="14"
               height="14"
@@ -55,9 +60,19 @@
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
             </svg>
             导入
-            <input type="file" accept="application/json" @change="onImport" />
+            <input
+              type="file"
+              accept="application/json"
+              :disabled="builderLocked"
+              @change="onImport"
+            />
           </label>
-          <button class="top-btn" @click="openRename" title="重命名工作流">
+          <button
+            class="top-btn"
+            :disabled="builderLocked"
+            @click="openRename"
+            :title="builderLocked ? builderLockedReason : '重命名工作流'"
+          >
             <svg
               width="14"
               height="14"
@@ -74,8 +89,9 @@
           <button
             class="top-btn"
             :class="{ active: triggerPanelVisible }"
-            @click="triggerPanelVisible = !triggerPanelVisible"
-            title="管理触发器"
+            :disabled="builderLocked"
+            @click="toggleTriggerPanel"
+            :title="builderLocked ? builderLockedReason : '管理触发器'"
           >
             <svg
               width="14"
@@ -92,9 +108,9 @@
           <span class="divider-vert" />
           <button
             class="top-btn warn"
-            :disabled="!selectedId"
+            :disabled="!selectedId || builderLocked"
             @click="runFromSelected"
-            title="从选中节点回放"
+            :title="builderLocked ? builderLockedReason : '从选中节点回放'"
           >
             <svg
               width="14"
@@ -108,7 +124,12 @@
             </svg>
             从选中运行
           </button>
-          <button class="top-btn primary" @click="runAll" title="从头回放整流">
+          <button
+            class="top-btn primary"
+            :disabled="builderLocked"
+            @click="runAll"
+            :title="builderLocked ? builderLockedReason : '从头回放整流'"
+          >
             <svg
               width="14"
               height="14"
@@ -125,8 +146,10 @@
 
           <button
             class="top-btn success"
-            :disabled="isBuiltinFlow"
-            :title="isBuiltinFlow ? '内置工作流不可编辑' : '保存'"
+            :disabled="isBuiltinFlow || builderLocked"
+            :title="
+              isBuiltinFlow ? '内置工作流不可编辑' : builderLocked ? builderLockedReason : '保存'
+            "
             @click="save"
           >
             <svg
@@ -179,14 +202,19 @@
       />
 
       <TriggerPanel
-        v-if="triggerPanelVisible && store.flowLocal?.id"
+        v-if="triggerPanelVisible && store.flowLocal?.id && !builderLocked"
         class="floating-trigger"
         :flow-id="store.flowLocal.id"
         @close="triggerPanelVisible = false"
       />
 
       <div class="bottom-toolbar">
-        <button class="toolbar-btn" @click="store.undo" title="撤销 (⌘/Ctrl+Z)">
+        <button
+          class="toolbar-btn"
+          :disabled="builderLocked"
+          @click="store.undo"
+          :title="builderLocked ? builderLockedReason : '撤销 (⌘/Ctrl+Z)'"
+        >
           <svg
             width="16"
             height="16"
@@ -198,7 +226,12 @@
             <path d="M3 7v6h6M21 17a9 9 0 00-9-9 9 9 0 00-9 9" />
           </svg>
         </button>
-        <button class="toolbar-btn" @click="store.redo" title="重做 (⌘/Ctrl+Shift+Z)">
+        <button
+          class="toolbar-btn"
+          :disabled="builderLocked"
+          @click="store.redo"
+          :title="builderLocked ? builderLockedReason : '重做 (⌘/Ctrl+Shift+Z)'"
+        >
           <svg
             width="16"
             height="16"
@@ -211,7 +244,12 @@
           </svg>
         </button>
         <span class="toolbar-divider" />
-        <button class="toolbar-btn" @click="store.layoutAuto" title="自动排版">
+        <button
+          class="toolbar-btn"
+          :disabled="builderLocked"
+          @click="store.layoutAuto"
+          :title="builderLocked ? builderLockedReason : '自动排版'"
+        >
           <svg
             width="16"
             height="16"
@@ -226,7 +264,12 @@
             <rect x="3" y="14" width="7" height="7" rx="1" />
           </svg>
         </button>
-        <button class="toolbar-btn" @click="fitAll" title="自适应视图">
+        <button
+          class="toolbar-btn"
+          :disabled="builderLocked"
+          @click="fitAll"
+          :title="builderLocked ? builderLockedReason : '自适应视图'"
+        >
           <svg
             width="16"
             height="16"
@@ -240,6 +283,37 @@
             />
           </svg>
         </button>
+      </div>
+
+      <div v-if="builderLocked" class="builder-access-overlay">
+        <div class="builder-access-card">
+          <div class="builder-access-eyebrow">Ruminer Pro</div>
+          <h2>{{ builderAccessTitle }}</h2>
+          <p>{{ builderAccessBody }}</p>
+          <p v-if="builderAccessIdentity" class="builder-access-identity">
+            {{ builderAccessIdentity }}
+          </p>
+          <div class="builder-access-actions">
+            <button class="builder-access-primary" @click="workflowAccess.startLink()">
+              {{ builderCtaLabel }}
+            </button>
+            <button
+              v-if="workflowAccessState.status !== 'guest'"
+              class="builder-access-secondary"
+              @click="workflowAccess.openAccount()"
+            >
+              管理账号
+            </button>
+          </div>
+          <div class="builder-access-grid">
+            <div class="builder-access-pill">登录在托管页面完成，扩展只接收权限快照。</div>
+            <div class="builder-access-pill">升级后当前浏览器会自动解锁，无需复制 token。</div>
+            <div class="builder-access-pill">未解锁前，编辑、触发器和运行入口都会保持只读。</div>
+          </div>
+          <div v-if="workflowAccessState.error" class="builder-access-error">
+            {{ workflowAccessState.error }}
+          </div>
+        </div>
       </div>
     </div>
     <!-- simple toast container -->
@@ -300,6 +374,7 @@ import Sidebar from '@/entrypoints/popup/components/builder/components/Sidebar.v
 import TriggerPanel from '@/entrypoints/popup/components/builder/components/TriggerPanel.vue';
 import { validateFlow } from '@/entrypoints/popup/components/builder/model/validation';
 import { useBuilderStore } from '@/entrypoints/popup/components/builder/store/useBuilderStore';
+import { useWorkflowAccess } from '@/entrypoints/sidepanel/composables/useWorkflowAccess';
 
 const title = ref('工作流编辑器');
 // theme state: persisted in localStorage and default to system preference
@@ -314,6 +389,7 @@ function toggleTheme() {
   } catch {}
 }
 const store = useBuilderStore();
+const workflowAccess = useWorkflowAccess();
 const isBootstrapping = ref(true);
 const isBuiltinFlow = computed(() => {
   const tags = (store.flowLocal as any)?.meta?.tags;
@@ -324,6 +400,44 @@ const isBuiltinFlow = computed(() => {
 const rpc = useRRV3Rpc({
   autoConnect: true,
   onError: (message) => pushToast(message, 'error'),
+});
+
+const workflowAccessState = computed(() => workflowAccess.state.value);
+const builderCtaLabel = computed(() => workflowAccess.ctaLabel.value);
+const builderLocked = computed(() => workflowAccess.isLocked.value);
+const builderLockedReason = computed(() => {
+  if (workflowAccessState.value.syncing) {
+    return '先完成当前浏览器的权限绑定';
+  }
+  if (workflowAccessState.value.status === 'free') {
+    return '升级到 Ruminer Pro 后才能使用工作流编辑器';
+  }
+  return '登录并绑定 Ruminer Pro 后才能使用工作流编辑器';
+});
+const builderAccessTitle = computed(() => {
+  if (workflowAccessState.value.syncing) {
+    return '在浏览器里完成 Ruminer 绑定';
+  }
+  if (workflowAccessState.value.status === 'free') {
+    return 'Ruminer Pro 才会解锁工作流编辑器';
+  }
+  return '先登录，再使用工作流编辑器';
+});
+const builderAccessBody = computed(() => {
+  if (workflowAccessState.value.syncing) {
+    return '托管链接已经打开。完成登录和订阅确认后，这个编辑器会自动从只读状态切换为可编辑。';
+  }
+  if (workflowAccessState.value.status === 'free') {
+    return '当前账号已连接，但工作流编辑、触发器管理、保存和运行仍然会保持关闭，直到 Ruminer Pro 生效。';
+  }
+  return '工作流结构仍然可以作为预览展示，但在账号和 Pro 权限绑定到这个浏览器之前，所有编辑和运行入口都会保持禁用。';
+});
+const builderAccessIdentity = computed(() => {
+  const email = workflowAccessState.value.user?.email;
+  if (!email) return null;
+  return workflowAccessState.value.status === 'free'
+    ? `当前已连接账号：${email}`
+    : `正在为 ${email} 完成浏览器绑定`;
 });
 
 // toast event bus (listen to rr_toast)
@@ -358,7 +472,7 @@ function getQuery(): Record<string, string> {
 
 async function bootstrap() {
   const q = getQuery();
-  if (q.openTriggers === '1') {
+  if (q.openTriggers === '1' && !builderLocked.value) {
     triggerPanelVisible.value = true;
   }
   if (q.flowId) {
@@ -483,14 +597,21 @@ const renameVisible = ref(false);
 const renameName = ref('');
 const renameDesc = ref('');
 function openRename() {
+  if (builderLocked.value) return;
   renameName.value = store.flowLocal.name || '';
   renameDesc.value = (store.flowLocal as any).description || '';
   renameVisible.value = true;
 }
 function applyRename() {
+  if (builderLocked.value) return;
   store.flowLocal.name = renameName.value.trim();
   (store.flowLocal as any).description = renameDesc.value;
   renameVisible.value = false;
+}
+
+function toggleTriggerPanel() {
+  if (builderLocked.value) return;
+  triggerPanelVisible.value = !triggerPanelVisible.value;
 }
 
 /**
@@ -499,6 +620,11 @@ function applyRename() {
  */
 async function save(): Promise<FlowV3 | null> {
   try {
+    if (builderLocked.value) {
+      pushToast(builderLockedReason.value, 'warn');
+      return null;
+    }
+
     if (isBuiltinFlow.value) {
       pushToast('内置工作流不可编辑/保存', 'warn');
       return null;
@@ -719,6 +845,11 @@ async function syncTriggersAndSchedules(flowId: string, nodes: unknown[]) {
 
 async function exportFlow() {
   try {
+    if (builderLocked.value) {
+      pushToast(builderLockedReason.value, 'warn');
+      return;
+    }
+
     // Save first to ensure latest changes are persisted
     const saved = await save();
     if (!saved) return;
@@ -738,6 +869,13 @@ async function exportFlow() {
 }
 
 async function onImport(e: Event) {
+  if (builderLocked.value) {
+    pushToast(builderLockedReason.value, 'warn');
+    const input = e.target as HTMLInputElement;
+    input.value = '';
+    return;
+  }
+
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
@@ -796,6 +934,11 @@ async function runFromSelected() {
   if (!selectedId.value || !store.flowLocal?.id) return;
 
   try {
+    if (builderLocked.value) {
+      pushToast(builderLockedReason.value, 'warn');
+      return;
+    }
+
     const saved = await save();
     if (!saved) return;
 
@@ -823,6 +966,11 @@ async function runAll() {
   if (!store.flowLocal?.id) return;
 
   try {
+    if (builderLocked.value) {
+      pushToast(builderLockedReason.value, 'warn');
+      return;
+    }
+
     const saved = await save();
     if (!saved) return;
 
@@ -837,6 +985,8 @@ async function runAll() {
 
 // Hotkeys
 function onKey(e: KeyboardEvent) {
+  if (builderLocked.value) return;
+
   const id = selectedId.value;
   const isMeta = e.metaKey || e.ctrlKey;
   // Do not trigger global hotkeys when user is typing in an input control
@@ -890,6 +1040,7 @@ let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleAutoSave() {
   if (isBootstrapping.value) return;
+  if (builderLocked.value) return;
   if (isBuiltinFlow.value) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -914,6 +1065,11 @@ watch(
   scheduleAutoSave,
   { deep: true },
 );
+watch(builderLocked, (locked) => {
+  if (!locked) return;
+  triggerPanelVisible.value = false;
+  renameVisible.value = false;
+});
 
 // Fallback suggestion from run logs
 const fallbackNotice = ref<{ nodeId: string; type: string; prevIndex: number } | null>(null);
@@ -970,6 +1126,131 @@ function focusNode(id: string) {
   display: flex;
   flex-direction: column;
   color: var(--rr-text);
+}
+
+.builder-access-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(7, 10, 18, 0.34);
+  backdrop-filter: blur(10px);
+}
+
+.builder-access-card {
+  width: min(860px, 100%);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 247, 213, 0.98) 0%,
+    rgba(255, 255, 255, 0.98) 52%,
+    rgba(233, 245, 247, 0.98) 100%
+  );
+  box-shadow: 0 24px 60px -28px rgba(15, 23, 42, 0.5);
+  color: #111827;
+}
+
+.builder-access-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.18);
+  color: #8a5a00;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.builder-access-card h2 {
+  margin: 14px 0 8px;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.builder-access-card p {
+  margin: 0;
+  max-width: 60ch;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.builder-access-identity {
+  margin-top: 14px !important;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155 !important;
+}
+
+.builder-access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.builder-access-primary,
+.builder-access-secondary {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.builder-access-primary {
+  background: #111827;
+  color: #fff;
+}
+
+.builder-access-secondary {
+  background: rgba(255, 255, 255, 0.82);
+  color: #111827;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.builder-access-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.builder-access-pill {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.builder-access-error {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .builder-access-card {
+    padding: 22px;
+  }
+
+  .builder-access-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .topbar {
   position: absolute;

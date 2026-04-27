@@ -8,6 +8,7 @@ import {
   StorageBackedEventsBus,
   type EventsBus,
 } from '@/entrypoints/background/record-replay-v3/engine/transport/events-bus';
+import { assertWorkflowAccess } from '@/entrypoints/background/workflow-access';
 
 import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 import { getConversationStates } from '../conversation-ledger';
@@ -295,6 +296,12 @@ async function handleGetConversationStates(
 }
 
 async function handleEnqueueRuns(req: EnqueueRunsRequest): Promise<unknown> {
+  try {
+    await assertWorkflowAccess();
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
   const rt = getV3Runtime();
   const storage = rt?.storage ?? fallbackStoragePort ?? (fallbackStoragePort = createStoragePort());
   const events =

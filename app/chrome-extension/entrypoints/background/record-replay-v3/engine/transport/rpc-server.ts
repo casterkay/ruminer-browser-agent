@@ -3,32 +3,48 @@
  * @description Handles RPC requests from UI via chrome.runtime.Port
  */
 
-import type { ISODateTimeString, JsonObject, JsonValue } from '../../domain/json';
-import type { EdgeId, FlowId, NodeId, RunId, TriggerId } from '../../domain/ids';
 import type { DebuggerCommand } from '../../domain/debug';
 import type { RunEvent } from '../../domain/events';
-import type { FlowV3, NodeV3, EdgeV3 } from '../../domain/flow';
+import type { EdgeV3, FlowV3, NodeV3 } from '../../domain/flow';
 import { FLOW_SCHEMA_VERSION as CURRENT_FLOW_SCHEMA_VERSION } from '../../domain/flow';
-import type { VariableDefinition } from '../../domain/variables';
+import type { EdgeId, FlowId, NodeId, RunId, TriggerId } from '../../domain/ids';
+import type { ISODateTimeString, JsonObject, JsonValue } from '../../domain/json';
 import type { TriggerKind, TriggerSpec } from '../../domain/triggers';
-import type { StoragePort } from '../storage/storage-port';
-import type { EventsBus } from './events-bus';
+import type { VariableDefinition } from '../../domain/variables';
 import type { DebugController, RunnerRegistry } from '../kernel/debug-controller';
-import type { RunScheduler } from '../queue/scheduler';
-import type { QueueItemStatus } from '../queue/queue';
-import { enqueueRun } from '../queue/enqueue-run';
-import { ensureBuiltinFlows } from '../plugins/ruminer-ingest/builtin-flows';
-import type { TriggerManager } from '../triggers/trigger-manager';
 import { requestCancel } from '../kernel/run-cancel-registry';
+import { ensureBuiltinFlows } from '../plugins/ruminer-ingest/builtin-flows';
+import { enqueueRun } from '../queue/enqueue-run';
+import type { QueueItemStatus } from '../queue/queue';
+import type { RunScheduler } from '../queue/scheduler';
+import type { StoragePort } from '../storage/storage-port';
+import type { TriggerManager } from '../triggers/trigger-manager';
+import type { EventsBus } from './events-bus';
 import {
   RR_V3_PORT_NAME,
-  isRpcRequest,
-  createRpcResponseOk,
-  createRpcResponseErr,
   createRpcEventMessage,
-  type RpcRequest,
+  createRpcResponseErr,
+  createRpcResponseOk,
+  isRpcRequest,
   type RpcMethod,
+  type RpcRequest,
 } from './rpc';
+
+const WORKFLOW_ACCESS_REQUIRED_METHODS = new Set<RpcMethod>([
+  'rr_v3.saveFlow',
+  'rr_v3.deleteFlow',
+  'rr_v3.createTrigger',
+  'rr_v3.updateTrigger',
+  'rr_v3.deleteTrigger',
+  'rr_v3.enableTrigger',
+  'rr_v3.disableTrigger',
+  'rr_v3.fireTrigger',
+  'rr_v3.enqueueRun',
+  'rr_v3.resumeQueue',
+  'rr_v3.debug',
+  'rr_v3.startRun',
+  'rr_v3.resumeRun',
+]);
 
 /**
  * RPC Server 配置
@@ -44,6 +60,8 @@ export interface RpcServerConfig {
   generateRunId?: () => RunId;
   /** 时间源（用于测试注入） */
   now?: () => number;
+  /** Optional runtime entitlement guard injected by the background composition root. */
+  assertWorkflowAccess?: (method: RpcMethod) => Promise<void>;
 }
 
 /**
@@ -72,6 +90,7 @@ export class RpcServer {
   private readonly runners?: RunnerRegistry;
   private readonly scheduler?: RunScheduler;
   private readonly triggerManager?: TriggerManager;
+  private readonly workflowAccessGuard?: (method: RpcMethod) => Promise<void>;
   private readonly generateRunId: () => RunId;
   private readonly now: () => number;
   private readonly connections = new Map<string, PortConnection>();
@@ -84,6 +103,7 @@ export class RpcServer {
     this.runners = config.runners;
     this.scheduler = config.scheduler;
     this.triggerManager = config.triggerManager;
+    this.workflowAccessGuard = config.assertWorkflowAccess;
     this.generateRunId = config.generateRunId ?? defaultGenerateRunId;
     this.now = config.now ?? Date.now;
   }
@@ -374,6 +394,8 @@ export class RpcServer {
   private async handleRequest(request: RpcRequest, conn: PortConnection): Promise<JsonValue> {
     const { method, params } = request;
 
+    await this.assertWorkflowAccess(method);
+
     switch (method) {
       case 'rr_v3.listRuns': {
         const runs = await this.storage.runs.list();
@@ -510,6 +532,14 @@ export class RpcServer {
       default:
         throw new Error(`Unknown method: ${method}`);
     }
+  }
+
+  private async assertWorkflowAccess(method: RpcMethod): Promise<void> {
+    if (!WORKFLOW_ACCESS_REQUIRED_METHODS.has(method)) {
+      return;
+    }
+
+    await this.workflowAccessGuard?.(method);
   }
 
   // ===== Flow Management Handlers =====

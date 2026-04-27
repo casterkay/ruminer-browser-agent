@@ -53,9 +53,16 @@
             class="workflow-schedule-chip"
             :class="{
               'workflow-schedule-chip-active': scheduleEnabled,
+              'workflow-schedule-chip-disabled': props.actionsDisabled,
             }"
-            :style="scheduleChipStyle"
+            :style="props.actionsDisabled ? scheduleChipDisabledStyle : scheduleChipStyle"
+            :disabled="props.actionsDisabled"
             @click.stop="toggleScheduleMenu()"
+            :title="
+              props.actionsDisabled
+                ? props.disabledReason || 'Workflow access is locked'
+                : 'Schedule workflow'
+            "
           >
             <svg
               viewBox="0 0 24 24"
@@ -189,9 +196,15 @@
           v-else
           class="workflow-action workflow-action-primary"
           :style="actionPrimaryStyle"
-          :disabled="props.isLaunching"
+          :disabled="props.isLaunching || props.actionsDisabled"
           @click.stop="$emit('run', flow.id)"
-          :title="props.isLaunching ? 'Starting...' : 'Run workflow'"
+          :title="
+            props.actionsDisabled
+              ? props.disabledReason || 'Workflow access is locked'
+              : props.isLaunching
+                ? 'Starting...'
+                : 'Run workflow'
+          "
         >
           <svg
             v-if="props.isLaunching"
@@ -212,8 +225,13 @@
         <button
           class="workflow-action"
           :style="actionStyle"
+          :disabled="props.actionsDisabled"
           @click.stop="$emit('edit', flow.id)"
-          title="Edit workflow"
+          :title="
+            props.actionsDisabled
+              ? props.disabledReason || 'Workflow access is locked'
+              : 'Edit workflow'
+          "
         >
           <svg
             viewBox="0 0 24 24"
@@ -233,8 +251,13 @@
         <button
           class="workflow-action workflow-action-more"
           :style="actionStyle"
+          :disabled="props.actionsDisabled"
           @click.stop="toggleMoreMenu"
-          title="More actions"
+          :title="
+            props.actionsDisabled
+              ? props.disabledReason || 'Workflow access is locked'
+              : 'More actions'
+          "
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <circle cx="12" cy="5" r="2" />
@@ -311,6 +334,8 @@ const props = defineProps<{
   activeRunProgress?: string | null;
   scheduleTrigger?: { id: string; enabled?: boolean; cron?: string } | null;
   isLaunching?: boolean;
+  actionsDisabled?: boolean;
+  disabledReason?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -455,6 +480,7 @@ function handleClickOutside(e: MouseEvent) {
 }
 
 function toggleScheduleMenu() {
+  if (props.actionsDisabled) return;
   showScheduleMenu.value = !showScheduleMenu.value;
 }
 
@@ -467,6 +493,7 @@ onUnmounted(() => {
 });
 
 function toggleMoreMenu() {
+  if (props.actionsDisabled) return;
   showMoreMenu.value = !showMoreMenu.value;
 }
 

@@ -1,6 +1,12 @@
 import { ERROR_MESSAGES } from '@/common/constants';
 import { createErrorResponse } from '@/common/tool-handler';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { recordingSession } from '../record-replay/recording/session-manager';
+import {
+  formatWorkflowAccessDeniedReason,
+  getWorkflowAccessDenialReason,
+  getWorkflowAccessStateSnapshot,
+} from '../workflow-access';
 import * as browserTools from './browser';
 import { flowListTool, flowRecordStartTool, flowRecordStopTool, flowSaveTool } from './flow-learn';
 import { emosReadMemoriesTool, emosSearchMemoriesTool } from './memory';
@@ -19,6 +25,18 @@ const tools = {
 } as any;
 const toolsMap = new Map(Object.values(tools).map((tool: any) => [tool.name, tool]));
 
+const WORKFLOW_TOOL_NAMES = new Set<string>([
+  TOOL_NAMES.RECORD_REPLAY.RECORD_START,
+  TOOL_NAMES.RECORD_REPLAY.RECORD_STOP,
+  TOOL_NAMES.RECORD_REPLAY.FLOW_SAVE,
+  TOOL_NAMES.RECORD_REPLAY.FLOW_LIST,
+  TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
+]);
+
+function isWorkflowToolName(name: string): boolean {
+  return name.startsWith('flow.') || WORKFLOW_TOOL_NAMES.has(name);
+}
+
 /**
  * Tool call parameter interface
  */
@@ -34,6 +52,14 @@ export const handleCallTool = async (param: ToolCallParam) => {
   const tool = toolsMap.get(param.name);
   if (!tool) {
     return createErrorResponse(`Tool ${param.name} not found`);
+  }
+
+  if (isWorkflowToolName(param.name)) {
+    const access = await getWorkflowAccessStateSnapshot({ refreshIfStale: true });
+    const reason = getWorkflowAccessDenialReason(access);
+    if (reason) {
+      return createErrorResponse(formatWorkflowAccessDeniedReason(reason));
+    }
   }
 
   try {

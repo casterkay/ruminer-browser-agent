@@ -445,16 +445,15 @@ app/
 │   │   └── util
 │   │       └── logger.ts
 │   └── tsconfig.json
-└── openclaw-extensions
-    └── mcp-client
-        ├── index.ts
-        ├── LICENSE
-        ├── openclaw-plugin-sdk.d.ts
-        ├── openclaw.plugin.json
-        ├── package.json
-        ├── README.md
-        ├── scripts
-        │   └── check-versions.js
-        └── tsconfig.json
+└── openclaw-mcp-client
+    ├── index.ts
+    ├── LICENSE
+    ├── openclaw-plugin-sdk.d.ts
+    ├── openclaw.plugin.json
+    ├── package.json
+    ├── README.md
+    ├── scripts
+    │   └── check-versions.js
+    └── tsconfig.json
 
-99 directories, 334 files
+98 directories, 334 files

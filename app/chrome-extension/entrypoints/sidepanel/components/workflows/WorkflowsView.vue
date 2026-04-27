@@ -56,7 +56,9 @@
         <button
           class="flex-shrink-0 px-3 py-2 text-sm font-medium"
           :style="newButtonStyle"
+          :disabled="workflowsLocked"
           @click="$emit('create')"
+          :title="workflowsLocked ? workflowLockedReason : 'Create workflow'"
         >
           <span class="flex items-center gap-1">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,6 +97,76 @@
 
     <!-- Scrollable Content -->
     <div class="flex-1 overflow-y-auto ac-scroll">
+      <div
+        v-if="workflowsLocked"
+        class="mx-4 mt-4 overflow-hidden rounded-[24px] border"
+        :style="paywallCardStyle"
+      >
+        <div class="border-b px-5 py-5" :style="paywallHeaderStyle">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="max-w-[32rem]">
+              <div
+                class="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
+                :style="paywallEyebrowStyle"
+              >
+                Ruminer Pro
+              </div>
+              <div class="text-lg font-semibold" :style="{ color: 'var(--ac-text)' }">
+                {{ workflowAccessTitle }}
+              </div>
+              <div class="mt-2 max-w-[32rem] text-sm leading-6" :style="paywallBodyStyle">
+                {{ workflowAccessBody }}
+              </div>
+              <div
+                v-if="workflowAccessIdentity"
+                class="mt-3 text-xs font-medium"
+                :style="{ color: 'var(--ac-text-subtle)' }"
+              >
+                {{ workflowAccessIdentity }}
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                class="px-4 py-2.5 text-sm font-semibold"
+                :style="paywallPrimaryButtonStyle"
+                @click="$emit('unlockAccess')"
+              >
+                {{ workflowAccessCtaLabel }}
+              </button>
+              <button
+                v-if="props.workflowAccess.status !== 'guest'"
+                class="px-4 py-2.5 text-sm font-medium"
+                :style="paywallSecondaryButtonStyle"
+                @click="$emit('manageAccess')"
+              >
+                Manage account
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-3 px-5 py-4 md:grid-cols-3">
+          <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
+            Sign in with Google or magic link in a normal hosted browser tab.
+          </div>
+          <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
+            Checkout happens only after identity is attached, so payment friction stays low.
+          </div>
+          <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
+            Workflow data stays local. The extension only consumes the entitlement snapshot.
+          </div>
+        </div>
+
+        <div
+          v-if="props.workflowAccess.error"
+          class="mx-5 mb-5 rounded-2xl border px-4 py-3 text-sm"
+          :style="paywallErrorStyle"
+        >
+          {{ props.workflowAccess.error }}
+        </div>
+      </div>
+
       <!-- Empty State -->
       <div
         v-if="filteredFlows.length === 0"
@@ -130,10 +202,10 @@
         <button
           v-if="!searchQuery"
           class="px-4 py-2 text-sm font-medium"
-          :style="newButtonStyle"
-          @click="$emit('create')"
+          :style="workflowsLocked ? paywallPrimaryButtonStyle : newButtonStyle"
+          @click="workflowsLocked ? $emit('unlockAccess') : $emit('create')"
         >
-          Create Workflow
+          {{ workflowsLocked ? workflowAccessCtaLabel : 'Create Workflow' }}
         </button>
       </div>
 
@@ -147,6 +219,8 @@
           :active-run-progress="activeRunProgressByFlowId.get(flow.id) ?? null"
           :schedule-trigger="scheduleTriggerByFlowId.get(flow.id) ?? null"
           :is-launching="props.runningFlowIds?.has(flow.id) ?? false"
+          :actions-disabled="workflowsLocked"
+          :disabled-reason="workflowLockedReason"
           @run="$emit('run', $event)"
           @stop-run="$emit('stopRun', $event)"
           @edit="$emit('edit', $event)"
@@ -698,6 +772,7 @@ import {
   type ChatPlatform,
 } from '@/common/chat-platforms';
 import { STORAGE_KEYS } from '@/common/constants';
+import { hasWorkflowAccess, type WorkflowAccessState } from '@/common/workflow-access';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import WorkflowListItem from './WorkflowListItem.vue';
 
@@ -770,6 +845,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 const props = defineProps<{
   isActive: boolean;
+  workflowAccess: WorkflowAccessState;
   flows: FlowLite[];
   runs: RunLite[];
   triggers: Trigger[];
@@ -787,6 +863,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'refresh'): void;
+  (e: 'unlockAccess'): void;
+  (e: 'manageAccess'): void;
   (e: 'create'): void;
   (e: 'run', id: string): void;
   (e: 'stopRun', payload: { runId: string; status: string }): void;
@@ -1100,6 +1178,84 @@ const filteredFlows = computed(() => {
   });
 });
 
+const workflowsLocked = computed(() => !hasWorkflowAccess(props.workflowAccess));
+
+const workflowAccessTitle = computed(() => {
+  if (props.workflowAccess.syncing) {
+    return 'Finish linking Ruminer in the browser';
+  }
+
+  if (props.workflowAccess.blockReason === 'billing_recovery_required') {
+    return 'Ruminer Pro billing needs attention';
+  }
+
+  if (props.workflowAccess.status === 'free') {
+    return 'Ruminer Pro turns workflows from teaser mode into execution';
+  }
+
+  return 'Sign in to unlock workflows';
+});
+
+const workflowAccessBody = computed(() => {
+  if (props.workflowAccess.syncing) {
+    return 'A hosted verification tab is already waiting. Finish identity and billing there, then this tab will unlock automatically when the background sync completes.';
+  }
+
+  if (props.workflowAccess.blockReason === 'billing_recovery_required') {
+    return 'Your account is connected, but workflow execution is paused until the Pro subscription payment issue is resolved.';
+  }
+
+  if (props.workflowAccess.status === 'free') {
+    return 'Your Ruminer account is connected, but workflow creation, editing, scheduling, and execution stay disabled until Ruminer Pro is active.';
+  }
+
+  return 'Workflows stay visible so the value is obvious, but every workflow control remains locked until this browser session is attached to a Ruminer account and an active Pro subscription.';
+});
+
+const workflowAccessIdentity = computed(() => {
+  if (!props.workflowAccess.user?.email) {
+    return null;
+  }
+
+  if (props.workflowAccess.status === 'free') {
+    return `Signed in as ${props.workflowAccess.user.email}`;
+  }
+
+  return `Linking ${props.workflowAccess.user.email}`;
+});
+
+const workflowAccessCtaLabel = computed(() => {
+  if (props.workflowAccess.syncing) {
+    return 'Open linking tab again';
+  }
+
+  if (props.workflowAccess.blockReason === 'billing_recovery_required') {
+    return 'Update billing';
+  }
+
+  if (props.workflowAccess.status === 'free') {
+    return 'Upgrade to Ruminer Pro';
+  }
+
+  return 'Sign in and unlock workflows';
+});
+
+const workflowLockedReason = computed(() => {
+  if (props.workflowAccess.syncing) {
+    return 'Finish linking this browser first';
+  }
+
+  if (props.workflowAccess.blockReason === 'billing_recovery_required') {
+    return 'Update Ruminer Pro billing to use workflows';
+  }
+
+  if (props.workflowAccess.status === 'free') {
+    return 'Upgrade to Ruminer Pro to use workflows';
+  }
+
+  return 'Sign in to use workflows';
+});
+
 // Helper functions
 function getFlowName(flowId: string): string {
   const flow = props.flows.find((f) => f.id === flowId);
@@ -1235,6 +1391,51 @@ const newButtonStyle = computed(() => ({
   backgroundColor: 'var(--ac-accent)',
   color: 'var(--ac-accent-contrast)',
   borderRadius: 'var(--ac-radius-button)',
+}));
+
+const paywallCardStyle = computed(() => ({
+  borderColor: 'rgba(212, 175, 55, 0.28)',
+  background:
+    'linear-gradient(135deg, rgba(255,247,213,0.96) 0%, rgba(255,255,255,0.98) 52%, rgba(233,245,247,0.98) 100%)',
+  boxShadow: '0 18px 40px -24px rgba(15, 23, 42, 0.35)',
+}));
+
+const paywallHeaderStyle = computed(() => ({
+  borderColor: 'rgba(212, 175, 55, 0.18)',
+}));
+
+const paywallEyebrowStyle = computed(() => ({
+  backgroundColor: 'rgba(212, 175, 55, 0.18)',
+  color: '#8a5a00',
+}));
+
+const paywallBodyStyle = computed(() => ({
+  color: 'var(--ac-text-muted)',
+}));
+
+const paywallPillStyle = computed(() => ({
+  backgroundColor: 'rgba(255, 255, 255, 0.78)',
+  border: '1px solid rgba(15, 23, 42, 0.06)',
+  color: 'var(--ac-text)',
+}));
+
+const paywallPrimaryButtonStyle = computed(() => ({
+  backgroundColor: 'var(--ac-text, #1f2937)',
+  color: 'var(--ac-accent-contrast, #ffffff)',
+  borderRadius: 'var(--ac-radius-button)',
+}));
+
+const paywallSecondaryButtonStyle = computed(() => ({
+  backgroundColor: 'rgba(255,255,255,0.84)',
+  color: 'var(--ac-text)',
+  border: '1px solid rgba(15, 23, 42, 0.08)',
+  borderRadius: 'var(--ac-radius-button)',
+}));
+
+const paywallErrorStyle = computed(() => ({
+  borderColor: '#fecaca',
+  backgroundColor: '#fff1f2',
+  color: '#9f1239',
 }));
 
 const dividerStyle = computed(() => ({

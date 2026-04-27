@@ -3,7 +3,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { STORAGE_KEYS } from '@/common/constants';
 import { initIngestWorkflowRpc } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows/ingest-workflow-rpc';
 import { getConversationEntry } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/conversation-ledger';
+import { resetWorkflowAccessStateCache } from '@/entrypoints/background/workflow-access';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
+
+function hasStorageKey(keys: any, key: string): boolean {
+  return keys === key || (Array.isArray(keys) && keys.includes(key));
+}
+
+function proWorkflowAccessResult() {
+  return {
+    [STORAGE_KEYS.WORKFLOW_ACCESS_STATE]: {
+      status: 'pro',
+      billingState: 'active',
+      workflowAccess: 'allowed',
+      blockReason: null,
+      isActive: true,
+      plan: 'pro',
+      user: { id: 'user_123', email: 'hello@ruminer.app', name: null, image: null },
+      syncing: false,
+      error: null,
+      pendingLink: null,
+      lastSyncedAt: Date.now(),
+    },
+  };
+}
 
 function getLastOnMessageListener(): any {
   const addListener = chrome.runtime.onMessage.addListener as any;
@@ -27,6 +50,7 @@ async function callOnMessage(listener: any, message: unknown): Promise<unknown> 
 describe('ingest workflow rpc', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetWorkflowAccessStateCache();
     (chrome.runtime.onMessage.addListener as any).mockClear?.();
 
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
@@ -44,6 +68,9 @@ describe('ingest workflow rpc', () => {
         return {
           [STORAGE_KEYS.SERVER_STATUS]: { isRunning: true, port: 12306, lastUpdated: Date.now() },
         };
+      }
+      if (hasStorageKey(keys, STORAGE_KEYS.WORKFLOW_ACCESS_STATE)) {
+        return proWorkflowAccessResult();
       }
       return {};
     });
@@ -433,6 +460,9 @@ describe('ingest workflow rpc', () => {
           },
         };
       }
+      if (hasStorageKey(keys, STORAGE_KEYS.WORKFLOW_ACCESS_STATE)) {
+        return proWorkflowAccessResult();
+      }
       return {};
     });
 
@@ -497,6 +527,9 @@ describe('ingest workflow rpc', () => {
             },
           },
         };
+      }
+      if (hasStorageKey(keys, STORAGE_KEYS.WORKFLOW_ACCESS_STATE)) {
+        return proWorkflowAccessResult();
       }
       return {};
     });

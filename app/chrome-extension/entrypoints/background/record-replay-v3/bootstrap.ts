@@ -59,6 +59,7 @@ import { registerRuminerIngestNodes } from './engine/plugins/ruminer-ingest';
 
 import { ensureBuiltinFlows } from '@/entrypoints/background/record-replay-v3/engine/plugins/ruminer-ingest/builtin-flows';
 import { acquireKeepalive } from '../keepalive-manager';
+import { assertWorkflowAccess } from '../workflow-access';
 import { createStoragePort } from './index';
 
 // ==================== Types ====================
@@ -504,6 +505,7 @@ export async function bootstrapV3(): Promise<V3Runtime> {
       runners,
       triggerManager: triggers,
       now,
+      assertWorkflowAccess: () => assertWorkflowAccess(),
     });
 
     // Cleanup helper for error recovery

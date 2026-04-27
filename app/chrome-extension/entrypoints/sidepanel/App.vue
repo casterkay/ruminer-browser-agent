@@ -16,6 +16,7 @@
           :flows="displayFlows"
           :runs="workflows.runs.value"
           :triggers="workflows.triggers.value"
+          :workflow-access="workflowAccess.state.value"
           :progress-by-run-id="workflows.progressByRunId.value"
           :queue-progress="workflows.queueProgress.value"
           :manual-run-ids="manualResultRunIds"
@@ -27,6 +28,8 @@
           :get-run-events="workflows.getRunEvents"
           :on-run-event="workflows.onRunEvent"
           @refresh="handleWorkflowRefresh"
+          @unlock-access="workflowAccess.startLink"
+          @manage-access="workflowAccess.openAccount"
           @create="createFlow"
           @run="runFlow"
           @stop-run="stopRun"
@@ -89,6 +92,7 @@ import FlowArgsModal, { type FlowArgVar } from './components/workflows/FlowArgsM
 import WorkflowsView from './components/workflows/WorkflowsView.vue';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useChatBackendPreference } from './composables/useChatBackendPreference';
+import { useWorkflowAccess } from './composables/useWorkflowAccess';
 import { useWorkflowsV3 } from './composables/useWorkflowsV3';
 
 const ACTIVE_TAB_KEY = 'ruminer.sidepanel.active-tab';
@@ -126,6 +130,7 @@ function parseChatConversationId(url: string): string | null {
 
 const theme = useAgentTheme();
 const chatBackend = useChatBackendPreference();
+const workflowAccess = useWorkflowAccess();
 const activeTab = ref<TabId>('chat');
 const onlyBound = ref(false);
 const openRunId = ref<string | null>(null);
@@ -312,6 +317,10 @@ function requestFlowArgs(input: {
 }
 
 async function runFlow(flowId: string): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   if (runningFlowIds.value.has(flowId)) return;
   runningFlowIds.value = new Set([...runningFlowIds.value, flowId]);
 
@@ -523,6 +532,10 @@ async function pauseQueue(): Promise<void> {
 }
 
 async function resumeQueue(): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   await workflows.resumeQueueWave();
 }
 
@@ -535,6 +548,10 @@ async function scheduleChange(payload: {
   cron: string | null;
   enabled: boolean;
 }): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   if (!payload.enabled || !payload.cron) {
     await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
     return;
@@ -589,7 +606,20 @@ async function scheduleChange(payload: {
   await workflows.upsertCronSchedule(payload.flowId, payload.cron, payload.enabled);
 }
 
-function openBuilder(mode: 'flow' | 'trigger', id?: string): void {
+async function ensureWorkflowAccess(): Promise<boolean> {
+  if (workflowAccess.isUnlocked.value) {
+    return true;
+  }
+
+  await workflowAccess.startLink();
+  return false;
+}
+
+async function openBuilder(mode: 'flow' | 'trigger', id?: string): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   const url = new URL(chrome.runtime.getURL('/builder.html'));
 
   if (mode === 'flow') {
@@ -616,19 +646,27 @@ function openBuilder(mode: 'flow' | 'trigger', id?: string): void {
   void chrome.tabs.create({ url: url.toString() });
 }
 
-function createFlow(): void {
-  openBuilder('flow');
+async function createFlow(): Promise<void> {
+  await openBuilder('flow');
 }
 
-function editFlow(flowId: string): void {
-  openBuilder('flow', flowId);
+async function editFlow(flowId: string): Promise<void> {
+  await openBuilder('flow', flowId);
 }
 
 async function deleteFlow(flowId: string): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   await workflows.deleteFlow(flowId);
 }
 
 async function exportFlow(flowId: string): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   const flow = await workflows.exportFlow(flowId);
   if (!flow) {
     return;
@@ -655,6 +693,10 @@ function toggleRun(runId: string): void {
 }
 
 async function deleteTrigger(triggerId: string): Promise<void> {
+  if (!(await ensureWorkflowAccess())) {
+    return;
+  }
+
   await workflows.deleteTrigger(triggerId);
 }
 

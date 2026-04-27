@@ -1,15 +1,16 @@
-import { NativeMessageType } from 'chrome-mcp-shared';
+import { ERROR_MESSAGES, NATIVE_HOST, STORAGE_KEYS, SUCCESS_MESSAGES } from '@/common/constants';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import { NATIVE_HOST, STORAGE_KEYS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/common/constants';
 import { createErrorResponse } from '@/common/tool-handler';
-import { handleCallTool } from './tools';
-import { listPublished, getFlow } from './record-replay/flow-store';
+import { NativeMessageType } from 'chrome-mcp-shared';
 import { acquireKeepalive } from './keepalive-manager';
+import { getFlow, listPublished } from './record-replay/flow-store';
 import {
   getEffectiveToolSelection,
   isToolAllowedBySelection,
   normalizeToolNameForPolicy,
 } from './tool-selection/resolve';
+import { handleCallTool } from './tools';
+import { getWorkflowAccessDenialReason, getWorkflowAccessStateSnapshot } from './workflow-access';
 
 const LOG_PREFIX = '[NativeHost]';
 
@@ -419,6 +420,16 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
       } else if (message.type === 'rr_list_published_flows' && message.requestId) {
         const requestId = message.requestId;
         try {
+          const access = await getWorkflowAccessStateSnapshot({ refreshIfStale: true });
+          const reason = getWorkflowAccessDenialReason(access);
+          if (reason) {
+            nativePort?.postMessage({
+              responseToRequestId: requestId,
+              payload: { status: 'success', items: [] },
+            });
+            return;
+          }
+
           const published = await listPublished();
           const items = [] as any[];
           for (const p of published) {

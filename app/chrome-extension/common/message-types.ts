@@ -22,6 +22,9 @@ export const BACKGROUND_MESSAGE_TYPES = {
   GET_SERVER_STATUS: 'get_server_status',
   REFRESH_SERVER_STATUS: 'refresh_server_status',
   SERVER_STATUS_CHANGED: 'server_status_changed',
+  GET_WORKFLOW_ACCESS_STATE: 'get_workflow_access_state',
+  START_WORKFLOW_ACCESS_LINK: 'start_workflow_access_link',
+  WORKFLOW_ACCESS_STATE_CHANGED: 'workflow_access_state_changed',
   INITIALIZE_SEMANTIC_ENGINE: 'initialize_semantic_engine',
   // Record & Replay background control and queries
   RR_START_RECORDING: 'rr_start_recording',

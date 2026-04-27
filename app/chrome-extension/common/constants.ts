@@ -223,6 +223,8 @@ export const STORAGE_KEYS = {
   SERVER_STATUS: 'serverStatus',
   NATIVE_SERVER_PORT: 'nativeServerPort',
   NATIVE_AUTO_CONNECT_ENABLED: 'nativeAutoConnectEnabled',
+  WORKFLOW_ACCESS_STATE: 'workflowAccessState',
+  WORKFLOW_ACCESS_LINK_TOKEN: 'workflowAccessLinkToken',
   AGENT_BACKEND: 'sidepanelChatBackend',
   OPENCLAW_GATEWAY_SETTINGS: 'openclawGatewaySettings',
   OPENCLAW_GATEWAY_STATUS: 'openclawGatewayStatus',

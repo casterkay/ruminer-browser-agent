@@ -624,6 +624,79 @@ describe('V3 RPC Queue Management APIs', () => {
   });
 });
 
+describe('V3 RPC workflow access guard', () => {
+  let storage: ReturnType<typeof createMockStorage>;
+  let events: EventsBus;
+  let scheduler: RunScheduler;
+  let assertWorkflowAccess: ReturnType<typeof vi.fn>;
+  let server: RpcServer;
+
+  beforeEach(() => {
+    storage = createMockStorage();
+    events = createMockEventsBus();
+    scheduler = createMockScheduler();
+    assertWorkflowAccess = vi.fn(async () => {
+      throw new Error('Ruminer Pro is required to use workflows.');
+    });
+
+    server = new RpcServer({
+      storage,
+      events,
+      scheduler,
+      assertWorkflowAccess,
+      generateRunId: () => 'run-denied',
+      now: () => 1_700_000_000_000,
+    });
+  });
+
+  it('requires workflow access before starting paid workflow execution', async () => {
+    const flow = createTestFlow('flow-locked');
+    getInternal(storage).flowsMap.set(flow.id, flow);
+
+    await expect(
+      (server as unknown as { handleRequest: Function }).handleRequest(
+        { method: 'rr_v3.enqueueRun', params: { flowId: flow.id }, requestId: 'req-locked' },
+        { subscriptions: new Set() },
+      ),
+    ).rejects.toThrow('Ruminer Pro is required to use workflows.');
+
+    expect(assertWorkflowAccess).toHaveBeenCalledWith('rr_v3.enqueueRun');
+    expect(storage.queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('allows canceling queued workflow work even when workflow access is locked', async () => {
+    const runId = 'run-queued';
+    getInternal(storage).queueMap.set(runId, {
+      id: runId as RunQueueItem['id'],
+      runId: runId as RunQueueItem['runId'],
+      flowId: 'flow-1' as RunQueueItem['flowId'],
+      status: 'queued',
+      priority: 0,
+      attempt: 0,
+      maxAttempts: 1,
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+    });
+
+    const result = await (server as unknown as { handleRequest: Function }).handleRequest(
+      {
+        method: 'rr_v3.cancelQueueItem',
+        params: { runId, reason: 'user stopped automation' },
+        requestId: 'req-cancel',
+      },
+      { subscriptions: new Set() },
+    );
+
+    expect(result).toEqual({ ok: true, runId });
+    expect(assertWorkflowAccess).not.toHaveBeenCalled();
+    expect(storage.queue.cancel).toHaveBeenCalledWith(
+      runId,
+      1_700_000_000_000,
+      'user stopped automation',
+    );
+  });
+});
+
 describe('V3 RPC Flow CRUD APIs', () => {
   let storage: ReturnType<typeof createMockStorage>;
   let events: EventsBus;

@@ -1,26 +1,31 @@
+import { STORAGE_KEYS } from '@/common/constants';
 import { BACKGROUND_MESSAGE_TYPES, CONTENT_MESSAGE_TYPES } from '@/common/message-types';
-import { Flow } from './types';
 import {
-  listFlows,
-  saveFlow,
-  getFlow,
+  formatWorkflowAccessDeniedReason,
+  getWorkflowAccessDenialReason,
+  getWorkflowAccessStateSnapshot,
+} from '../workflow-access';
+import { runFlow } from './flow-runner';
+import {
   deleteFlow,
-  publishFlow,
-  unpublishFlow,
-  exportFlow,
   exportAllFlows,
+  exportFlow,
+  getFlow,
   importFlowFromJson,
+  listFlows,
+  listRuns,
   listSchedules,
-  saveSchedule,
+  publishFlow,
   removeSchedule,
+  saveFlow,
+  saveSchedule,
+  unpublishFlow,
   type FlowSchedule,
 } from './flow-store';
-import { listRuns } from './flow-store';
-import { STORAGE_KEYS } from '@/common/constants';
-import { listTriggers, saveTrigger, deleteTrigger, type FlowTrigger } from './trigger-store';
-import { runFlow } from './flow-runner';
 import { RecorderManager } from './recording/recorder-manager';
 import { recordingSession } from './recording/session-manager';
+import { deleteTrigger, listTriggers, saveTrigger, type FlowTrigger } from './trigger-store';
+import { Flow } from './types';
 // Browser/content listeners are initialized via RecorderManager.init
 
 // design note: background listener for record & replay; delegates recording to dedicated modules
@@ -68,6 +73,28 @@ async function stopRecording(): Promise<{ success: boolean; flow?: Flow; error?:
   return await RecorderManager.stop();
 }
 
+async function getWorkflowAccessError(): Promise<string | null> {
+  const access = await getWorkflowAccessStateSnapshot({ refreshIfStale: true });
+  const reason = getWorkflowAccessDenialReason(access);
+  return reason ? formatWorkflowAccessDeniedReason(reason) : null;
+}
+
+async function ensureWorkflowAccessOrRespond(
+  sendResponse: (response: { success: boolean; error?: string }) => void,
+): Promise<boolean> {
+  const error = await getWorkflowAccessError();
+  if (!error) {
+    return true;
+  }
+
+  sendResponse({ success: false, error });
+  return false;
+}
+
+async function canExecuteWorkflowActions(): Promise<boolean> {
+  return (await getWorkflowAccessError()) === null;
+}
+
 export function initRecordReplayListeners() {
   // Storage state sync is handled within session manager and recorder manager
   // On startup, re-schedule alarms
@@ -82,8 +109,13 @@ export function initRecordReplayListeners() {
       // rr_recorder_event 交由 ContentMessageHandler 处理
       switch (message?.type) {
         case BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING: {
-          startRecording(message.meta)
-            .then(sendResponse)
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return startRecording(message.meta)
+                .then(sendResponse)
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
@@ -100,8 +132,13 @@ export function initRecordReplayListeners() {
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_RESUME_RECORDING: {
-          RecorderManager.resume()
-            .then(sendResponse)
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return RecorderManager.resume()
+                .then(sendResponse)
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
@@ -129,63 +166,103 @@ export function initRecordReplayListeners() {
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_DELETE_FLOW: {
-          deleteFlow(message.flowId)
-            .then(() => sendResponse({ success: true }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return deleteFlow(message.flowId)
+                .then(() => sendResponse({ success: true }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_PUBLISH_FLOW: {
-          getFlow(message.flowId)
-            .then(async (flow) => {
-              if (!flow) return sendResponse({ success: false, error: 'flow not found' });
-              await publishFlow(flow, message.slug);
-              sendResponse({ success: true });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return getFlow(message.flowId)
+                .then(async (flow) => {
+                  if (!flow) return sendResponse({ success: false, error: 'flow not found' });
+                  await publishFlow(flow, message.slug);
+                  sendResponse({ success: true });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_UNPUBLISH_FLOW: {
-          unpublishFlow(message.flowId)
-            .then(() => sendResponse({ success: true }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return unpublishFlow(message.flowId)
+                .then(() => sendResponse({ success: true }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_RUN_FLOW: {
-          getFlow(message.flowId)
-            .then(async (flow) => {
-              if (!flow) return sendResponse({ success: false, error: 'flow not found' });
-              const result = await runFlow(flow, message.options || {});
-              sendResponse({ success: true, result });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return getFlow(message.flowId)
+                .then(async (flow) => {
+                  if (!flow) return sendResponse({ success: false, error: 'flow not found' });
+                  const result = await runFlow(flow, message.options || {});
+                  sendResponse({ success: true, result });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_SAVE_FLOW: {
-          const flow = message.flow as Flow;
-          if (!flow || !flow.id) {
-            sendResponse({ success: false, error: 'invalid flow' });
-            return true;
-          }
-          saveFlow(flow)
-            .then(() => sendResponse({ success: true }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              const flow = message.flow as Flow;
+              if (!flow || !flow.id) {
+                sendResponse({ success: false, error: 'invalid flow' });
+                return;
+              }
+              return saveFlow(flow)
+                .then(() => sendResponse({ success: true }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_EXPORT_FLOW: {
-          exportFlow(message.flowId)
-            .then((json) => sendResponse({ success: true, json }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return exportFlow(message.flowId)
+                .then((json) => sendResponse({ success: true, json }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_EXPORT_ALL: {
-          exportAllFlows()
-            .then((json) => sendResponse({ success: true, json }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return exportAllFlows()
+                .then((json) => sendResponse({ success: true, json }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_IMPORT_FLOW: {
-          importFlowFromJson(message.json)
-            .then((flows) => sendResponse({ success: true, imported: flows.length, flows }))
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              return importFlowFromJson(message.json)
+                .then((flows) => sendResponse({ success: true, imported: flows.length, flows }))
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
+            })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
@@ -202,29 +279,39 @@ export function initRecordReplayListeners() {
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_SAVE_TRIGGER: {
-          const t = message.trigger as FlowTrigger;
-          if (!t || !t.id || !t.type || !t.flowId) {
-            sendResponse({ success: false, error: 'invalid trigger' });
-            return true;
-          }
-          saveTrigger(t)
-            .then(async () => {
-              await refreshTriggers();
-              sendResponse({ success: true });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              const t = message.trigger as FlowTrigger;
+              if (!t || !t.id || !t.type || !t.flowId) {
+                sendResponse({ success: false, error: 'invalid trigger' });
+                return;
+              }
+              return saveTrigger(t)
+                .then(async () => {
+                  await refreshTriggers();
+                  sendResponse({ success: true });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_DELETE_TRIGGER: {
-          const id = String(message.id || '');
-          if (!id) {
-            sendResponse({ success: false, error: 'invalid id' });
-            return true;
-          }
-          deleteTrigger(id)
-            .then(async () => {
-              await refreshTriggers();
-              sendResponse({ success: true });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              const id = String(message.id || '');
+              if (!id) {
+                sendResponse({ success: false, error: 'invalid id' });
+                return;
+              }
+              return deleteTrigger(id)
+                .then(async () => {
+                  await refreshTriggers();
+                  sendResponse({ success: true });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
@@ -242,29 +329,39 @@ export function initRecordReplayListeners() {
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_SCHEDULE_FLOW: {
-          const s = message.schedule as FlowSchedule;
-          if (!s || !s.id || !s.flowId) {
-            sendResponse({ success: false, error: 'invalid schedule' });
-            return true;
-          }
-          saveSchedule(s)
-            .then(async () => {
-              await rescheduleAlarms();
-              sendResponse({ success: true });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              const s = message.schedule as FlowSchedule;
+              if (!s || !s.id || !s.flowId) {
+                sendResponse({ success: false, error: 'invalid schedule' });
+                return;
+              }
+              return saveSchedule(s)
+                .then(async () => {
+                  await rescheduleAlarms();
+                  sendResponse({ success: true });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
         }
         case BACKGROUND_MESSAGE_TYPES.RR_UNSCHEDULE_FLOW: {
-          const scheduleId = String(message.scheduleId || '');
-          if (!scheduleId) {
-            sendResponse({ success: false, error: 'invalid scheduleId' });
-            return true;
-          }
-          removeSchedule(scheduleId)
-            .then(async () => {
-              await rescheduleAlarms();
-              sendResponse({ success: true });
+          ensureWorkflowAccessOrRespond(sendResponse)
+            .then((allowed) => {
+              if (!allowed) return;
+              const scheduleId = String(message.scheduleId || '');
+              if (!scheduleId) {
+                sendResponse({ success: false, error: 'invalid scheduleId' });
+                return;
+              }
+              return removeSchedule(scheduleId)
+                .then(async () => {
+                  await rescheduleAlarms();
+                  sendResponse({ success: true });
+                })
+                .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
             })
             .catch((e) => sendResponse({ success: false, error: e?.message || String(e) }));
           return true;
@@ -280,6 +377,7 @@ export function initRecordReplayListeners() {
   if ((chrome as any).contextMenus?.onClicked?.addListener) {
     chrome.contextMenus.onClicked.addListener(async (info) => {
       try {
+        if (!(await canExecuteWorkflowActions())) return;
         const triggers = await listTriggers();
         const t = triggers.find(
           (x) => x.type === 'contextMenu' && (x as any).menuId === info.menuItemId,
@@ -293,6 +391,7 @@ export function initRecordReplayListeners() {
   }
   chrome.commands.onCommand.addListener(async (command) => {
     try {
+      if (!(await canExecuteWorkflowActions())) return;
       const triggers = await listTriggers();
       const t = triggers.find((x) => x.type === 'command' && (x as any).commandKey === command);
       if (!t || t.enabled === false) return;
@@ -303,6 +402,7 @@ export function initRecordReplayListeners() {
   });
   chrome.webNavigation.onCommitted.addListener(async (details) => {
     try {
+      if (!(await canExecuteWorkflowActions())) return;
       if (details.frameId !== 0) return;
       const url = details.url || '';
       // Ensure core content scripts are injected for this tab (pre-heat for replay)
@@ -349,15 +449,29 @@ export function initRecordReplayListeners() {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       if (message && message.action === 'dom_trigger_fired') {
-        const id = message.triggerId;
-        listTriggers().then(async (arr) => {
-          const t = arr.find((x) => x.id === id && x.type === 'dom');
-          if (!t || t.enabled === false) return;
-          const flow = await getFlow(t.flowId);
-          if (!flow) return;
-          await runFlow(flow, { args: t.args || {}, returnLogs: false });
-        });
-        sendResponse({ ok: true });
+        canExecuteWorkflowActions()
+          .then((allowed) => {
+            if (!allowed) {
+              sendResponse({ ok: false });
+              return;
+            }
+            const id = message.triggerId;
+            return listTriggers().then(async (arr) => {
+              const t = arr.find((x) => x.id === id && x.type === 'dom');
+              if (!t || t.enabled === false) {
+                sendResponse({ ok: true });
+                return;
+              }
+              const flow = await getFlow(t.flowId);
+              if (!flow) {
+                sendResponse({ ok: true });
+                return;
+              }
+              await runFlow(flow, { args: t.args || {}, returnLogs: false });
+              sendResponse({ ok: true });
+            });
+          })
+          .catch(() => sendResponse({ ok: false }));
         return true;
       }
     } catch {}
@@ -490,6 +604,7 @@ async function pingTab(tabId: number, action: string): Promise<boolean> {
 // Alarm listener executes scheduled flows
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   try {
+    if (!(await canExecuteWorkflowActions())) return;
     if (!alarm?.name || !alarm.name.startsWith('rr_schedule_')) return;
     const id = alarm.name.slice('rr_schedule_'.length);
     const schedules = await listSchedules();

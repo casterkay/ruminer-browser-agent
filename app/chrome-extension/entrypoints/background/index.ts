@@ -15,6 +15,7 @@ import {
 import { initStorageManagerListener } from './storage-manager';
 import { openAgentChatSidepanel } from './utils/sidepanel';
 import { initWebEditorListeners } from './web-editor';
+import { assertWorkflowAccess, initWorkflowAccessListener } from './workflow-access';
 
 // Record-Replay V3 (feature flag)
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
@@ -63,6 +64,7 @@ export default defineBackground(() => {
   initNativeHostListener();
   initSemanticSimilarityListener();
   initStorageManagerListener();
+  initWorkflowAccessListener();
   initIngestWorkflowRpc();
   // Record & Replay V1/V2 listeners
   initRecordReplayListeners();
@@ -195,6 +197,8 @@ async function notify(title: string, message: string): Promise<void> {
 }
 
 async function importCurrentConversationFromTab(tab: chrome.tabs.Tab): Promise<void> {
+  await assertWorkflowAccess();
+
   const tabId = tab.id;
   if (typeof tabId !== 'number' || !Number.isFinite(tabId)) return;
 
