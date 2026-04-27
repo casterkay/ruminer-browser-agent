@@ -248,7 +248,7 @@ const fallbackMessages: Record<string, string> = {
   settingsCardMemoryTitle: 'Memory',
   settingsCardLanguageTitle: 'Language',
   settingsCardClaudeCodeTitle: 'Claude Code',
-  settingsCardHermesTitle: 'Hermes Agent',
+  settingsCardHermesTitle: 'Hermes',
   settingsStatusRunning: 'Running',
   settingsStatusStopped: 'Stopped',
   settingsPortLabel: 'Port',
@@ -292,13 +292,13 @@ const fallbackMessages: Record<string, string> = {
     'Language preference is saved locally. Reopen extension pages to apply updates.',
 
   // Welcome page
-  welcomeBadgeText: 'Chrome MCP • Memory • OpenClaw • Claude Code • Codex • Hermes Agent',
+  welcomeBadgeText: 'Chrome MCP • Memory • OpenClaw • Claude Code • Codex • Hermes',
   welcomeTitle: 'Ruminer Browser Agent',
   welcomeSubtitle:
-    'One browser, one memory, many agents. This page helps you wire up Ruminer across OpenClaw, Claude Code, Codex, and Hermes Agent for browser automation.',
+    'One browser, one memory, many agents. This page helps you wire up Ruminer across OpenClaw, Claude Code, Codex, and Hermes for browser automation.',
   welcomeStepInstallTitle: '1) Run the Installation Command',
   welcomeStepInstallSubtitle:
-    'This registers the native MCP server in Claude Code and Codex, configures Hermes Agent when its CLI is installed, and installs an OpenClaw plugin as MCP client.',
+    'This registers the native MCP server in Claude Code, Codex, Hermes, and installs an OpenClaw plugin as MCP client.',
   welcomeInstallTipPrefix: 'Tip: you can review the script in your browser first.',
   welcomeInstallTipSuffix: 'is powerful - apply it with care.',
   welcomeStepLanguageTitle: '2) Choose Interface Language',

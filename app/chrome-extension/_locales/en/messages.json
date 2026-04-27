@@ -562,7 +562,7 @@
     "description": "Settings card title for Claude Code"
   },
   "settingsCardHermesTitle": {
-    "message": "Hermes Agent",
+    "message": "Hermes",
     "description": "Settings card title for Hermes Agent"
   },
   "settingsStatusRunning": {
@@ -728,7 +728,7 @@
     }
   },
   "welcomeBadgeText": {
-    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex • Hermes Agent",
+    "message": "Chrome MCP • Memory • OpenClaw • Claude Code • Codex • Hermes",
     "description": "Welcome page badge text"
   },
   "welcomeTitle": {

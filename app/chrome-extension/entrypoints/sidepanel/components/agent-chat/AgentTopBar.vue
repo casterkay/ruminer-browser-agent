@@ -41,10 +41,6 @@
                 class="w-5 h-5 rounded-full object-cover flex-shrink-0"
                 :style="{ backgroundColor: 'var(--ac-surface)' }"
               />
-              <ILucideFeather
-                v-else-if="brandIconFallback === 'feather'"
-                class="w-5 h-5 flex-shrink-0"
-              />
               <span>{{ brandLabel || 'Agent' }}</span>
             </span>
             <ILucideChevronDown class="w-4 h-4" :style="{ color: 'var(--ac-text-subtle)' }" />
@@ -56,10 +52,6 @@
               alt=""
               class="w-5 h-5 rounded-full object-cover flex-shrink-0"
               :style="{ backgroundColor: 'var(--ac-surface)' }"
-            />
-            <ILucideFeather
-              v-else-if="brandIconFallback === 'feather'"
-              class="w-5 h-5 flex-shrink-0"
             />
             <span>{{ brandLabel || 'Agent' }}</span>
             <!-- Connection Indicator (left, after engine name) -->
@@ -111,7 +103,6 @@ import { getAgentEngineMetadata, getAgentEngineIconUrl } from '@/common/agent-en
 import { computed } from 'vue';
 import ILucideChevronDown from '~icons/lucide/chevron-down';
 import ILucideChevronLeft from '~icons/lucide/chevron-left';
-import ILucideFeather from '~icons/lucide/feather';
 import ILucideInfinity from '~icons/lucide/infinity';
 import ILucideSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 
@@ -167,10 +158,6 @@ const connectionText = computed(() => {
 
 const brandIconUrl = computed(() => {
   return getAgentEngineIconUrl(props.brandEngineName);
-});
-
-const brandIconFallback = computed(() => {
-  return getAgentEngineMetadata(props.brandEngineName).iconFallback;
 });
 
 const ruminateButtonStyle = computed(() => {

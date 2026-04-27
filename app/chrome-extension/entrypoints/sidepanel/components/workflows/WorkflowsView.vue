@@ -148,7 +148,7 @@
 
         <div class="grid gap-3 px-5 py-4 md:grid-cols-3">
           <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
-            Create and edit unlimited AI-powered automation tailored to your daily tasks.
+            Create and edit unlimited automation workflows tailored to your daily tasks.
           </div>
           <div class="rounded-2xl px-4 py-3 text-sm leading-6" :style="paywallPillStyle">
             Execute your workflows entirely on your own device for maximum privacy.

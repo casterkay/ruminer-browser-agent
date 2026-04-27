@@ -18,7 +18,7 @@ describe('agent engines metadata (contract)', () => {
   it('exposes Hermes branding and capability flags', () => {
     expect(getAgentEngineMetadata('hermes')).toMatchObject({
       name: 'hermes',
-      displayName: 'Hermes Agent',
+      displayName: 'Hermes',
       supportsMcp: true,
       supportsModelSelection: false,
       supportsChromeMcpToggle: false,

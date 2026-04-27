@@ -1,5 +1,5 @@
-import type { AgentCliPreference } from 'chrome-mcp-shared';
 import { getModelsForCli } from '@/common/agent-models';
+import type { AgentCliPreference } from 'chrome-mcp-shared';
 
 export type AgentEngineIconFallback = 'cpu' | 'pointer' | 'sparkles' | 'brain' | 'feather';
 
@@ -58,8 +58,8 @@ const ENGINE_METADATA_BY_NAME: Record<AgentCliPreference, AgentEngineMetadata> =
   },
   hermes: {
     name: 'hermes',
-    displayName: 'Hermes Agent',
-    iconPath: '',
+    displayName: 'Hermes',
+    iconPath: 'engine-icons/hermes.svg',
     iconFallback: 'feather',
     supportsMcp: true,
     supportsImages: true,
