@@ -251,7 +251,7 @@ export function getRuminerHostedAppUrl(): string {
   const configured = readEnvString(
     import.meta.env.WXT_PUBLIC_RUMINER_WEB_URL ?? import.meta.env.VITE_RUMINER_WEB_URL,
   );
-  return configured || 'http://localhost:3000';
+  return configured || 'https://chrome.ruminer.app';
 }
 
 export function getRuminerHostedUrl(path: string): string {

@@ -1423,6 +1423,7 @@ const paywallPrimaryButtonStyle = computed(() => ({
   backgroundColor: 'var(--ac-text, #1f2937)',
   color: 'var(--ac-accent-contrast, #ffffff)',
   borderRadius: 'var(--ac-radius-button)',
+  cursor: 'pointer',
 }));
 
 const paywallSecondaryButtonStyle = computed(() => ({
@@ -1430,6 +1431,7 @@ const paywallSecondaryButtonStyle = computed(() => ({
   color: 'var(--ac-text)',
   border: '1px solid rgba(15, 23, 42, 0.08)',
   borderRadius: 'var(--ac-radius-button)',
+  cursor: 'pointer',
 }));
 
 const paywallErrorStyle = computed(() => ({

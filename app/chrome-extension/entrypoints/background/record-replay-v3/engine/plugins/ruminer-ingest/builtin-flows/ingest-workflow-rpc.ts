@@ -12,13 +12,15 @@ import { assertWorkflowAccess } from '@/entrypoints/background/workflow-access';
 
 import { getAutomationTabStateForSender, initAutomationTabsRegistry } from '../automation-tabs';
 import { getConversationStates } from '../conversation-ledger';
+import { buildMemoryConversationId, buildMemoryMessageId } from 'chrome-mcp-shared';
 import {
-  emosUpsertMemory,
-  getEmosRequestContext,
+  getMemoryRequestContext,
   getMemoryStatus,
-  type EmosRequestContext,
-  type EmosSingleMessage,
-} from '../emos-client';
+  memoryReplaceConversation,
+  type MemoryConversationIdentity,
+  type MemoryRequestContext,
+  type MemorySingleMessage,
+} from '../memory-client';
 import { ensureBuiltinFlows } from './index';
 
 type WorkflowNotifyRequest = {
@@ -61,11 +63,12 @@ type IngestConversationRequest = {
   messageCount?: number | null;
   conversationTitle?: string | null;
   conversationUrl?: string | null;
+  extractionSource?: 'api' | 'dom' | null;
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
+    contentMarkdown?: string | null;
     createTime?: string | null;
-    messageId?: string | null;
   }>;
 };
 
@@ -396,13 +399,17 @@ async function handleEnqueueRuns(req: EnqueueRunsRequest): Promise<unknown> {
   };
 }
 
-async function ingestWithRetry(message: EmosSingleMessage, ctx: EmosRequestContext): Promise<void> {
+async function replaceConversationWithRetry(
+  messages: MemorySingleMessage[],
+  ctx: MemoryRequestContext,
+  identity: MemoryConversationIdentity,
+): Promise<void> {
   const maxRetries = 3;
   let delayMs = 500;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      await emosUpsertMemory(message, ctx);
+      await memoryReplaceConversation(messages, ctx, identity);
       return;
     } catch (error) {
       lastError = error;
@@ -417,25 +424,7 @@ async function ingestWithRetry(message: EmosSingleMessage, ctx: EmosRequestConte
 }
 
 function toGroupId(platform: string, conversationId: string): string {
-  return `${platform}:${conversationId}`;
-}
-
-function normalizePlatformMessageId(value: unknown): string | null {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  return raw ? raw : null;
-}
-
-function buildEmosMessageId(
-  platform: string,
-  conversationId: string,
-  index: number,
-  platformMessageId: string | null,
-): string {
-  const pid = normalizePlatformMessageId(platformMessageId);
-  if (pid) {
-    return `${platform}:${pid}`;
-  }
-  return `${platform}:${conversationId}:${index}`;
+  return buildMemoryConversationId(platform, conversationId);
 }
 
 function ensurePlatform(value: unknown): IngestConversationRequest['platform'] | null {
@@ -503,6 +492,8 @@ async function handleIngestConversation(
   const groupId = toGroupId(platform, conversationId);
   const groupName = trimOrNull(req.conversationTitle);
   const sourceUrl = trimOrNull(req.conversationUrl);
+  const extractionSource =
+    req.extractionSource === 'api' || req.extractionSource === 'dom' ? req.extractionSource : null;
   const baseIndexRaw = req.baseIndex;
   const baseIndex =
     typeof baseIndexRaw === 'number' && Number.isFinite(baseIndexRaw) && baseIndexRaw > 0
@@ -591,9 +582,9 @@ async function handleIngestConversation(
     });
   }
 
-  let emosCtx: EmosRequestContext;
+  let memoryCtx: MemoryRequestContext;
   try {
-    emosCtx = await getEmosRequestContext();
+    memoryCtx = await getMemoryRequestContext();
   } catch (error) {
     const message = `Memory backend context initialization failed: ${
       error instanceof Error ? error.message : String(error)
@@ -623,24 +614,13 @@ async function handleIngestConversation(
     role: 'user' | 'assistant';
     content: string;
     createTime: string | null;
-    messageId: string | null;
   }> = messages
     .map((m) => ({
       role: (m?.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
-      content: normalizeContent(m?.content),
+      content: normalizeContent(m?.contentMarkdown ?? m?.content),
       createTime: trimOrNull(m?.createTime),
-      messageId: trimOrNull(m?.messageId),
     }))
     .filter((m) => Boolean(m.content));
-
-  if (normalizedMessages.length === 0) {
-    return failIngest('No messages to ingest', {
-      skipped: 0,
-      total: 0,
-      startIndex: 0,
-      includeResult: false,
-    });
-  }
 
   const nowIso = new Date().toISOString();
 
@@ -648,6 +628,7 @@ async function handleIngestConversation(
   let upserted = 0;
   let failed = 0;
   const errors: string[] = [];
+  const memoryMessages: MemorySingleMessage[] = [];
 
   for (let i = 0; i < normalizedMessages.length; i++) {
     const raw = normalizedMessages[i];
@@ -661,8 +642,8 @@ async function handleIngestConversation(
         : base;
 
     const index = baseIndex + i;
-    const m: EmosSingleMessage = {
-      message_id: buildEmosMessageId(platform, conversationId, index, raw.messageId),
+    const m: MemorySingleMessage = {
+      message_id: buildMemoryMessageId(platform, conversationId, index),
       create_time: isoOrNow(raw.createTime),
       sender: sender.sender,
       sender_name: sender.sender_name,
@@ -671,17 +652,27 @@ async function handleIngestConversation(
       ...(groupName ? { group_name: groupName } : {}),
       ...(sourceUrl ? { source_url: sourceUrl } : {}),
       role,
+      source_platform: platform,
+      conversation_id: conversationId,
+      metadata: {
+        message_index: index,
+        ...(extractionSource ? { extraction_source: extractionSource } : {}),
+      },
     };
 
-    try {
-      await ingestWithRetry(m, emosCtx);
-      upserted += 1;
-    } catch (e) {
-      failed += 1;
-      errors.push(e instanceof Error ? e.message : String(e));
-      // Preserve monotonic, prefix-only progress semantics (avoids holes).
-      break;
-    }
+    memoryMessages.push(m);
+  }
+
+  try {
+    await replaceConversationWithRetry(memoryMessages, memoryCtx, {
+      platform,
+      conversationId,
+      groupId,
+    });
+    upserted = memoryMessages.length;
+  } catch (e) {
+    failed = memoryMessages.length;
+    errors.push(e instanceof Error ? e.message : String(e));
   }
   const emosUpsertMs = Date.now() - tEmosStart;
 
@@ -871,6 +862,7 @@ export async function ruminerIngestConversation(
         ? { conversationTitle: input.conversationTitle }
         : {}),
       ...(input.conversationUrl !== undefined ? { conversationUrl: input.conversationUrl } : {}),
+      ...(input.extractionSource !== undefined ? { extractionSource: input.extractionSource } : {}),
       messages: input.messages,
     },
     sender,

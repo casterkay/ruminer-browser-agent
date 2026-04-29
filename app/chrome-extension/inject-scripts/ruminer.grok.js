@@ -143,10 +143,13 @@
   installRpc();
   if (sameApi) return;
 
+  const utils = () => window.__RUMINER_EXTRACTOR_UTILS__ || null;
   const normalizeContent = (s) =>
-    String(s || '')
-      .replace(/\r\n/g, '\n')
-      .trim();
+    utils()?.normalizeContent
+      ? utils().normalizeContent(s)
+      : String(s || '')
+          .replace(/\r\n/g, '\n')
+          .trim();
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
 
@@ -343,7 +346,9 @@
       try {
         const clone = el.cloneNode(true);
         removeUnwantedNodes(clone);
-        text = normalizeContent(clone.textContent || '');
+        text = normalizeContent(
+          utils()?.elementToMarkdown ? utils().elementToMarkdown(clone) : clone.textContent || '',
+        );
       } catch {
         text = normalizeContent(el.textContent || '');
       }
@@ -354,7 +359,7 @@
       seenTexts.add(text);
 
       const role = detectRole(el, text, out.length);
-      out.push({ role, content: text });
+      out.push({ role, content: text, contentMarkdown: text });
     }
 
     return out;
@@ -471,7 +476,9 @@
       if (!id || isBadConversationId(id)) continue;
       if (sidebarCache.seen.has(id)) continue;
 
-      const title = String(a.textContent || '').trim() || null;
+      const title = utils()?.normalizeTitle
+        ? utils().normalizeTitle(a.textContent || '')
+        : String(a.textContent || '').trim() || null;
       sidebarCache.seen.add(id);
       sidebarCache.items.push({
         conversationId: id,
@@ -521,12 +528,13 @@
 
     const msgs = extractMessagesFromDom();
     const titleRaw = typeof document?.title === 'string' ? document.title.trim() : '';
-    const title = titleRaw ? titleRaw : null;
+    const title = utils()?.normalizeTitle ? utils().normalizeTitle(titleRaw) : titleRaw || null;
 
     return {
       conversationId: parseConversationId(url) || parseConversationId(location.href) || null,
       conversationUrl: url,
       conversationTitle: title,
+      extractionSource: 'dom',
       messages: msgs,
     };
   }

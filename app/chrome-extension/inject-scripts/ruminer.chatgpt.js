@@ -133,10 +133,13 @@
   installRpc();
   if (sameApi) return;
 
+  const utils = () => window.__RUMINER_EXTRACTOR_UTILS__ || null;
   const normalizeContent = (s) =>
-    String(s || '')
-      .replace(/\r\n/g, '\n')
-      .trim();
+    utils()?.normalizeContent
+      ? utils().normalizeContent(s)
+      : String(s || '')
+          .replace(/\r\n/g, '\n')
+          .trim();
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, Math.floor(ms || 0))));
 
@@ -556,19 +559,15 @@
       if (!content) continue;
       const ct =
         msg && (msg.create_time ?? msg.createTime) != null
-          ? String(msg.create_time ?? msg.createTime)
+          ? utils()?.normalizeTimestamp
+            ? utils().normalizeTimestamp(msg.create_time ?? msg.createTime)
+            : String(msg.create_time ?? msg.createTime)
           : null;
-      const mid =
-        node && typeof node.id === 'string' && node.id.trim()
-          ? node.id.trim()
-          : msg && typeof msg.id === 'string' && msg.id.trim()
-            ? msg.id.trim()
-            : null;
       out.push({
         role,
         content,
+        contentMarkdown: content,
         ...(ct ? { createTime: ct } : {}),
-        ...(mid ? { messageId: mid } : {}),
       });
     }
     return out;
@@ -607,7 +606,12 @@
       .map((it) => {
         const id = String(it && it.id ? it.id : '').trim();
         if (!id) return null;
-        const title = typeof it.title === 'string' && it.title.trim() ? it.title.trim() : null;
+        const title =
+          utils()?.normalizeTitle && typeof it.title === 'string'
+            ? utils().normalizeTitle(it.title)
+            : typeof it.title === 'string' && it.title.trim()
+              ? it.title.trim()
+              : null;
         // Optional; if present, surface it so the background can sort accurately.
         let updatedAtMs = null;
         try {
@@ -686,7 +690,12 @@
       conversationId: id,
       conversationUrl: rawUrl,
       conversationTitle:
-        conv && typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : null,
+        utils()?.normalizeTitle && conv && typeof conv.title === 'string'
+          ? utils().normalizeTitle(conv.title)
+          : conv && typeof conv.title === 'string' && conv.title.trim()
+            ? conv.title.trim()
+            : null,
+      extractionSource: 'api',
       messages: msgs,
     };
   }

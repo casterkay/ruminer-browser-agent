@@ -61,6 +61,7 @@ import {
   getMemoryStatus,
   readMemories,
   reindexMemories,
+  replaceMemoryConversation,
   searchMemories,
   upsertMemory,
 } from '../../agent/memory/service';
@@ -378,6 +379,40 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         reply.status(HTTP_STATUS.OK).send({ result });
       } catch (error) {
         fastify.log.error({ err: error }, 'Failed to upsert memory');
+        const message = error instanceof Error ? error.message : String(error);
+        reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
+      }
+    },
+  );
+
+  fastify.post(
+    '/agent/memory/conversation/replace',
+    async (
+      request: FastifyRequest<{
+        Body: {
+          messages?: Record<string, unknown>[];
+          platform?: string;
+          conversationId?: string;
+          groupId?: string;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const messages = request.body?.messages;
+        if (!Array.isArray(messages)) {
+          reply.status(HTTP_STATUS.BAD_REQUEST).send({ error: 'messages is required' });
+          return;
+        }
+        const result = await replaceMemoryConversation({
+          messages: messages as any,
+          platform: request.body?.platform,
+          conversationId: request.body?.conversationId,
+          groupId: request.body?.groupId,
+        });
+        reply.status(HTTP_STATUS.OK).send({ result });
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to replace memory conversation');
         const message = error instanceof Error ? error.message : String(error);
         reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({ error: message });
       }

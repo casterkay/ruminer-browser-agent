@@ -17,6 +17,7 @@ import {
   type ConversationMessage,
 } from '../conversation-digest';
 import {
+  MEMORY_CONVENTION_VERSION,
   listConversationEntries,
   upsertConversationEntry,
   type ConversationLedgerEntry,
@@ -66,6 +67,7 @@ type ConversationMessagesResult = {
   conversationId: string;
   conversationUrl: string | null;
   conversationTitle: string | null;
+  extractionSource: 'api' | 'dom' | null;
   messages: unknown;
 };
 
@@ -78,6 +80,7 @@ type ScannedConversation = {
     messages: ConversationMessage[];
     digest: string;
     messageCount: number;
+    extractionSource: 'api' | 'dom' | null;
   };
 };
 
@@ -311,7 +314,11 @@ async function collectDomDiagnostics(tabId: number): Promise<DomDiagnostics | nu
 async function injectScanScript(tabId: number, platform: ChatPlatform): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId, frameIds: [0] },
-    files: ['inject-scripts/scroll-engine.js', scanScriptPath(platform)],
+    files: [
+      'inject-scripts/scroll-engine.js',
+      'inject-scripts/ruminer.shared.js',
+      scanScriptPath(platform),
+    ],
     world: scanExecutionWorld(),
   });
 }
@@ -518,6 +525,10 @@ async function callConversationMessages(
       ? String((raw as any).conversationTitle).trim()
       : null;
   const messages = (raw as any).messages as unknown;
+  const extractionSource =
+    (raw as any).extractionSource === 'api' || (raw as any).extractionSource === 'dom'
+      ? ((raw as any).extractionSource as 'api' | 'dom')
+      : null;
 
   if (!conversationId.trim()) {
     throw new Error('getConversationMessages missing conversationId');
@@ -527,6 +538,7 @@ async function callConversationMessages(
     conversationId: conversationId.trim(),
     conversationUrl,
     conversationTitle,
+    extractionSource,
     messages,
   };
 }
@@ -539,6 +551,7 @@ function shouldStopScan(entry: ConversationLedgerEntry | undefined, digest: stri
   if (!entry) return false;
   if (entry.status !== 'ingested') return false;
   if (typeof entry.messages_digest !== 'string' || !entry.messages_digest.trim()) return false;
+  if (entry.memory_convention_version !== MEMORY_CONVENTION_VERSION) return false;
   // If the last run couldn't save the native-server session, keep scanning so we can retry later.
   if (entry.session_save_ok === false) return false;
   return entry.messages_digest.trim() === digest;
@@ -588,6 +601,7 @@ function buildIngestedLedgerEntry(args: {
     status: 'ingested',
     messages_digest: args.digest,
     message_count: args.messageCount,
+    memory_convention_version: MEMORY_CONVENTION_VERSION,
     ...(sessionSaveOk !== null ? { session_save_ok: sessionSaveOk } : {}),
     ...(lastSessionError !== null ? { last_session_error: lastSessionError } : {}),
     ...(lastSessionSavedAt !== null ? { last_session_saved_at: lastSessionSavedAt } : {}),
@@ -618,6 +632,7 @@ function buildFailedLedgerEntry(args: {
     // Do not change digest/count on failure.
     messages_digest: args.existing?.messages_digest ?? null,
     message_count: args.existing?.message_count ?? null,
+    memory_convention_version: MEMORY_CONVENTION_VERSION,
     ...(typeof args.existing?.session_save_ok === 'boolean'
       ? { session_save_ok: args.existing.session_save_ok }
       : {}),
@@ -971,7 +986,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 conversationId: c.conversationId,
                 conversationUrl: c.conversationUrl,
                 conversationTitle: c.conversationTitle,
-                snapshot: { messages: [], digest, messageCount },
+                snapshot: { messages: [], digest, messageCount, extractionSource: null },
               });
               onStepCompleted();
               await emitProgress();
@@ -1000,7 +1015,7 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
             conversationId: c.conversationId,
             conversationUrl: c.conversationUrl,
             conversationTitle: c.conversationTitle,
-            snapshot: { messages, digest, messageCount },
+            snapshot: { messages, digest, messageCount, extractionSource: conv.extractionSource },
           });
           onStepCompleted();
           await emitProgress();
@@ -1140,7 +1155,12 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 Array.isArray(conv.messages) && (conv.messages as unknown[]).length === 0;
               if (rawIsEmpty) {
                 const digest = await cancelGrace.race(emptyConversationDigest());
-                item.snapshot = { messages: [], digest, messageCount: 0 };
+                item.snapshot = {
+                  messages: [],
+                  digest,
+                  messageCount: 0,
+                  extractionSource: conv.extractionSource,
+                };
               } else {
                 const probe = await cancelGrace.race(probeScanApi(tabId));
                 const dom = await cancelGrace.race(collectDomDiagnostics(tabId));
@@ -1160,20 +1180,17 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 messages,
                 digest: computed.digest,
                 messageCount: computed.messageCount,
+                extractionSource: conv.extractionSource,
               };
             }
           }
 
-          const { messages, digest, messageCount } = item.snapshot;
+          const { messages, digest, messageCount, extractionSource } = item.snapshot;
           const ledgerDigest = toTrimmedLedgerDigest(existing);
           const digestsMatch = Boolean(ledgerDigest && ledgerDigest === digest);
           const needsSessionSaveRetry = existing?.session_save_ok === false;
 
-          if (messageCount === 0) {
-            // Empty conversations exist (e.g. created then abandoned / deleted content).
-            // Persist an "ingested" empty digest to avoid retrying forever.
-            skipped += 1;
-          } else if (!existing || !digestsMatch || needsSessionSaveRetry) {
+          if (!existing || !digestsMatch || needsSessionSaveRetry) {
             // Always ingest the full conversation to keep downstream session storage consistent.
             // (Suffix-only ingest can corrupt native-server session message indices.)
             const ingestResp = await cancelGrace.race(
@@ -1184,11 +1201,11 @@ export const scanAndEnqueueNodeDefinition: NodeDefinition<
                 messageCount,
                 conversationTitle: item.conversationTitle,
                 conversationUrl: item.conversationUrl,
+                extractionSource,
                 messages: messages.map((m) => ({
                   role: m.role,
-                  content: m.content,
+                  content: m.contentMarkdown ?? m.content,
                   ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
-                  ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
                 })),
               }),
             );

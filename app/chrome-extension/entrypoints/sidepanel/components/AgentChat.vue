@@ -278,6 +278,7 @@ import {
   type ToolGroupState,
 } from '@/entrypoints/shared/utils/tool-groups';
 import { getMessage } from '@/utils/i18n';
+import { buildMemoryConversationId, buildMemoryMessageId } from 'chrome-mcp-shared';
 
 // Local UI state
 const selectedCli = ref('');
@@ -480,13 +481,13 @@ let emosAutosaveQueue: Promise<void> = Promise.resolve();
 function buildEmosGroupId(): string {
   const session = sessions.selectedSession.value;
   if (!session) return '';
-  return `${session.engineName}:${session.id}`;
+  return buildMemoryConversationId('ruminer', session.id);
 }
 
-function buildEmosMessageId(messageId: string): string {
+function buildEmosMessageId(index: number): string {
   const session = sessions.selectedSession.value;
   if (!session) return '';
-  return `${session.engineName}:${messageId}`;
+  return buildMemoryMessageId('ruminer', session.id, index);
 }
 
 function shouldAutosaveToEmos(msg: AgentMessage): boolean {
@@ -521,7 +522,7 @@ function stripInjectedContext(content: string): string {
   return text.trim();
 }
 
-function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
+function toEmosMessage(msg: AgentMessage, index: number): EmosSingleMessage | null {
   const session = sessions.selectedSession.value;
   if (!session) return null;
 
@@ -529,7 +530,7 @@ function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
   if (!group_id) return null;
 
   return {
-    message_id: buildEmosMessageId(msg.id),
+    message_id: buildEmosMessageId(index),
     create_time: msg.createdAt,
     sender: msg.role === 'assistant' ? 'bot' : 'me',
     sender_name: msg.role === 'assistant' ? engineDisplayName.value : 'Me',
@@ -541,6 +542,12 @@ function toEmosMessage(msg: AgentMessage): EmosSingleMessage | null {
     group_name: session.name || session.preview || undefined,
     source_url: null,
     role: msg.role,
+    source_platform: 'ruminer',
+    conversation_id: session.id,
+    metadata: {
+      message_index: index,
+      engine_name: session.engineName,
+    },
   };
 }
 
@@ -576,14 +583,15 @@ function enqueueEligibleEmosMessages(): void {
   if (!session) return;
   if (!isEmosAutosaveEnabled.value) return;
 
-  for (const msg of chat.messages.value) {
-    if (!shouldAutosaveToEmos(msg)) continue;
-    const emosId = buildEmosMessageId(msg.id);
+  const eligible = chat.messages.value.filter(shouldAutosaveToEmos);
+  for (let index = 0; index < eligible.length; index++) {
+    const msg = eligible[index];
+    const emosId = buildEmosMessageId(index);
     if (!emosId) continue;
     if (queuedEmosMessageIds.has(emosId)) continue;
     if (pendingEmosMessageIds.has(emosId)) continue;
 
-    const emosMsg = toEmosMessage(msg);
+    const emosMsg = toEmosMessage(msg, index);
     if (!emosMsg) continue;
 
     // Only mark as queued on success; failures should retry on next enqueue.

@@ -10,6 +10,7 @@ import {
   type ConversationMessage,
 } from '../conversation-digest';
 import {
+  MEMORY_CONVENTION_VERSION,
   getConversationEntry,
   upsertConversationEntry,
   type ConversationLedgerEntry,
@@ -29,11 +30,12 @@ type InjectedSuccess = {
   conversationId: string;
   conversationTitle: string | null;
   conversationUrl: string;
+  extractionSource?: 'api' | 'dom' | null;
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
+    contentMarkdown?: string | null;
     createTime?: string | null;
-    messageId?: string | null;
   }>;
 };
 
@@ -125,7 +127,11 @@ function ingestExecutionWorld(platform: ChatPlatform): chrome.scripting.Executio
 async function injectIngestScript(tabId: number, platform: ChatPlatform): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId, frameIds: [0] },
-    files: ['inject-scripts/scroll-engine.js', ingestScriptPath(platform)],
+    files: [
+      'inject-scripts/scroll-engine.js',
+      'inject-scripts/ruminer.shared.js',
+      ingestScriptPath(platform),
+    ],
     world: ingestExecutionWorld(platform),
   });
 }
@@ -299,6 +305,7 @@ function buildManualImportLedgerEntry(args: {
     status: null,
     messages_digest: args.digest,
     message_count: args.messageCount,
+    memory_convention_version: MEMORY_CONVENTION_VERSION,
     session_save_ok: args.sessionSaveOk,
     last_session_error: args.sessionSaveOk ? null : args.sessionSaveError,
     last_session_saved_at: args.sessionSaveOk
@@ -412,9 +419,8 @@ export async function ingestConversationInTab(
   const normalizedForIngest = messages
     .map((m) => ({
       role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-      content: normalizeConversationContent(m.content),
+      content: normalizeConversationContent(m.contentMarkdown ?? m.content),
       ...(m.createTime !== undefined ? { createTime: m.createTime } : {}),
-      ...(m.messageId !== undefined ? { messageId: m.messageId } : {}),
     }))
     .filter((m) => Boolean(m.content));
 
@@ -439,6 +445,7 @@ export async function ingestConversationInTab(
     runId: typeof args.runId === 'string' ? args.runId : null,
     conversationTitle: extracted.conversationTitle ?? null,
     conversationUrl: extracted.conversationUrl ?? conversationUrl,
+    extractionSource: extracted.extractionSource ?? null,
     messages: normalizedForIngest,
   });
 

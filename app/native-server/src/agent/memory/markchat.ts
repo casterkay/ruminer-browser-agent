@@ -21,6 +21,10 @@ export interface ConversationMarkdownMessage {
 export interface ConversationMarkdownMetadata {
   sessionId: string;
   timestamp: string;
+  createdAt?: string;
+  updatedAt?: string;
+  exportedAt?: string;
+  messageCount?: number;
   title?: string;
   description?: string;
   sourcePlatform?: string;
@@ -28,6 +32,7 @@ export interface ConversationMarkdownMetadata {
   groupId?: string;
   groupName?: string;
   sourceUrl?: string;
+  extractionSource?: string;
   participants?: ConversationParticipant[];
 }
 
@@ -45,6 +50,13 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeOptionalIso(value: unknown): string | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return undefined;
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : normalized;
 }
 
 function quoteYamlString(value: string): string {
@@ -275,11 +287,39 @@ export function renderConversationMarkdown(document: ConversationMarkdownDocumen
     document.metadata.participants && document.metadata.participants.length > 0
       ? document.metadata.participants
       : buildConversationParticipants(document.messages);
+  const messageTimestamps = document.messages
+    .map((message) => {
+      const timestamp = Date.parse(message.createdAt);
+      return Number.isFinite(timestamp) ? timestamp : null;
+    })
+    .filter((timestamp): timestamp is number => typeof timestamp === 'number');
+  const createdAt =
+    normalizeOptionalIso(document.metadata.createdAt) ??
+    (messageTimestamps.length > 0
+      ? new Date(Math.min(...messageTimestamps)).toISOString()
+      : undefined);
+  const updatedAt =
+    normalizeOptionalIso(document.metadata.updatedAt) ??
+    (messageTimestamps.length > 0
+      ? new Date(Math.max(...messageTimestamps)).toISOString()
+      : undefined);
+  const exportedAt =
+    normalizeOptionalIso(document.metadata.exportedAt) ??
+    normalizeOptionalIso(document.metadata.timestamp);
+  const messageCount =
+    typeof document.metadata.messageCount === 'number' &&
+    Number.isFinite(document.metadata.messageCount)
+      ? Math.max(0, Math.floor(document.metadata.messageCount))
+      : document.messages.length;
 
   const frontmatter = renderYamlFrontmatter([
     ['session_id', document.metadata.sessionId],
     ['timestamp', document.metadata.timestamp],
     ['schema_version', MARKCHAT_SCHEMA_VERSION],
+    ['created_at', createdAt],
+    ['updated_at', updatedAt],
+    ['exported_at', exportedAt],
+    ['message_count', messageCount],
     ['title', normalizeOptionalString(document.metadata.title)],
     ['description', normalizeOptionalString(document.metadata.description)],
     ['source_platform', normalizeOptionalString(document.metadata.sourcePlatform)],
@@ -287,6 +327,7 @@ export function renderConversationMarkdown(document: ConversationMarkdownDocumen
     ['group_id', normalizeOptionalString(document.metadata.groupId)],
     ['group_name', normalizeOptionalString(document.metadata.groupName)],
     ['source_url', normalizeOptionalString(document.metadata.sourceUrl)],
+    ['extraction_source', normalizeOptionalString(document.metadata.extractionSource)],
     [
       'participants',
       participants.map((participant) => ({

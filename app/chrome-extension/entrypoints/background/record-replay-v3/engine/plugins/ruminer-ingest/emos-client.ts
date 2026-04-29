@@ -20,6 +20,15 @@ export type EmosRequestContext = {
   kind: 'native_memory';
 };
 
+export type MemorySingleMessage = EmosSingleMessage;
+export type MemoryRequestContext = EmosRequestContext;
+
+export interface MemoryConversationIdentity {
+  platform: string;
+  conversationId: string;
+  groupId?: string;
+}
+
 export interface EmosSearchRequest {
   query: string;
   user_id?: string;
@@ -108,6 +117,24 @@ export async function emosUpsertMemory(
   return requestNativeMemoryApi('/agent/memory/upsert', {
     method: 'POST',
     body: JSON.stringify({ message }),
+  });
+}
+
+export async function memoryUpsertMessage(
+  message: MemorySingleMessage,
+  ctx?: MemoryRequestContext,
+): Promise<unknown> {
+  return emosUpsertMemory(message, ctx);
+}
+
+export async function memoryReplaceConversation(
+  messages: MemorySingleMessage[],
+  _ctx?: MemoryRequestContext,
+  identity?: MemoryConversationIdentity,
+): Promise<unknown> {
+  return requestNativeMemoryApi('/agent/memory/conversation/replace', {
+    method: 'POST',
+    body: JSON.stringify({ ...(identity ?? {}), messages }),
   });
 }
 

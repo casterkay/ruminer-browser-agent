@@ -18,6 +18,7 @@ describe('MarkChat renderer', () => {
         groupId: 'chatgpt:conv-123',
         groupName: 'ChatGPT conversation',
         sourceUrl: 'https://chat.openai.com/c/conv-123',
+        extractionSource: 'api',
       },
       messages: [
         {
@@ -40,7 +41,13 @@ describe('MarkChat renderer', () => {
     });
 
     expect(markdown).toContain('session_id: "chatgpt:conv-123"');
+    expect(markdown.match(/^session_id:/gm)).toHaveLength(1);
     expect(markdown).toContain('schema_version: "1.0"');
+    expect(markdown).toContain('created_at: "2024-12-17T10:01:00.000Z"');
+    expect(markdown).toContain('updated_at: "2024-12-17T10:02:00.000Z"');
+    expect(markdown).toContain('exported_at: "2024-12-17T10:00:00.000Z"');
+    expect(markdown).toContain('message_count: 2');
+    expect(markdown).toContain('extraction_source: "api"');
     expect(markdown).toContain('source_platform: "chatgpt"');
     expect(markdown).toContain(
       'participants:\n  - id: "me"\n    name: "Philosopher"\n    role: "human"',

@@ -108,7 +108,7 @@ describe('ingest workflow rpc', () => {
             { status: 200, headers: { 'content-type': 'application/json' } },
           );
         }
-        if (u.includes('/agent/memory/upsert')) {
+        if (u.includes('/agent/memory/conversation/replace')) {
           return new Response(JSON.stringify({ ok: true }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
@@ -200,7 +200,7 @@ describe('ingest workflow rpc', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (u.includes('/agent/memory/upsert')) {
+      if (u.includes('/agent/memory/conversation/replace')) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -226,12 +226,38 @@ describe('ingest workflow rpc', () => {
       conversationId: 'c1',
       conversationTitle: 't',
       conversationUrl: 'https://chatgpt.com/c/c1',
-      messages: [{ role: 'user', content: 'hi', createTime: '2026-03-10T00:00:00.000Z' }],
+      extractionSource: 'api',
+      messages: [
+        {
+          role: 'user',
+          content: 'hi',
+          contentMarkdown: '**hi**',
+          createTime: '2026-03-10T00:00:00.000Z',
+        },
+      ],
     })) as any;
 
     expect(resp.ok).toBe(true);
     expect(resp.result.upserted).toBe(1);
     expect(resp.result.failed).toBe(0);
+
+    const memoryCalls = fetchSpy.mock.calls.filter(([url]: any[]) =>
+      String(url).includes('/agent/memory/conversation/replace'),
+    );
+    expect(memoryCalls).toHaveLength(1);
+    const memoryBody = JSON.parse(String(memoryCalls[0][1].body));
+    expect(memoryBody.messages).toHaveLength(1);
+    expect(memoryBody.messages[0]).toMatchObject({
+      message_id: 'chatgpt:c1:0',
+      group_id: 'chatgpt:c1',
+      source_platform: 'chatgpt',
+      conversation_id: 'c1',
+      content: '**hi**',
+      metadata: {
+        message_index: 0,
+        extraction_source: 'api',
+      },
+    });
 
     const entry = await getConversationEntry('chatgpt:c1');
     expect(entry).toBeNull();
@@ -297,7 +323,106 @@ describe('ingest workflow rpc', () => {
     expect(String(r2.error || '')).toContain('Suffix-only ingestion');
   });
 
-  it('fails fast on the first failed message (monotonic prefix semantics)', async () => {
+  it('replaces an existing conversation with empty messages', async () => {
+    (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
+      if (
+        keys === STORAGE_KEYS.EMOS_SETTINGS ||
+        (Array.isArray(keys) && keys.includes(STORAGE_KEYS.EMOS_SETTINGS))
+      ) {
+        return { [STORAGE_KEYS.EMOS_SETTINGS]: { baseUrl: 'https://emos.test', apiKey: 'k' } };
+      }
+      if (
+        keys === STORAGE_KEYS.SERVER_STATUS ||
+        (Array.isArray(keys) && keys.includes(STORAGE_KEYS.SERVER_STATUS))
+      ) {
+        return {
+          [STORAGE_KEYS.SERVER_STATUS]: { isRunning: true, port: 12306, lastUpdated: Date.now() },
+        };
+      }
+      return {};
+    });
+
+    initIngestWorkflowRpc();
+    const listener = getLastOnMessageListener();
+
+    const fetchSpy = globalThis.fetch as any;
+    fetchSpy.mockImplementation(async (url: any) => {
+      const u = String(url || '');
+      if (u.includes('/agent/memory/status')) {
+        return new Response(
+          JSON.stringify({
+            status: {
+              backend: 'local_markdown_qmd',
+              configured: true,
+              localRootPath: '/tmp/memory-store',
+              qmdIndexPath: '/tmp/memory-store/index.sqlite',
+              qmdAvailable: false,
+              qmdEnabled: false,
+              totalDocuments: 1,
+              totalMessages: 1,
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (u.includes('/agent/memory/conversation/replace')) {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (u.includes('/agent/session/ingest')) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            projectId: 'ruminer.imported_conversations',
+            sessionId: 'chatgpt:c_empty',
+            messageCount: 0,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const resp = (await callOnMessage(listener, {
+      type: 'ruminer.ingest.ingestConversation',
+      platform: 'chatgpt',
+      conversationId: 'c_empty',
+      messageCount: 0,
+      conversationTitle: 'empty',
+      conversationUrl: 'https://chatgpt.com/c/c_empty',
+      messages: [],
+    })) as any;
+
+    expect(resp.ok).toBe(true);
+    expect(resp.result.upserted).toBe(0);
+    expect(resp.result.total).toBe(0);
+
+    const memoryCalls = fetchSpy.mock.calls.filter(([url]: any[]) =>
+      String(url).includes('/agent/memory/conversation/replace'),
+    );
+    expect(memoryCalls).toHaveLength(1);
+    expect(JSON.parse(String(memoryCalls[0][1].body))).toMatchObject({
+      platform: 'chatgpt',
+      conversationId: 'c_empty',
+      groupId: 'chatgpt:c_empty',
+      messages: [],
+    });
+
+    const sessionCalls = fetchSpy.mock.calls.filter(([url]: any[]) =>
+      String(url).includes('/agent/session/ingest'),
+    );
+    expect(sessionCalls).toHaveLength(1);
+    expect(JSON.parse(String(sessionCalls[0][1].body))).toMatchObject({
+      platform: 'chatgpt',
+      conversationId: 'c_empty',
+      messages: [],
+    });
+  });
+
+  it('retries full conversation replacement after a memory write failure', async () => {
     const conversationId = `c_fail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     (chrome.storage.local.get as any).mockImplementation(async (keys: any) => {
@@ -342,17 +467,9 @@ describe('ingest workflow rpc', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (u.includes('/agent/memory/upsert')) {
-        const payload = init?.body ? JSON.parse(String(init.body)) : {};
-        const mid = String(payload?.message?.message_id || '');
-        if (mid === `chatgpt:${conversationId}:2`) {
-          return new Response(JSON.stringify({ ok: false, error: 'boom' }), {
-            status: 500,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
+      if (u.includes('/agent/memory/conversation/replace')) {
+        return new Response(JSON.stringify({ ok: false, error: 'boom' }), {
+          status: 500,
           headers: { 'content-type': 'application/json' },
         });
       }
@@ -407,7 +524,7 @@ describe('ingest workflow rpc', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (u.includes('/agent/memory/upsert')) {
+      if (u.includes('/agent/memory/conversation/replace')) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { 'content-type': 'application/json' },

@@ -7,8 +7,8 @@ export type ConversationMessageRole = 'user' | 'assistant';
 export type ConversationMessage = {
   role: ConversationMessageRole;
   content: string;
+  contentMarkdown?: string | null;
   createTime?: string | null;
-  messageId?: string | null;
 };
 
 export function normalizeConversationContent(value: unknown): string {
@@ -25,13 +25,13 @@ export function normalizeConversationMessages(input: unknown): ConversationMessa
       if (!content) return null;
       const createTime =
         typeof m?.createTime === 'string' && m.createTime.trim() ? m.createTime.trim() : null;
-      const messageId =
-        typeof m?.messageId === 'string' && m.messageId.trim() ? m.messageId.trim() : null;
       return {
         role,
         content,
+        ...(typeof m?.contentMarkdown === 'string' && m.contentMarkdown.trim()
+          ? { contentMarkdown: m.contentMarkdown.trim() }
+          : {}),
         ...(createTime !== null ? { createTime } : {}),
-        ...(messageId !== null ? { messageId } : {}),
       };
     })
     .filter(Boolean) as ConversationMessage[];

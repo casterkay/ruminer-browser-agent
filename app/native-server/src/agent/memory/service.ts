@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { MemoryBackendType } from 'chrome-mcp-shared';
+import {
+  buildMemoryConversationId,
+  parseMemoryMessageIndex,
+  type MemoryBackendType,
+} from 'chrome-mcp-shared';
 
 import { getDb } from '../db/client';
 import type { MemoryDocumentRow, MemoryMessageRow } from '../db/schema';
@@ -52,6 +56,13 @@ export interface MemoryDeleteInput {
   document_id?: string;
   user_id?: string;
   group_id?: string;
+}
+
+export interface MemoryConversationReplaceInput {
+  messages: MemoryWireMessage[];
+  platform?: string;
+  conversationId?: string;
+  groupId?: string;
 }
 
 export interface MemoryStatus {
@@ -134,6 +145,10 @@ function slugSegment(value: string, fallback: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return slug || fallback;
+}
+
+function shortStableId(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 8);
 }
 
 function parseJsonObject(value: string | null): Record<string, unknown> | undefined {
@@ -381,16 +396,21 @@ function getDocumentLocation(
     (groupId.includes(':') ? groupId.split(':').slice(1).join(':') : groupId) ||
     message.message_id;
   const platformSlug = slugSegment(sourcePlatform, 'memory');
-  const conversationSlug = slugSegment(conversationId, 'conversation');
-  const relativePath = path.join(MEMORY_COLLECTION_NAME, platformSlug, `${conversationSlug}.md`);
+  const title = trimOrNull(message.group_name) ?? `${sourcePlatform} conversation`;
+  const titleSlug = slugSegment(title, 'conversation');
+  const relativePath = path.join(
+    MEMORY_COLLECTION_NAME,
+    `${titleSlug}--${platformSlug}-${shortStableId(conversationId)}.md`,
+  );
+  const documentId = buildMemoryConversationId(sourcePlatform, conversationId);
 
   return {
-    documentId: `conversation:${platformSlug}:${conversationSlug}`,
+    documentId,
     groupId,
     groupName: trimOrNull(message.group_name),
     sourcePlatform,
     conversationId,
-    title: trimOrNull(message.group_name) ?? conversationId,
+    title,
     sourceUrl: trimOrNull(message.source_url),
     relativePath,
     absolutePath: path.join(rootPath, relativePath),
@@ -402,24 +422,28 @@ function extractMessageIndex(message: MemoryWireMessage): number | null {
   if (typeof rawIndex === 'number' && Number.isFinite(rawIndex)) {
     return Math.floor(rawIndex);
   }
-  const match = /:(\d+)$/.exec(normalizeString(message.message_id));
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseMemoryMessageIndex(message.message_id);
+}
+
+function shouldExportToMarkdown(row: MemoryMessageRow): boolean {
+  return row.role === 'user' || row.role === 'assistant';
 }
 
 function toConversationMarkdownDocument(
   documentRow: MemoryDocumentRow,
   messageRows: MemoryMessageRow[],
 ): ConversationMarkdownDocument {
-  const messages: ConversationMarkdownMessage[] = messageRows.map((row) => ({
-    messageId: row.id,
-    createdAt: row.createTime,
-    sender: row.sender || 'unknown',
-    senderName: row.senderName,
-    role: row.role,
-    content: row.content,
-  }));
+  const documentMetadata = parseJsonObject(documentRow.metadata) ?? {};
+  const messages: ConversationMarkdownMessage[] = messageRows
+    .filter(shouldExportToMarkdown)
+    .map((row) => ({
+      messageId: row.id,
+      createdAt: row.createTime,
+      sender: row.sender || 'unknown',
+      senderName: row.senderName,
+      role: row.role,
+      content: row.content,
+    }));
 
   return {
     metadata: {
@@ -432,6 +456,10 @@ function toConversationMarkdownDocument(
       groupId: documentRow.groupId ?? undefined,
       groupName: documentRow.groupName ?? undefined,
       sourceUrl: documentRow.sourceUrl ?? undefined,
+      extractionSource:
+        typeof documentMetadata.extraction_source === 'string'
+          ? documentMetadata.extraction_source
+          : undefined,
     },
     messages,
   };
@@ -561,13 +589,14 @@ async function persistLocalDocument(
   }
 
   const messages = await getLocalMessagesByDocumentId(documentId);
-  if (messages.length === 0) {
+  const exportableMessages = messages.filter(shouldExportToMarkdown);
+  if (exportableMessages.length === 0) {
     await removeDocumentFile(documentRow.filePath);
     return { filePath: documentRow.filePath, contentHash: '', messageCount: 0 };
   }
 
   const markdown = renderConversationMarkdown(
-    toConversationMarkdownDocument(documentRow, messages),
+    toConversationMarkdownDocument(documentRow, exportableMessages),
   );
   const contentHash = computeContentHash(markdown);
   await writeDocumentFile(documentRow.filePath, markdown);
@@ -682,6 +711,157 @@ async function upsertLocalMemory(message: MemoryWireMessage): Promise<Record<str
     ok: true,
     backend: 'local_markdown_qmd',
     message_id: message.message_id,
+    document_id: documentLocation.documentId,
+    file_path: persisted.filePath,
+  };
+}
+
+async function replaceLocalMemoryConversation(
+  input: MemoryConversationReplaceInput,
+): Promise<Record<string, unknown>> {
+  const messages = Array.isArray(input.messages) ? input.messages : [];
+  if (messages.length === 0) {
+    const groupId = trimOrNull(input.groupId);
+    const platform = trimOrNull(input.platform);
+    const conversationId = trimOrNull(input.conversationId);
+    const canonicalGroupId =
+      groupId ||
+      (platform && conversationId ? buildMemoryConversationId(platform, conversationId) : null);
+    if (!canonicalGroupId) {
+      return {
+        ok: true,
+        backend: 'local_markdown_qmd',
+        upserted: 0,
+        deleted: 0,
+        document_id: null,
+      };
+    }
+
+    const deleted = await deleteLocalMemory({ group_id: canonicalGroupId });
+    const documentId =
+      platform && conversationId ? buildMemoryConversationId(platform, conversationId) : null;
+    return {
+      ok: true,
+      backend: 'local_markdown_qmd',
+      upserted: 0,
+      deleted: deleted.deleted ?? 0,
+      document_id: documentId,
+    };
+  }
+
+  const settings = await getMemorySettings();
+  const rootPath = settings.localRootPath;
+  await ensureLocalDirs(rootPath);
+
+  const db = getDb();
+  const now = new Date().toISOString();
+  const documentLocation = getDocumentLocation(messages[0], rootPath);
+  const existing = await getLocalDocumentById(documentLocation.documentId);
+
+  const staleDocs = db.all<MemoryDocumentRow>(
+    `SELECT ${selectMemoryDocumentColumns()}
+     FROM memory_documents
+     WHERE group_id = ? AND id <> ?`,
+    [documentLocation.groupId, documentLocation.documentId],
+  );
+  for (const stale of staleDocs) {
+    db.run('DELETE FROM memory_messages WHERE document_id = ?', [stale.id]);
+    db.run('DELETE FROM memory_documents WHERE id = ?', [stale.id]);
+    await removeDocumentFile(stale.filePath);
+  }
+
+  if (existing && existing.filePath !== documentLocation.absolutePath) {
+    await removeDocumentFile(existing.filePath);
+  }
+
+  db.run(
+    `INSERT INTO memory_documents (
+       id, backend, document_type, group_id, group_name, source_platform, conversation_id,
+       title, source_url, file_path, relative_path, content_hash, metadata, message_count,
+       created_at, updated_at, deleted_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+     ON CONFLICT(id) DO UPDATE SET
+       backend = excluded.backend,
+       document_type = excluded.document_type,
+       group_id = excluded.group_id,
+       group_name = excluded.group_name,
+       source_platform = excluded.source_platform,
+       conversation_id = excluded.conversation_id,
+       title = excluded.title,
+       source_url = excluded.source_url,
+       file_path = excluded.file_path,
+       relative_path = excluded.relative_path,
+       metadata = excluded.metadata,
+       updated_at = excluded.updated_at,
+       deleted_at = NULL`,
+    [
+      documentLocation.documentId,
+      'local_markdown_qmd',
+      'conversation',
+      documentLocation.groupId,
+      documentLocation.groupName,
+      documentLocation.sourcePlatform,
+      documentLocation.conversationId,
+      documentLocation.title,
+      documentLocation.sourceUrl,
+      documentLocation.absolutePath,
+      documentLocation.relativePath,
+      '',
+      JSON.stringify(messages[0].metadata ?? {}),
+      0,
+      now,
+      now,
+    ],
+  );
+
+  db.run('DELETE FROM memory_messages WHERE document_id = ?', [documentLocation.documentId]);
+
+  let upserted = 0;
+  for (const message of messages) {
+    const content = normalizeString(message.content);
+    if (!content) continue;
+    db.run(
+      `INSERT INTO memory_messages (
+         id, document_id, group_id, sender, sender_name, role, content, create_time,
+         source_url, source_platform, conversation_id, refer_list, metadata, message_index,
+         deleted_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      [
+        message.message_id,
+        documentLocation.documentId,
+        documentLocation.groupId,
+        normalizeString(message.sender) || null,
+        trimOrNull(message.sender_name),
+        trimOrNull(message.role),
+        content,
+        toIso(message.create_time, now),
+        trimOrNull(message.source_url) ?? documentLocation.sourceUrl,
+        documentLocation.sourcePlatform,
+        documentLocation.conversationId,
+        JSON.stringify(message.refer_list ?? []),
+        JSON.stringify(message.metadata ?? {}),
+        extractMessageIndex(message),
+        now,
+        now,
+      ],
+    );
+    upserted += 1;
+  }
+
+  const persisted = await persistLocalDocument(documentLocation.documentId);
+  db.run(
+    `UPDATE memory_documents
+       SET content_hash = ?, message_count = ?, updated_at = ?, deleted_at = NULL
+     WHERE id = ?`,
+    [persisted.contentHash, persisted.messageCount, now, documentLocation.documentId],
+  );
+
+  await closeQmdStore();
+
+  return {
+    ok: true,
+    backend: 'local_markdown_qmd',
+    upserted,
     document_id: documentLocation.documentId,
     file_path: persisted.filePath,
   };
@@ -1067,6 +1247,45 @@ export async function upsertMemory(message: MemoryWireMessage): Promise<Record<s
   }
 
   return upsertLocalMemory(message);
+}
+
+export async function replaceMemoryConversation(
+  input: MemoryConversationReplaceInput,
+): Promise<Record<string, unknown>> {
+  const messages = Array.isArray(input.messages) ? input.messages : [];
+  const settings = await getMemorySettings();
+  if (settings.backend === 'evermemos') {
+    const platform = trimOrNull(input.platform);
+    const conversationId = trimOrNull(input.conversationId);
+    const groupId =
+      trimOrNull(messages[0]?.group_id) ??
+      trimOrNull(input.groupId) ??
+      (platform && conversationId ? buildMemoryConversationId(platform, conversationId) : null);
+    if (groupId) {
+      await deleteMemory({ group_id: groupId });
+    }
+
+    if (messages.length === 0) {
+      return {
+        ok: true,
+        backend: 'evermemos',
+        upserted: 0,
+      };
+    }
+
+    let upserted = 0;
+    for (const message of messages) {
+      await callEverMemApi('POST', '/memories', { body: message });
+      upserted += 1;
+    }
+    return {
+      ok: true,
+      backend: 'evermemos',
+      upserted,
+    };
+  }
+
+  return replaceLocalMemoryConversation(input);
 }
 
 export async function readMemories(queryInput: MemoryQueryInput): Promise<Record<string, unknown>> {

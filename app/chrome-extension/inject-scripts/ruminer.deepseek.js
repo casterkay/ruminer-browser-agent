@@ -147,10 +147,13 @@
   installRpc();
   if (sameApi) return;
 
+  const utils = () => window.__RUMINER_EXTRACTOR_UTILS__ || null;
   const normalizeContent = (s) =>
-    String(s || '')
-      .replace(/\r\n/g, '\n')
-      .trim();
+    utils()?.normalizeContent
+      ? utils().normalizeContent(s)
+      : String(s || '')
+          .replace(/\r\n/g, '\n')
+          .trim();
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
 
@@ -304,14 +307,23 @@
       );
 
       if (mds.length > 0) {
-        const content = normalizeContent(mds.map((md) => md.textContent || '').join('\n\n'));
-        if (content) out.push({ role: 'assistant', content });
+        const content = normalizeContent(
+          mds
+            .map((md) =>
+              utils()?.elementToMarkdown ? utils().elementToMarkdown(md) : md.textContent || '',
+            )
+            .join('\n\n'),
+        );
+        if (content) out.push({ role: 'assistant', content, contentMarkdown: content });
         continue;
       }
 
       // User turns usually have no markdown and the meaningful text is nested inside hashed inner divs.
-      const userContent = normalizeContent(msg.textContent || '');
-      if (userContent) out.push({ role: 'user', content: userContent });
+      const userContent = normalizeContent(
+        utils()?.elementToMarkdown ? utils().elementToMarkdown(msg) : msg.textContent || '',
+      );
+      if (userContent)
+        out.push({ role: 'user', content: userContent, contentMarkdown: userContent });
     }
 
     return out;
@@ -417,7 +429,9 @@
       if (!id) continue;
       if (sidebarCache.seen.has(id)) continue;
 
-      const title = String(a.textContent || '').trim() || null;
+      const title = utils()?.normalizeTitle
+        ? utils().normalizeTitle(a.textContent || '')
+        : String(a.textContent || '').trim() || null;
       sidebarCache.seen.add(id);
       sidebarCache.items.push({
         conversationId: id,
@@ -480,11 +494,12 @@
 
     const msgs = extractMessagesFromDom();
     const titleRaw = typeof document?.title === 'string' ? document.title.trim() : '';
-    const title = titleRaw ? titleRaw : null;
+    const title = utils()?.normalizeTitle ? utils().normalizeTitle(titleRaw) : titleRaw || null;
     return {
       conversationId: parseConversationId(url) || null,
       conversationUrl: url,
       conversationTitle: title,
+      extractionSource: 'dom',
       messages: msgs,
     };
   }

@@ -1,5 +1,7 @@
 export type ConversationLedgerStatus = 'ingested' | 'failed';
 
+export const MEMORY_CONVENTION_VERSION = 2;
+
 export interface ConversationLedgerEntry {
   /** Primary key: `${platform}:${conversationId}` */
   group_id: string;
@@ -14,6 +16,7 @@ export interface ConversationLedgerEntry {
   message_count: number | null;
   /** Whether native-server session upsert succeeded (best-effort). */
   session_save_ok?: boolean | null;
+  memory_convention_version?: number | null;
   last_session_error?: string | null;
   last_session_saved_at?: string | null;
   first_seen_at: string;

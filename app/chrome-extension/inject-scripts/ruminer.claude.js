@@ -143,10 +143,29 @@
   installRpc();
   if (sameApi) return;
 
+  const utils = () => window.__RUMINER_EXTRACTOR_UTILS__ || null;
   const normalizeContent = (s) =>
-    String(s || '')
-      .replace(/\r\n/g, '\n')
-      .trim();
+    utils()?.normalizeContent
+      ? utils().normalizeContent(s)
+      : String(s || '')
+          .replace(/\r\n/g, '\n')
+          .trim();
+
+  const normalizeTitle = (s) =>
+    utils()?.normalizeTitle ? utils().normalizeTitle(s) : String(s || '').trim() || null;
+
+  const pickMessageCreateTime = (msg) =>
+    utils()?.pickTimestamp
+      ? utils().pickTimestamp(msg, [
+          'created_at',
+          'createdAt',
+          'create_time',
+          'createTime',
+          'timestamp',
+          'updated_at',
+          'updatedAt',
+        ])
+      : null;
 
   const bytesToHex = (buffer) =>
     Array.from(new Uint8Array(buffer))
@@ -387,8 +406,7 @@
       .toString()
       .trim();
     const titleRaw = it.name || it.title || it.summary || null;
-    const conversationTitle =
-      typeof titleRaw === 'string' && titleRaw.trim() ? titleRaw.trim() : null;
+    const conversationTitle = normalizeTitle(titleRaw);
     return { conversationId, conversationUrl, conversationTitle };
   };
 
@@ -580,9 +598,12 @@
         .map((n) => {
           const role = normalizeRole(n.getAttribute('data-message-author-role'));
           if (!role) return null;
-          const content = normalizeContent(n.textContent || '');
+          const content =
+            utils()?.elementToMarkdown && n
+              ? utils().elementToMarkdown(n)
+              : normalizeContent(n.textContent || '');
           if (!content) return null;
-          return { role, content };
+          return { role, content, contentMarkdown: content };
         })
         .filter(Boolean);
     }
@@ -602,7 +623,13 @@
       a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
     return all
-      .map((x) => ({ role: x.role, content: normalizeContent(x.node.textContent || '') }))
+      .map((x) => {
+        const content =
+          utils()?.elementToMarkdown && x.node
+            ? utils().elementToMarkdown(x.node)
+            : normalizeContent(x.node.textContent || '');
+        return { role: x.role, content, contentMarkdown: content };
+      })
       .filter((m) => m.content);
   };
 
@@ -762,12 +789,20 @@
           const role = sender === 'human' ? 'user' : 'assistant';
           const content = extractTextFromMessage(m);
           if (!content) continue;
-          msgs.push({ role, content });
+          const createTime = pickMessageCreateTime(m);
+          msgs.push({
+            role,
+            content,
+            contentMarkdown: content,
+            ...(createTime ? { createTime } : {}),
+          });
         }
+        const titleRaw = conv && (conv.name || conv.title || conv.summary);
         return {
           conversationId: convId,
           conversationUrl: url,
-          conversationTitle: null,
+          conversationTitle: normalizeTitle(titleRaw),
+          extractionSource: 'api',
           messages: msgs,
         };
       } catch (e) {
@@ -803,7 +838,8 @@
     return {
       conversationId: convId || parseConversationId(url) || null,
       conversationUrl: url,
-      conversationTitle: null,
+      conversationTitle: normalizeTitle(document?.title),
+      extractionSource: 'dom',
       messages: msgs,
     };
   }

@@ -159,6 +159,8 @@
   installRpc();
   if (sameApi) return;
 
+  const utils = () => window.__RUMINER_EXTRACTOR_UTILS__ || null;
+
   const SELECTORS = {
     // Incremental extractor defaults (mirrors gemini-export conversation_extractor.js).
     turnContainers: '#chat-history .conversation-container',
@@ -288,6 +290,11 @@
   };
 
   const getNodeText = (node) => {
+    if (utils()?.elementToMarkdown && node) {
+      const markdown = utils().elementToMarkdown(node);
+      if (markdown) return markdown;
+    }
+
     const structured = extractTextPreserveNewlines(node);
     const s = typeof structured === 'string' ? structured : String(structured || '');
 
@@ -306,10 +313,12 @@
 
   // Matches gemini-export normalizeText(): CRLF→LF, collapse excessive blank lines, trim.
   const normalizeText = (s) =>
-    String(s || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    utils()?.normalizeContent
+      ? utils().normalizeContent(s)
+      : String(s || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
 
   const sleep = (ms) => {
     const n = typeof ms === 'number' && Number.isFinite(ms) ? Math.floor(ms) : 0;
@@ -617,8 +626,9 @@
         assistantText = '';
       }
 
-      if (userText) out.push({ role: 'user', content: userText });
-      if (assistantText) out.push({ role: 'assistant', content: assistantText });
+      if (userText) out.push({ role: 'user', content: userText, contentMarkdown: userText });
+      if (assistantText)
+        out.push({ role: 'assistant', content: assistantText, contentMarkdown: assistantText });
     }
 
     // Remove consecutive exact duplicates (role + content) to reduce rare virtualization artifacts.
@@ -810,7 +820,9 @@
       const id = parseConversationId(url.toString());
       if (!id) continue;
       if (sidebarCache.seen.has(id)) continue;
-      const title = String(a.textContent || '').trim() || null;
+      const title = utils()?.normalizeTitle
+        ? utils().normalizeTitle(a.textContent || '')
+        : String(a.textContent || '').trim() || null;
       sidebarCache.seen.add(id);
       sidebarCache.items.push({
         conversationId: id,
@@ -949,7 +961,7 @@
         document.querySelector('[data-test-id="conversation-title"]') ||
         document.querySelector('[class*="conversation-title"]');
       const raw = titleEl ? String(titleEl.textContent || '').trim() : '';
-      title = raw || null;
+      title = utils()?.normalizeTitle ? utils().normalizeTitle(raw) : raw || null;
     } catch {
       title = null;
     }
@@ -958,6 +970,7 @@
       conversationId: parseConversationId(url) || null,
       conversationUrl: url,
       conversationTitle: title,
+      extractionSource: 'dom',
       messages: msgs,
     };
   }

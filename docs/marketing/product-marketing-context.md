@@ -108,6 +108,7 @@ _Last updated: 2026-04-27_
 | Objection                                       | Response                                                                                                                                                                           |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Can't I just write a longer system prompt?      | A prompt can describe your companion, but it cannot preserve the full lived history: exact conversations, preferences, inside jokes, conflicts, repairs, and emotional milestones. |
+| Can't I just use ChatGPT's built-in export?     | ChatGPT's export is platform-specific JSON/HTML. It does not solve multi-platform export, unified storage, scheduled sync, or agent retrieval with citations.                      |
 | Will this really transfer my AI companion?      | Ruminer preserves retrievable memory and continuity signals. It should not claim to transfer consciousness, identity, or a soul.                                                   |
 | Is my data safe in a browser extension?         | Ruminer is local-first. Conversations export to files the user owns, and the product should avoid routing private conversations through third-party cloud storage.                 |
 | Will this break when platforms change their UI? | Ruminer is actively maintained and updated to match platform UI changes. The subscription funds this ongoing maintenance.                                                          |
@@ -126,6 +127,8 @@ _Last updated: 2026-04-27_
 
 **Habit:** Users keep updating prompts manually, copy/pasting summaries between chats, or staying inside a platform because their companion's history is trapped there.
 
+**Market timing:** The underlying need is obvious and growing as users spread serious thinking across multiple AI platforms. If Ruminer does not solve this well, someone else likely will.
+
 **Anxiety:** Users worry that migration will feel fake, that the new agent is only reading old diaries rather than inheriting relationship continuity, that private intimate conversations may leak, or that setup will be too technical. Ruminer must be careful and precise: it preserves retrievable memory and continuity signals; it should not claim to transfer consciousness or identity.
 
 ---
@@ -141,6 +144,9 @@ _Last updated: 2026-04-27_
 - "I want to move my AI companion's memories into a local agent."
 - "I want my AI to grow with me instead of resetting."
 - "My conversations are scattered across 5 different platforms."
+- "I know I discussed this topic somewhere but I can't find it."
+- "Every time I go back to a problem, I start from scratch because I can't find my old thinking."
+- "Valuable discussions I spent hours on just... disappeared."
 - "I'm locked into each AI platform with no way to get my data out."
 - "把和 AI 伴侣一起经历过的记忆，迁移到真正会成长的本地智能体里。"
 - "不是写一段人设，而是把你们真实聊过的过去保存下来。"
@@ -150,10 +156,11 @@ _Last updated: 2026-04-27_
 
 - "It's a memory migration tool for my AI companion."
 - "It helps my AI remember our past without locking us into one platform."
+- "It's like a second brain for my AI chats."
 - "Finally, all my conversations in one place."
 - "My AI agent actually knows what I was working on."
 
-**Words to use:** AI companion, memory loss, precious memories, shared history, continuity, memory migration, migrate memories, evolving memory, local agent, continuous sync, private, local-first, your data stays yours, vendor-locked, fragmented, automatic sync, agent memory, personal AI memory
+**Words to use:** AI companion, memory loss, precious memories, shared history, continuity, memory migration, migrate memories, evolving memory, local agent, continuous sync, private, local-first, your data stays yours, vendor-locked, fragmented, second brain, unified store, one click, automatic sync, agent-ready, agent memory, personal AI memory
 
 **Words to avoid:** RAG, MCP, Streamable HTTP, native messaging; transfer consciousness, resurrect, soul, cure loneliness, dependence-maximizing claims, mental-health promises, and developer-centric jargon in top-level marketing copy
 
@@ -177,7 +184,7 @@ _Last updated: 2026-04-27_
 
 **Style:** Conversational, emotionally specific, and careful. Chinese social content can be more diary-like and intimate on 小红书; YouTube content should be visual, simple, and story-led.
 
-**Personality:** Tender, privacy-respecting, quietly technical, thoughtfully simple.
+**Personality:** Tender, empathetic, privacy-respectful, quietly technical, thoughtfully simple.
 
 ---
 

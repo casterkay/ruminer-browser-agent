@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import type { SQLInputValue } from 'node:sqlite';
 import { getDb, type SessionRow } from './db';
 import type { EngineName } from './engines/types';
+import { buildMemoryConversationId, buildMemoryMessageId } from 'chrome-mcp-shared';
 import {
   createMessage as createStoredMessage,
   deleteMessagesBySessionId,
@@ -717,10 +718,10 @@ export async function ensureImportedConversationsProject(): Promise<{ projectId:
 /**
  * Upsert an ingested conversation into the Agent DB as a Session + Messages.
  *
- * Session ID is deterministic and equals messages.conversation_id:
+ * Session ID is deterministic and equals the canonical memory conversation ID:
  * `${platform}:${conversationId}`
  *
- * Messages are upserted with deterministic IDs `${sessionId}:${index}` (index from the source array).
+ * Messages are replaced with deterministic IDs `${platform}:${conversationId}:${index}`.
  */
 export async function upsertIngestedConversationSession(
   input: UpsertIngestedConversationSessionInput,
@@ -732,10 +733,24 @@ export async function upsertIngestedConversationSession(
   }
 
   const { projectId } = await ensureImportedConversationsProject();
-  const sessionId = `${platform}:${conversationId}`;
+  const sessionId = buildMemoryConversationId(platform, conversationId);
 
   const title = (input.conversationTitle ?? '').trim();
   const sessionName = title || `${platformDisplayName(platform)} ${conversationId}`;
+  const url = (input.conversationUrl ?? '').trim() || null;
+  const msgs = Array.isArray(input.messages) ? input.messages : [];
+  const persistableMessages = msgs
+    .map((raw, index) => {
+      const role: 'user' | 'assistant' = raw?.role === 'assistant' ? 'assistant' : 'user';
+      const content = typeof raw?.content === 'string' ? raw.content.trim() : '';
+      return { raw, index, role, content };
+    })
+    .filter((message) => Boolean(message.content));
+
+  if (persistableMessages.length === 0) {
+    await deleteSession(sessionId);
+    return { ok: true, projectId, sessionId, messageCount: 0 };
+  }
 
   const existing = await getSession(sessionId);
   if (!existing) {
@@ -747,23 +762,19 @@ export async function upsertIngestedConversationSession(
     await updateSession(sessionId, { name: title });
   }
 
-  const url = (input.conversationUrl ?? '').trim() || null;
-  const msgs = Array.isArray(input.messages) ? input.messages : [];
+  await deleteMessagesBySessionId(sessionId);
 
-  for (let i = 0; i < msgs.length; i++) {
-    const raw = msgs[i];
-    const role = raw?.role === 'assistant' ? 'assistant' : 'user';
-    const content = typeof raw?.content === 'string' ? raw.content.trim() : '';
-    if (!content) continue;
-
+  for (const message of persistableMessages) {
+    const i = message.index;
+    const raw = message.raw;
     await createStoredMessage({
-      id: `${sessionId}:${i}`,
+      id: buildMemoryMessageId(platform, conversationId, i),
       projectId,
       sessionId,
       conversationId: sessionId,
-      role,
+      role: message.role,
       messageType: 'chat',
-      content,
+      content: message.content,
       createdAt: toIsoOrNow(raw?.createTime ?? null),
       metadata: {
         source: 'ruminer_ingest',
@@ -771,7 +782,7 @@ export async function upsertIngestedConversationSession(
         conversationId,
         conversationTitle: title || null,
         conversationUrl: url,
-        index: i,
+        message_index: i,
       },
     });
   }
