@@ -6,6 +6,7 @@ packages/
 │   │   ├── constants.ts
 │   │   ├── index.ts
 │   │   ├── labels.ts
+│   │   ├── memory-identity.ts
 │   │   ├── node-spec-registry.ts
 │   │   ├── node-spec.ts
 │   │   ├── node-specs-builtin.ts
@@ -22,7 +23,7 @@ packages/
     └── src
         └── lib.rs
 
-5 directories, 18 files
+5 directories, 19 files
 app/
 ├── chrome-extension
 │   ├── _locales
@@ -258,6 +259,7 @@ app/
 │   │   ├── ruminer.deepseek.js
 │   │   ├── ruminer.gemini.js
 │   │   ├── ruminer.grok.js
+│   │   ├── ruminer.shared.js
 │   │   ├── screenshot-helper.js
 │   │   ├── scroll-engine.js
 │   │   ├── wait-helper.js
@@ -396,6 +398,7 @@ app/
 │   │   │   ├── memory
 │   │   │   │   ├── markchat.test.ts
 │   │   │   │   ├── markchat.ts
+│   │   │   │   ├── service.test.ts
 │   │   │   │   ├── service.ts
 │   │   │   │   └── settings-service.ts
 │   │   │   ├── message-service.ts
@@ -408,6 +411,7 @@ app/
 │   │   │   │   └── tool-events.ts
 │   │   │   ├── project-service.ts
 │   │   │   ├── project-types.ts
+│   │   │   ├── session-service.test.ts
 │   │   │   ├── session-service.ts
 │   │   │   ├── sessions-stream-events.ts
 │   │   │   ├── sessions-stream-manager.ts
@@ -468,4 +472,4 @@ app/
     │   └── check-versions.js
     └── tsconfig.json
 
-100 directories, 344 files
+100 directories, 347 files

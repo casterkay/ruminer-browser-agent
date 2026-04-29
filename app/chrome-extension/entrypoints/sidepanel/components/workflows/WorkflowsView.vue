@@ -130,7 +130,7 @@
               <button
                 class="px-4 py-2.5 text-sm font-semibold"
                 :style="paywallPrimaryButtonStyle"
-                @click="$emit('unlockAccess')"
+                @click="$emit('unlock-access')"
               >
                 {{ workflowAccessCtaLabel }}
               </button>
@@ -203,7 +203,7 @@
           v-if="!searchQuery"
           class="px-4 py-2 text-sm font-medium"
           :style="workflowsLocked ? paywallPrimaryButtonStyle : newButtonStyle"
-          @click="workflowsLocked ? $emit('unlockAccess') : $emit('create')"
+          @click="workflowsLocked ? $emit('unlock-access') : $emit('create')"
         >
           {{ workflowsLocked ? workflowAccessCtaLabel : 'Create Workflow' }}
         </button>
@@ -863,7 +863,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'refresh'): void;
-  (e: 'unlockAccess'): void;
+  (e: 'unlock-access'): void;
   (e: 'manageAccess'): void;
   (e: 'create'): void;
   (e: 'run', id: string): void;

@@ -65,9 +65,18 @@ export function useWorkflowAccess() {
       }
 
       if (response?.success === false) {
-        throw new Error(response.error || 'Unable to start workflow access link.');
+        state.value = normalizeWorkflowAccessState({
+          ...state.value,
+          error: response.error || 'Unable to start workflow access link.',
+        });
       }
 
+      return state.value;
+    } catch (error) {
+      state.value = normalizeWorkflowAccessState({
+        ...state.value,
+        error: error instanceof Error ? error.message : 'Unable to start workflow access link.',
+      });
       return state.value;
     } finally {
       pending.value = false;
