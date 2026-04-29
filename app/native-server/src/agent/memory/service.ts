@@ -147,8 +147,8 @@ function slugSegment(value: string, fallback: string): string {
   return slug || fallback;
 }
 
-function shortStableId(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 8);
+function conversationIdFilenameSlice(value: string): string {
+  return slugSegment(value, 'conversation').slice(0, 4) || '0000';
 }
 
 function parseJsonObject(value: string | null): Record<string, unknown> | undefined {
@@ -400,7 +400,7 @@ function getDocumentLocation(
   const titleSlug = slugSegment(title, 'conversation');
   const relativePath = path.join(
     MEMORY_COLLECTION_NAME,
-    `${titleSlug}--${platformSlug}-${shortStableId(conversationId)}.md`,
+    `${titleSlug}--${platformSlug}-${conversationIdFilenameSlice(conversationId)}.md`,
   );
   const documentId = buildMemoryConversationId(sourcePlatform, conversationId);
 

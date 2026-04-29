@@ -1,5 +1,4 @@
 import { describe, expect, jest, test } from '@jest/globals';
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -77,9 +76,7 @@ describe('memory service conversation replacement', () => {
     );
     expect(docs).toHaveLength(1);
     expect(docs[0].id).toBe('chatgpt:c1');
-    expect(docs[0].relativePath).toBe(
-      `conversations/my-great-chat--chatgpt-${createHash('sha256').update('c1').digest('hex').slice(0, 8)}.md`,
-    );
+    expect(docs[0].relativePath).toBe('conversations/my-great-chat--chatgpt-c1.md');
 
     const rows = db.all<{ id: string; content: string }>(
       'SELECT id, content FROM memory_messages ORDER BY message_index',
