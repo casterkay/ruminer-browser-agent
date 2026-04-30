@@ -244,7 +244,15 @@ export function applyHostedWorkflowAccessSnapshot(
 }
 
 export function hasWorkflowAccess(state: WorkflowAccessState): boolean {
-  return state.workflowAccess === 'allowed' && state.status === 'pro' && state.isActive === true;
+  if (state.workflowAccess !== 'allowed') {
+    return false;
+  }
+
+  if (state.status === 'pro' && state.isActive === true) {
+    return true;
+  }
+
+  return state.status === 'free' && state.user !== null;
 }
 
 export function getRuminerHostedAppUrl(): string {

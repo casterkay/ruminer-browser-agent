@@ -188,6 +188,29 @@ describe('workflow access (contract)', () => {
         isActive: true,
       }),
     ).toBe(false);
+
+    expect(
+      hasWorkflowAccess({
+        ...DEFAULT_WORKFLOW_ACCESS_STATE,
+        status: 'free',
+        workflowAccess: 'allowed',
+        user: {
+          id: 'user_123',
+          email: 'hello@ruminer.app',
+          name: null,
+          image: null,
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      hasWorkflowAccess({
+        ...DEFAULT_WORKFLOW_ACCESS_STATE,
+        status: 'free',
+        workflowAccess: 'allowed',
+        user: null,
+      }),
+    ).toBe(false);
   });
 
   it('fails closed when a linked workflow access state has no persisted link token', async () => {
